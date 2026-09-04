@@ -3,3 +3,4 @@ libs/
 credentials.env
 session.json
 *.png
+github_token.env
