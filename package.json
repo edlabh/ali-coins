@@ -9,7 +9,7 @@
     "tasks": "node do_tasks.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "agiler",
   "license": "ISC",
   "dependencies": {
     "playwright": "^1.48.0"
