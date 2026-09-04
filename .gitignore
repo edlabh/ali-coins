@@ -1,0 +1,5 @@
+node_modules/
+libs/
+credentials.env
+session.json
+*.png
