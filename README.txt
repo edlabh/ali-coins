@@ -1,66 +1,110 @@
 ================================================================================
-                    AliExpress Coin Collector - Guia de Uso
+          AliExpress Coin Collector - Guia de Uso (Windows & Ubuntu)
 ================================================================================
 
 Automação para coleta de moedas diárias e execução das tarefas da AliExpress 
 com emulação de User-Agent mobile (Pixel 7 / Android) via Playwright.
 
---------------------------------------------------------------------------------
-1. REQUISITOS PRÉVIOS
---------------------------------------------------------------------------------
-- Node.js (versão 18 ou superior)
-- npm (versão 9 ou superior)
+Compatível com Windows 10/11 e Ubuntu / Distribuições Linux.
 
 --------------------------------------------------------------------------------
-2. PREPARAÇÃO DO AMBIENTE
+1. REQUISITOS GERAIS
 --------------------------------------------------------------------------------
+- Node.js (versão 18 ou superior): https://nodejs.org/
+- npm (versão 9 ou superior, já incluso com o Node.js)
 
-Passo 2.1: Instalar dependências do projeto Node.js
-$ npm install
+================================================================================
+2. INSTALAÇÃO E CONFIGURAÇÃO NO WINDOWS
+================================================================================
 
-Passo 2.2: Baixar os binários do Chromium do Playwright
-$ npx playwright install chromium
+Passo W1: Abrir o terminal (Prompt de Comando - CMD ou PowerShell) na pasta do projeto.
 
-Passo 2.3: Instalar dependências de sistema para o Chromium
-Opção A (com acesso root / sudo):
-$ sudo npx playwright install-deps
-# ou:
-$ sudo apt-get install -y libnss3 libnspr4 libasound2t64
+Passo W2: Instalar dependências do Node.js
+> npm install
 
-Opção B (sem acesso root / espaço de usuário):
-$ mkdir -p libs && cd libs
-$ apt-get download libnss3 libnspr4 libasound2t64
-$ for f in *.deb; do dpkg -x "$f" extracted; done
-$ rm -f *.deb
-$ cd ..
+Passo W3: Instalar o navegador Chromium gerenciado pelo Playwright
+> npx playwright install chromium
 
-(Os scripts run.sh e run_tasks.sh já incluem automaticamente o caminho
-das bibliotecas extraídas em LD_LIBRARY_PATH).
+(No Windows, o Playwright já baixa o Chromium com todas as dependências e DLLs
+necessárias de forma autônoma, sem necessidade de pacotes externos do sistema).
 
---------------------------------------------------------------------------------
-3. CONFIGURAÇÃO DAS CREDENCIAIS
---------------------------------------------------------------------------------
+Passo W4: Configurar as credenciais
+No Prompt de Comando (CMD):
+> copy credentials.env.example credentials.env
 
-Passo 3.1: Criar o arquivo de credenciais a partir do modelo
-$ cp credentials.env.example credentials.env
+No PowerShell:
+> Copy-Item credentials.env.example credentials.env
 
-Passo 3.2: Configurar permissões de segurança
-$ chmod 600 credentials.env
-
-Passo 3.3: Editar o arquivo credentials.env com seus dados de login da AliExpress
+Abra o arquivo credentials.env no Bloco de Notas (Notepad) ou editor de texto:
 ALI_USER="seu_email_ou_telefone"
 ALI_PASSWORD="sua_senha"
 
-(Obs: após o primeiro login bem-sucedido, a sessão fica salva em session.json,
-não sendo necessário digitar a senha novamente nas próximas execuções).
+Passo W5: Executar a aplicação no Windows
 
---------------------------------------------------------------------------------
-4. EXECUÇÃO DA APLICAÇÃO
---------------------------------------------------------------------------------
+- Opção 1 (via npm - multiplataforma):
+  > npm start          (para o check-in diário)
+  > npm run tasks      (para as tarefas "Ganhe mais moedas")
 
-- Para realizar apenas o check-in diário de moedas:
-  $ ./run.sh
+- Opção 2 (via Prompt de Comando - CMD):
+  > run.bat            (para o check-in diário)
+  > run_tasks.bat      (para as tarefas "Ganhe mais moedas")
 
-- Para executar todas as tarefas adicionais ("Ganhe mais moedas"):
-  $ ./run_tasks.sh
+- Opção 3 (via PowerShell):
+  > .\run.ps1          (para o check-in diário)
+  > .\run_tasks.ps1    (para as tarefas "Ganhe mais moedas")
+
+================================================================================
+3. INSTALAÇÃO E CONFIGURAÇÃO NO UBUNTU / LINUX
+================================================================================
+
+Passo U1: Abrir o terminal na pasta do projeto.
+
+Passo U2: Instalar dependências do Node.js
+$ npm install
+
+Passo U3: Instalar o navegador Chromium gerenciado pelo Playwright
+$ npx playwright install chromium
+
+Passo U4: Instalar dependências de sistema para o Chromium no Ubuntu
+- Opção com acesso root / sudo:
+  $ sudo npx playwright install-deps
+  # ou:
+  $ sudo apt-get update && sudo apt-get install -y libnss3 libnspr4 libasound2t64
+
+- Opção sem root (espaço de usuário):
+  $ mkdir -p libs && cd libs
+  $ apt-get download libnss3 libnspr4 libasound2t64
+  $ for f in *.deb; do dpkg -x "$f" extracted; done
+  $ rm -f *.deb
+  $ cd ..
+
+Passo U5: Configurar as credenciais
+$ cp credentials.env.example credentials.env
+$ chmod 600 credentials.env
+
+Edite o arquivo credentials.env com seu e-mail e senha:
+ALI_USER="seu_email_ou_telefone"
+ALI_PASSWORD="sua_senha"
+
+Passo U6: Executar a aplicação no Ubuntu / Linux
+
+- Opção 1 (via npm):
+  $ npm start          (para o check-in diário)
+  $ npm run tasks      (para as tarefas "Ganhe mais moedas")
+
+- Opção 2 (via scripts Bash):
+  $ ./run.sh           (para o check-in diário)
+  $ ./run_tasks.sh     (para as tarefas "Ganhe mais moedas")
+
+================================================================================
+4. OBSERVAÇÕES IMPORTANTES E PERSISTÊNCIA DE SESSÃO
+================================================================================
+- No primeiro acesso, a aplicação realiza o login utilizando as credenciais
+  configuradas no arquivo credentials.env.
+- Após o login com sucesso, os tokens e cookies de autenticação são salvos
+  automaticamente no arquivo session.json.
+- Nas execuções seguintes, a sessão é reutilizada diretamente, evitando novas
+  telas de login ou desafios de verificação.
+- Não envie nem comite os arquivos credentials.env e session.json (eles já
+  estão listados no .gitignore).
 ================================================================================

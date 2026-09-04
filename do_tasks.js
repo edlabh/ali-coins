@@ -12,8 +12,16 @@ async function waitWithScroll(page, seconds) {
 
 async function main() {
   const pixel7 = devices['Pixel 7'];
+
+  const envVars = { ...process.env };
+  const localLibPath = path.join(__dirname, 'libs', 'extracted', 'usr', 'lib', 'x86_64-linux-gnu');
+  if (process.platform === 'linux' && fs.existsSync(localLibPath)) {
+    envVars.LD_LIBRARY_PATH = `${localLibPath}:${envVars.LD_LIBRARY_PATH || ''}`;
+  }
+
   const browser = await chromium.launch({
     headless: true,
+    env: envVars,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',

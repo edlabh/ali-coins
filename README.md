@@ -2,31 +2,80 @@
 
 Automação para coleta de moedas diárias e execução das tarefas da AliExpress com emulação de User-Agent mobile (Pixel 7 / Android) via Playwright.
 
-## Requisitos
+Compatível com **Windows 10/11** e **Ubuntu / Linux**.
 
-- Node.js (>= 18)
-- npm (>= 9)
+---
 
-## Preparação do Ambiente
+## 1. Requisitos Gerais
 
-1. **Instalar dependências do Node.js:**
-   ```bash
+- [Node.js](https://nodejs.org/) (>= 18)
+- npm (>= 9, incluso com o Node.js)
+
+---
+
+## 2. Preparação e Uso no Windows
+
+### Instalação
+1. Abra o terminal (**CMD** ou **PowerShell**) na pasta do projeto.
+2. Instale as dependências:
+   ```cmd
    npm install
    ```
-
-2. **Instalar navegador Chromium:**
-   ```bash
+3. Instale o navegador Chromium do Playwright:
+   ```cmd
    npx playwright install chromium
    ```
 
-3. **Instalar bibliotecas do sistema para o Chromium:**
-   - **Com sudo:**
+### Configuração
+1. Crie seu arquivo `credentials.env` a partir do modelo:
+   - No CMD: `copy credentials.env.example credentials.env`
+   - No PowerShell: `Copy-Item credentials.env.example credentials.env`
+2. Abra `credentials.env` no Bloco de Notas e preencha suas credenciais:
+   ```env
+   ALI_USER="seu_email_ou_telefone"
+   ALI_PASSWORD="sua_senha"
+   ```
+
+### Execução no Windows
+Você pode usar qualquer uma das opções abaixo:
+
+- **Via npm (Recomendado):**
+  ```cmd
+  npm start          :: Check-in diário
+  npm run tasks      :: Tarefas "Ganhe mais moedas"
+  ```
+- **Via CMD (Batch files):**
+  ```cmd
+  run.bat            :: Check-in diário
+  run_tasks.bat      :: Tarefas "Ganhe mais moedas"
+  ```
+- **Via PowerShell:**
+  ```powershell
+  .\run.ps1          # Check-in diário
+  .\run_tasks.ps1    # Tarefas "Ganhe mais moedas"
+  ```
+
+---
+
+## 3. Preparação e Uso no Ubuntu / Linux
+
+### Instalação
+1. Instale as dependências:
+   ```bash
+   npm install
+   ```
+2. Instale o navegador Chromium do Playwright:
+   ```bash
+   npx playwright install chromium
+   ```
+3. Instale as dependências de sistema para o Chromium:
+   - **Com sudo / root:**
      ```bash
      sudo npx playwright install-deps
      # ou:
-     sudo apt-get install -y libnss3 libnspr4 libasound2t64
+     sudo apt-get update && sudo apt-get install -y libnss3 libnspr4 libasound2t64
      ```
-   - **Sem sudo (espaço de usuário):**
+   - **Sem root (espaço de usuário):**
      ```bash
      mkdir -p libs && cd libs
      apt-get download libnss3 libnspr4 libasound2t64
@@ -35,27 +84,33 @@ Automação para coleta de moedas diárias e execução das tarefas da AliExpres
      cd ..
      ```
 
-## Configuração
-
-1. Copie o arquivo de exemplo para configurar suas credenciais:
+### Configuração
+1. Crie seu arquivo `credentials.env`:
    ```bash
    cp credentials.env.example credentials.env
    chmod 600 credentials.env
    ```
-2. Preencha seu usuário e senha no arquivo `credentials.env`:
+2. Preencha `credentials.env`:
    ```env
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
    ```
 
-## Uso
-
-- **Check-in diário de moedas:**
+### Execução no Ubuntu / Linux
+- **Via npm:**
   ```bash
-  ./run.sh
+  npm start          # Check-in diário
+  npm run tasks      # Tarefas "Ganhe mais moedas"
+  ```
+- **Via Bash:**
+  ```bash
+  ./run.sh           # Check-in diário
+  ./run_tasks.sh     # Tarefas "Ganhe mais moedas"
   ```
 
-- **Execução de tarefas adicionais ("Ganhe mais moedas"):**
-  ```bash
-  ./run_tasks.sh
-  ```
+---
+
+## 4. Persistência de Sessão
+
+- No primeiro login, os cookies e tokens são armazenados automaticamente em `session.json`.
+- Nas execuções futuras, a sessão é reutilizada diretamente, evitando novas telas de login.

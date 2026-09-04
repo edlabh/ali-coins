@@ -6,7 +6,7 @@ function loadEnv(filePath) {
   if (!fs.existsSync(filePath)) return {};
   const content = fs.readFileSync(filePath, 'utf-8');
   const env = {};
-  for (const line of content.split('\n')) {
+  for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eqIdx = trimmed.indexOf('=');
@@ -29,8 +29,15 @@ async function run() {
 
   const pixel7 = devices['Pixel 7'];
 
+  const envVars = { ...process.env };
+  const localLibPath = path.join(__dirname, 'libs', 'extracted', 'usr', 'lib', 'x86_64-linux-gnu');
+  if (process.platform === 'linux' && fs.existsSync(localLibPath)) {
+    envVars.LD_LIBRARY_PATH = `${localLibPath}:${envVars.LD_LIBRARY_PATH || ''}`;
+  }
+
   const browser = await chromium.launch({
     headless: true,
+    env: envVars,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
