@@ -45,10 +45,10 @@ else
 fi
 
 echo "Enviando branch 'main'..."
-git push -u origin main
+git push -u origin main "$@"
 
 echo "Enviando tags de release..."
-git push origin --tags
+git push origin --tags "$@"
 
 # Mascarar token no remote por segurança
 PUBLIC_REMOTE="https://github.com/${GITHUB_USER}/${REPO_NAME}.git"
