@@ -44,8 +44,8 @@ else
   git remote add origin "$REMOTE_URL"
 fi
 
-echo "Enviando branch 'master'..."
-git push -u origin master
+echo "Enviando branch 'main'..."
+git push -u origin main
 
 echo "Enviando tags de release..."
 git push origin --tags
