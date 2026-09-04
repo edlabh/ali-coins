@@ -2,7 +2,7 @@
 
 Automação para coleta de moedas diárias e execução das tarefas da AliExpress com emulação de User-Agent mobile (Pixel 7 / Android) via Playwright.
 
-Compatível com **Windows 10/11** e **Ubuntu / Linux**.
+Compatível com **Windows 10/11**, **macOS (Apple Silicon & Intel)** e **Ubuntu / Linux**.
 
 ---
 
@@ -30,15 +30,13 @@ Compatível com **Windows 10/11** e **Ubuntu / Linux**.
 1. Crie seu arquivo `credentials.env` a partir do modelo:
    - No CMD: `copy credentials.env.example credentials.env`
    - No PowerShell: `Copy-Item credentials.env.example credentials.env`
-2. Abra `credentials.env` no Bloco de Notas e preencha suas credenciais:
+2. Abra `credentials.env` e preencha suas credenciais:
    ```env
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
    ```
 
 ### Execução no Windows
-Você pode usar qualquer uma das opções abaixo:
-
 - **Via npm (Recomendado):**
   ```cmd
   npm start          :: Check-in diário
@@ -57,7 +55,47 @@ Você pode usar qualquer uma das opções abaixo:
 
 ---
 
-## 3. Preparação e Uso no Ubuntu / Linux
+## 3. Preparação e Uso no macOS (Apple Silicon & Intel)
+
+### Instalação
+1. Abra o aplicativo **Terminal**.
+2. Certifique-se de ter o Node.js instalado (via `brew install node` ou pelo instalador do site oficial).
+3. Instale as dependências do projeto:
+   ```bash
+   npm install
+   ```
+4. Baixe o navegador Chromium do Playwright:
+   ```bash
+   npx playwright install chromium
+   ```
+
+### Configuração
+1. Crie seu arquivo `credentials.env`:
+   ```bash
+   cp credentials.env.example credentials.env
+   chmod 600 credentials.env
+   ```
+2. Edite `credentials.env` com suas credenciais:
+   ```env
+   ALI_USER="seu_email_ou_telefone"
+   ALI_PASSWORD="sua_senha"
+   ```
+
+### Execução no macOS
+- **Via npm (Recomendado):**
+  ```bash
+  npm start          # Check-in diário
+  npm run tasks      # Tarefas "Ganhe mais moedas"
+  ```
+- **Via scripts Bash/Zsh:**
+  ```bash
+  ./run.sh           # Check-in diário
+  ./run_tasks.sh     # Tarefas "Ganhe mais moedas"
+  ```
+
+---
+
+## 4. Preparação e Uso no Ubuntu / Linux
 
 ### Instalação
 1. Instale as dependências:
@@ -110,7 +148,7 @@ Você pode usar qualquer uma das opções abaixo:
 
 ---
 
-## 4. Persistência de Sessão
+## 5. Persistência de Sessão
 
 - No primeiro login, os cookies e tokens são armazenados automaticamente em `session.json`.
 - Nas execuções futuras, a sessão é reutilizada diretamente, evitando novas telas de login.
