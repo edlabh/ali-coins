@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node collect.js",
+    "start": "node all.js",
+    "all": "node all.js",
     "collect": "node collect.js",
     "tasks": "node do_tasks.js"
   },

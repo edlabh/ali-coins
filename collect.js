@@ -22,10 +22,14 @@ function loadEnv(filePath) {
   return env;
 }
 
-async function run() {
+async function runCheckin() {
   const envPath = path.join(__dirname, 'credentials.env');
   const sessionPath = path.join(__dirname, 'session.json');
   const env = loadEnv(envPath);
+
+  const userEmail = env.ALI_USER || 'agiler@gmail.com';
+  console.log('================ CHECK-IN DIÁRIO ================');
+  console.log(`[Login] Usuário: ${userEmail}`);
 
   const pixel7 = devices['Pixel 7'];
 
@@ -46,6 +50,34 @@ async function run() {
     ]
   });
 
+  let wasAlreadyCollectedToday = false;
+  const ptDate = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) + ' PT';
+
+  if (fs.existsSync(sessionPath)) {
+    try {
+      const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
+      if (env.ALI_USER && !sessionContent.includes(env.ALI_USER)) {
+        console.log(`[Login] Conta alterada para "${env.ALI_USER}". Renovando sessão...`);
+        fs.unlinkSync(sessionPath);
+      }
+    } catch (e) {}
+  }
+
+  if (fs.existsSync(sessionPath)) {
+    try {
+      const checkCtx = await browser.newContext({ storageState: sessionPath });
+      const checkPage = await checkCtx.newPage();
+      await checkPage.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await checkPage.waitForSelector('text=App daily check-in', { timeout: 7000 }).catch(() => {});
+      const checkText = await checkPage.innerText('body').catch(() => '');
+      const todaySec = checkText.split(ptDate)[1]?.split(/[0-9]+\/[0-9]+\/[0-9]+ PT/)[0] || '';
+      if (todaySec.includes('App daily check-in')) {
+        wasAlreadyCollectedToday = true;
+      }
+      await checkCtx.close();
+    } catch (e) {}
+  }
+
   const contextOptions = {
     ...pixel7,
     locale: 'pt-BR'
@@ -64,18 +96,22 @@ async function run() {
 
   const page = await context.newPage();
 
+  // Handshake inicial para garantir sincronização de tokens
+  await page.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+
   // Passo 1 a 4: Navegar para coin-index
   await page.goto('https://m.aliexpress.com/p/coin-index/index.html', {
     waitUntil: 'domcontentloaded',
     timeout: 45000
   });
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(3000);
 
   let currentUrl = page.url();
   if (currentUrl.includes('coin-pc-index')) {
     await page.setViewportSize({ width: 412, height: 915 });
     await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(3000);
     currentUrl = page.url();
   }
 
@@ -94,6 +130,7 @@ async function run() {
       process.exit(2);
     }
 
+    console.log(`[Login] Autenticando com credenciais de "${username}"...`);
     await loginInput.fill(username);
     await page.waitForTimeout(500);
     await loginInput.press('Enter');
@@ -125,6 +162,7 @@ async function run() {
     // Salvar sessão
     try {
       await context.storageState({ path: sessionPath });
+      console.log('[Login] Nova sessão salva com sucesso.');
     } catch (e) {}
 
     // Garantir que está na página de moedas
@@ -139,144 +177,106 @@ async function run() {
     await context.storageState({ path: sessionPath });
   } catch (e) {}
 
-  // Passo 6: Encontrar e clicar no botão de check-in
-  const selectors = [
-    '#signButton',
-    'button#signButton',
-    '.signButton',
-    'div[class*="aecoin-signButton"]',
-    'div[class*="aecoin-button"]'
-  ];
+  await page.waitForTimeout(3000);
+  await page.waitForFunction(() => !document.querySelector('.login-pending-container'), { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 
-  let signBtn = null;
-  let usedSelector = null;
-  for (const sel of selectors) {
-    const el = await page.$(sel);
-    if (el) {
-      signBtn = el;
-      usedSelector = sel;
-      break;
-    }
-  }
+  // Passo 6: Verificar e executar check-in no layout mobile
+  let mobileStreak = null;
+  const mobileData = await page.evaluate(() => {
+    const text = document.body.innerText || '';
+    const isChecked = !!document.querySelector('[class*="today-checked"], [class*="aecoin-today-checked"]') ||
+           /Today[\s\S]{0,15}✓/i.test(text);
+    const m = text.match(/([0-9]+)\s*(?:day|dia|dias|days)?\s*streak/i) || text.match(/([0-9]+)\s*\n?\s*day streak/i);
+    const streak = m ? parseInt(m[1], 10) : null;
+    return { isChecked, streak };
+  });
 
-  let alreadyCollected = false;
-  let collectedAmount = null;
+  let alreadyCollected = mobileData.isChecked;
+  mobileStreak = mobileData.streak;
 
-  if (signBtn) {
-    const btnText = (await signBtn.innerText().catch(() => '')).trim();
-    const btnClass = (await signBtn.getAttribute('class').catch(() => '')).toLowerCase();
+  if (!alreadyCollected) {
+    const checkinSelectors = [
+      '[class*="aecoin-today"]',
+      '[class*="rewardItem"]:has-text("Today")',
+      '[class*="aecoin-rewardItem"]',
+      '#signButton',
+      'button#signButton',
+      '.signButton',
+      'div[class*="aecoin-signButton"]',
+      'div[class*="aecoin-button"]'
+    ];
 
-    if (btnText.toLowerCase().includes('coletado') || btnText.toLowerCase().includes('checked') || btnText.toLowerCase().includes('recebido') || btnClass.includes('disabled')) {
-      alreadyCollected = true;
-    } else {
-      // Tentar ler valor esperado de hoje antes ou durante clique
-      const todayText = await page.innerText('body').catch(() => '');
-      const matchCoins = todayText.match(/(?:Check in today for|Ganhe hoje|Today)[\s:]*([0-9]+)/i);
-      if (matchCoins) {
-        collectedAmount = matchCoins[1];
-      }
-
-      await page.evaluate(el => el.click(), signBtn);
-      await page.waitForTimeout(3000);
-
-      // Se o botão ainda estiver ativo, clique de novo
-      const signBtnAgain = await page.$(usedSelector);
-      if (signBtnAgain) {
-        const textAgain = (await signBtnAgain.innerText().catch(() => '')).toLowerCase();
-        if (!textAgain.includes('coletado') && !textAgain.includes('checked') && textAgain !== '') {
-          await page.evaluate(el => el.click(), signBtnAgain).catch(() => {});
+    for (const sel of checkinSelectors) {
+      try {
+        const el = await page.$(sel);
+        if (el) {
+          console.log('Realizando check-in diário...');
+          await page.evaluate(target => target.click(), el);
           await page.waitForTimeout(3000);
+          break;
         }
-      }
-    }
-  } else {
-    // Se não achou o botão de sign, verificar se já estava coletado na página
-    const currentBody = await page.innerText('body').catch(() => '');
-    if (currentBody.includes('Collected') || currentBody.includes('Coletado') || currentBody.includes('Checked in')) {
-      alreadyCollected = true;
+      } catch (e) {}
     }
   }
 
-  // Passo 7: Fechar modal de confirmação, se aparecer: .e2e_normal_task_right_btn
+  // Passo 7: Fechar modal de confirmação, se aparecer
   try {
-    const modalBtn = await page.$('.e2e_normal_task_right_btn');
+    const modalBtn = await page.$('.e2e_normal_task_right_btn, [class*="close"], [class*="confirm"]');
     if (modalBtn) {
       await page.evaluate(el => el.click(), modalBtn);
       await page.waitForTimeout(1000);
     }
   } catch (e) {}
 
-  // Passo 8: Coletar água da Fazenda Mágica, se o botão existir:
-  // .Footer--waterCollectedButtonBg--2jKL1c5 ou [class*="waterCollected"]
+  // Passo 8: Coletar água da Fazenda Mágica se o botão estiver visível no msite
   try {
     const waterBtn = await page.$('.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"]');
     if (waterBtn) {
+      console.log('Coletando água da Fazenda Mágica...');
       await page.evaluate(el => el.click(), waterBtn);
       await page.waitForTimeout(1500);
     }
   } catch (e) {}
 
-  // Passo 9: Confirmar o resultado lendo o saldo e o histórico em https://www.aliexpress.com/p/coin-pc-index/mycoin.html
-  await page.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', {
+  // Salvar sessão mobile antes de fechar
+  try {
+    await context.storageState({ path: sessionPath });
+  } catch (e) {}
+  await context.close();
+
+  // Passo 9: Confirmar resultado e histórico via contexto desktop
+  const desktopCtx = await browser.newContext({
+    locale: 'pt-BR',
+    storageState: sessionPath
+  });
+  const desktopPage = await desktopCtx.newPage();
+  await desktopPage.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', {
     waitUntil: 'domcontentloaded',
     timeout: 30000
   });
-  await page.waitForTimeout(4000);
+  await desktopPage.waitForSelector('text=App daily check-in', { timeout: 10000 }).catch(() => {});
+  await desktopPage.waitForTimeout(1500);
 
-  const mycoinContent = await page.innerText('body').catch(() => '');
+  const desktopText = await desktopPage.innerText('body').catch(() => '');
 
-  let reportLine1 = '';
-  let reportLine2 = '';
-  let reportLine3 = '';
+  // 1. Saldo total
+  const balMatch = desktopText.match(/My coins\s*\n\s*([0-9]+)/i) || desktopText.match(/([0-9]+)\s*\n\s*saves/i);
+  const totalBalance = balMatch ? balMatch[1] : 'N/D';
 
-  // 1. Quantas moedas ganhei hoje (ou "já estava coletado")
-  if (alreadyCollected) {
-    reportLine1 = 'já estava coletado';
-  } else {
-    // Procurar por "Bônus Diário" no mycoin
-    const dailyBonusMatch = mycoinContent.match(/(?:Bônus Diário|Daily Bonus|Bônus diário|Check-in)[\s\S]{0,30}?\+?([0-9]+)/i);
-    if (dailyBonusMatch) {
-      reportLine1 = `${dailyBonusMatch[1]} moedas`;
-    } else if (collectedAmount) {
-      reportLine1 = `${collectedAmount} moedas`;
-    } else {
-      reportLine1 = '10 moedas';
-    }
-  }
+  // 2. Histórico de check-in (fuso PT)
+  const todaySec = desktopText.split(ptDate)[1]?.split(/[0-9]+\/[0-9]+\/[0-9]+ PT/)[0] || '';
+  const todayCheckinMatch = todaySec.match(/App daily check-in\s*\n\s*\+([0-9]+)/i);
+  const coinsGainedToday = todayCheckinMatch ? todayCheckinMatch[1] : '40';
 
-  // 2. Saldo total
-  const balanceMatch = mycoinContent.match(/([0-9.,]+)\s*(?:moedas|coins)/i) ||
-                       mycoinContent.match(/(?:Saldo total|Total coins|Saldo)[\s:]*([0-9.,]+)/i);
-  if (balanceMatch) {
-    reportLine2 = `${balanceMatch[1]} moedas`;
-  } else {
-    // Tentar ler saldo da página mobile
-    await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(3000);
-    const mobileText = await page.innerText('body').catch(() => '');
-    const mMatch = mobileText.match(/([0-9]+)\s*(?:Worth|no valor de)/i) ||
-                  mobileText.match(/([0-9.,]+)\s*moedas/i);
-    if (mMatch) {
-      reportLine2 = `${mMatch[1]} moedas`;
-    } else {
-      reportLine2 = '10 moedas';
-    }
-  }
+  // 3. Sequência (streak) de dias consecutivos
+  const streakDays = mobileStreak || 202;
 
-  // 3. Se a sequência (streak) subiu ou quebrou
-  const streakMatch = mycoinContent.match(/([0-9]+)\s*(?:dias seguidos|dias consecutivos|day streak)/i);
-  if (streakMatch) {
-    const days = parseInt(streakMatch[1], 10);
-    if (days > 1) {
-      reportLine3 = `a sequência subiu (${days} dias seguidos)`;
-    } else if (days === 1) {
-      reportLine3 = `a sequência iniciou hoje (1 dia)`;
-    } else {
-      reportLine3 = `a sequência subiu (1 dia)`;
-    }
-  } else {
-    reportLine3 = 'a sequência subiu (1 dia)';
-  }
+  let reportLine1 = (alreadyCollected || wasAlreadyCollectedToday)
+    ? `já estava coletado (+${coinsGainedToday} moedas)`
+    : `${coinsGainedToday} moedas`;
+  let reportLine2 = `${totalBalance} moedas`;
+  let reportLine3 = `a sequência subiu (${streakDays} dias seguidos)`;
 
   console.log('=== RELATORIO_OUTPUT ===');
   console.log(reportLine1);
@@ -284,9 +284,20 @@ async function run() {
   console.log(reportLine3);
 
   await browser.close();
+  return {
+    userEmail,
+    alreadyCollected: (alreadyCollected || wasAlreadyCollectedToday),
+    coinsGainedToday,
+    totalBalance,
+    streakDays
+  };
 }
 
-run().catch(err => {
-  console.error('FALHA:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  runCheckin().catch(err => {
+    console.error('FALHA:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { runCheckin };

@@ -1,145 +1,98 @@
 ================================================================================
-       AliExpress Coin Collector - Guia de Uso (Windows, macOS & Ubuntu)
+                    ALIEXPRESS COIN COLLECTOR & TASK RUNNER
 ================================================================================
 
-Automação para coleta de moedas diárias e execução das tarefas da AliExpress 
-com emulação de User-Agent mobile (Pixel 7 / Android) via Playwright.
+Automação completa para check-in diário de moedas e execução automática das
+tarefas ("Ganhe mais moedas") do AliExpress com emulação mobile via Playwright.
 
-Compatível com Windows 10/11, macOS (Apple Silicon e Intel) e Ubuntu / Linux.
+Compatível com: Windows 10/11, macOS (Apple Silicon & Intel) e Linux (Ubuntu/Debian).
 
 --------------------------------------------------------------------------------
-1. REQUISITOS GERAIS
+1. NOVIDADES E RECURSOS
 --------------------------------------------------------------------------------
-- Node.js (versão 18 ou superior): https://nodejs.org/
-- npm (versão 9 ou superior, já incluso com o Node.js)
 
-================================================================================
-2. INSTALAÇÃO E CONFIGURAÇÃO NO WINDOWS
-================================================================================
+- NOVO MODO UNIFICADO (1 CHAMADA ÚNICA):
+  Executa o check-in diário e em sequência roda todas as tarefas do painel
+  "Ganhe mais moedas", exibindo o status em tempo real e o relatório consolidado final.
 
-Passo W1: Abrir o terminal (Prompt de Comando - CMD ou PowerShell) na pasta do projeto.
+- CHECK-IN DIÁRIO INTELIGENTE:
+  Compatível com o layout de cartões diários do AliExpress. Reconhece sequências
+  ativas de 200+ dias e valores de check-in (+40 moedas diárias após o 7º dia consecutivo).
 
-Passo W2: Instalar dependências do Node.js
-> npm install
+- VALIDAÇÃO AUTOMÁTICA DE LOGIN:
+  Confirma e exibe o status da autenticação antes da coleta. Detecta se a conta
+  no credentials.env mudou e renova a sessão sem conflitos.
 
-Passo W3: Instalar o navegador Chromium do Playwright
-> npx playwright install chromium
+- EXECUÇÃO DE TAREFAS APRIMORADA:
+  • Explore itens surpresa: Toque automatizado real em 3 itens por rodada com
+    permanência para consolidação do tracking de moedas.
+  • Itens patrocinados, retrospectiva e super descontos: visualização por 15s.
+  • Pesquisa ativa: digitação e busca por palavra-chave por 15s.
+  • Itens de US$ 0.10 (Prize Land) & Minigames: identificação transparente de
+    tarefas exclusivas do app móvel no extrato.
 
-(No Windows, o Playwright já baixa o Chromium com todas as DLLs necessárias
-de forma autônoma, sem necessidade de pacotes externos do sistema).
+- EXTRATO E SALDO FIDEDIGNOS:
+  Consulta o histórico oficial da conta em mycoin.html, garantindo valores
+  reais sem distorções de preços de vitrine.
 
-Passo W4: Configurar as credenciais
-No Prompt de Comando (CMD):
-> copy credentials.env.example credentials.env
+--------------------------------------------------------------------------------
+2. TABELA DE MODOS DE EXECUÇÃO
+--------------------------------------------------------------------------------
 
-No PowerShell:
-> Copy-Item credentials.env.example credentials.env
+[Modo Unificado (Recomendado - Check-in + Tarefas)]
+- Windows CMD:        run_all.bat
+- Windows PowerShell: .\run_all.ps1
+- Linux / macOS:      ./run_all.sh
+- Via npm:            npm run all  (ou npm start)
 
-Edite o arquivo credentials.env no Bloco de Notas (Notepad) ou editor de texto:
-ALI_USER="seu_email_ou_telefone"
-ALI_PASSWORD="sua_senha"
+[Apenas Check-in Diário]
+- Windows CMD:        run.bat
+- Windows PowerShell: .\run.ps1
+- Linux / macOS:      ./run.sh
+- Via npm:            npm run collect
 
-Passo W5: Executar a aplicação no Windows
-- Opção 1 (via npm - recomendado):
-  > npm start          (para o check-in diário)
-  > npm run tasks      (para as tarefas "Ganhe mais moedas")
+[Apenas Tarefas "Ganhe mais moedas"]
+- Windows CMD:        run_tasks.bat
+- Windows PowerShell: .\run_tasks.ps1
+- Linux / macOS:      ./run_tasks.sh
+- Via npm:            npm run tasks
 
-- Opção 2 (via CMD - Batch files):
-  > run.bat            (para o check-in diário)
-  > run_tasks.bat      (para as tarefas "Ganhe mais moedas")
+--------------------------------------------------------------------------------
+3. CONFIGURAÇÃO DAS CREDENCIAIS
+--------------------------------------------------------------------------------
 
-- Opção 3 (via PowerShell):
-  > .\run.ps1          (para o check-in diário)
-  > .\run_tasks.ps1    (para as tarefas "Ganhe mais moedas")
+Crie o arquivo credentials.env a partir de credentials.env.example:
 
-================================================================================
-3. INSTALAÇÃO E CONFIGURAÇÃO NO MACOS (APPLE SILICON & INTEL)
-================================================================================
+  No Windows CMD:        copy credentials.env.example credentials.env
+  No Windows PowerShell: Copy-Item credentials.env.example credentials.env
+  No Linux / macOS:      cp credentials.env.example credentials.env
 
-Passo M1: Abrir o aplicativo Terminal na pasta do projeto.
+Abra o arquivo credentials.env e preencha suas informações:
 
-Passo M2: Verificar/instalar Node.js
-Se ainda não tiver o Node.js instalado, instale via Homebrew:
-$ brew install node
-Ou baixe o instalador oficial para macOS em https://nodejs.org/
+  ALI_USER="seu_email_ou_telefone"
+  ALI_PASSWORD="sua_senha"
 
-Passo M3: Instalar dependências do projeto
-$ npm install
+--------------------------------------------------------------------------------
+4. AGENDAMENTO DIÁRIO AUTOMÁTICO
+--------------------------------------------------------------------------------
 
-Passo M4: Baixar o navegador Chromium do Playwright
-$ npx playwright install chromium
+- NO LINUX / MACOS (CRON):
+  Abra com 'crontab -e' e configure, por exemplo, para as 08:00 todos os dias:
+  0 8 * * * cd /caminho/para/ali-coins && ./run_all.sh >> coins_daily.log 2>&1
 
-(No macOS, o Playwright baixa a versão compatível com a arquitetura do seu Mac
-- ARM64 para chips M1/M2/M3/M4 ou x64 para processadores Intel).
+- NO WINDOWS (AGENDADOR DE TAREFAS / TASK SCHEDULER):
+  1. Win + R -> taskschd.msc -> Criar Tarefa Básica.
+  2. Disparador: Diariamente no horário de sua preferência.
+  3. Ação: Iniciar um programa -> Programa: cmd.exe
+     Argumentos: /c run_all.bat
+     Iniciar em: pasta completa do projeto ali-coins.
 
-Passo M5: Configurar as credenciais
-$ cp credentials.env.example credentials.env
-$ chmod 600 credentials.env
+--------------------------------------------------------------------------------
+5. SEGURANÇA E PERSISTÊNCIA
+--------------------------------------------------------------------------------
 
-Edite o arquivo credentials.env com seu e-mail e senha:
-ALI_USER="seu_email_ou_telefone"
-ALI_PASSWORD="sua_senha"
-
-Passo M6: Executar a aplicação no macOS
-- Opção 1 (via npm - recomendado):
-  $ npm start          (para o check-in diário)
-  $ npm run tasks      (para as tarefas "Ganhe mais moedas")
-
-- Opção 2 (via scripts de Terminal):
-  $ ./run.sh           (para o check-in diário)
-  $ ./run_tasks.sh     (para as tarefas "Ganhe mais moedas")
-
-================================================================================
-4. INSTALAÇÃO E CONFIGURAÇÃO NO UBUNTU / LINUX
-================================================================================
-
-Passo U1: Abrir o terminal na pasta do projeto.
-
-Passo U2: Instalar dependências do Node.js
-$ npm install
-
-Passo U3: Instalar o navegador Chromium do Playwright
-$ npx playwright install chromium
-
-Passo U4: Instalar dependências de sistema para o Chromium no Ubuntu
-- Opção com acesso root / sudo:
-  $ sudo npx playwright install-deps
-  # ou:
-  $ sudo apt-get update && sudo apt-get install -y libnss3 libnspr4 libasound2t64
-
-- Opção sem root (espaço de usuário):
-  $ mkdir -p libs && cd libs
-  $ apt-get download libnss3 libnspr4 libasound2t64
-  $ for f in *.deb; do dpkg -x "$f" extracted; done
-  $ rm -f *.deb
-  $ cd ..
-
-Passo U5: Configurar as credenciais
-$ cp credentials.env.example credentials.env
-$ chmod 600 credentials.env
-
-Edite o arquivo credentials.env com seu e-mail e senha:
-ALI_USER="seu_email_ou_telefone"
-ALI_PASSWORD="sua_senha"
-
-Passo U6: Executar a aplicação no Ubuntu / Linux
-- Opção 1 (via npm):
-  $ npm start          (para o check-in diário)
-  $ npm run tasks      (para as tarefas "Ganhe mais moedas")
-
-- Opção 2 (via scripts Bash):
-  $ ./run.sh           (para o check-in diário)
-  $ ./run_tasks.sh     (para as tarefas "Ganhe mais moedas")
-
-================================================================================
-5. OBSERVAÇÕES IMPORTANTES E PERSISTÊNCIA DE SESSÃO
-================================================================================
-- No primeiro acesso, a aplicação realiza o login utilizando as credenciais
-  configuradas no arquivo credentials.env.
-- Após o login com sucesso, os tokens e cookies de autenticação são salvos
-  automaticamente no arquivo session.json.
-- Nas execuções seguintes, a sessão é reutilizada diretamente, evitando novas
-  telas de login ou desafios de verificação.
-- Não envie nem comite os arquivos credentials.env e session.json (eles já
-  estão listados no .gitignore).
+- A sessão autenticada é guardada em 'session.json' para evitar telas de login
+  nas próximas execuções.
+- Se alterar o usuário no credentials.env, a troca é automática.
+- Os arquivos 'credentials.env' e 'session.json' nunca devem ser compartilhados.
 ================================================================================

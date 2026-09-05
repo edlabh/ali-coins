@@ -1,7 +1,8 @@
 node_modules/
 libs/
-credentials.env
+credentials.env*
 session.json
+*.bak
 *.png
 github_token.env
 *.swp
