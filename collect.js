@@ -181,19 +181,42 @@ async function runCheckin() {
   await page.waitForFunction(() => !document.querySelector('.login-pending-container'), { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(2000);
 
+  // Função auxiliar para capturar o número de dias em sequência diretamente da tela de moedas
+  async function getStreakFromCoinPage(p) {
+    return await p.evaluate(() => {
+      // 1. Prioridade: elemento específico com o número de dias no cabeçalho do check-in
+      const dayEl = document.querySelector('[class*="dayNumber"], [class*="checkedDay"]');
+      if (dayEl && dayEl.innerText.trim()) {
+        const val = parseInt(dayEl.innerText.trim(), 10);
+        if (!isNaN(val) && val > 0) return val;
+      }
+
+      // 2. Container do cabeçalho de check-in (ex: ".aecoin-titleContainer", "203 day streak")
+      const titleEl = document.querySelector('[class*="titleContainer"], [class*="signTitle"]');
+      if (titleEl) {
+        const containerText = titleEl.parentElement?.innerText || titleEl.innerText || '';
+        const m = containerText.match(/([0-9]+)\s*(?:day|dia|dias|days)?\s*streak/i) || containerText.match(/([0-9]+)/);
+        if (m) {
+          const val = parseInt(m[1], 10);
+          if (!isNaN(val) && val > 0) return val;
+        }
+      }
+
+      // 3. Fallback dinâmico: regex no texto visível da página
+      const bodyText = document.body.innerText || '';
+      const m = bodyText.match(/([0-9]+)\s*(?:day|dia|dias|days)?\s*streak/i) || bodyText.match(/([0-9]+)\s*\n?\s*day streak/i);
+      return m ? parseInt(m[1], 10) : null;
+    });
+  }
+
   // Passo 6: Verificar e executar check-in no layout mobile
-  let mobileStreak = null;
-  const mobileData = await page.evaluate(() => {
+  const isCheckedInitial = await page.evaluate(() => {
     const text = document.body.innerText || '';
-    const isChecked = !!document.querySelector('[class*="today-checked"], [class*="aecoin-today-checked"]') ||
+    return !!document.querySelector('[class*="today-checked"], [class*="aecoin-today-checked"]') ||
            /Today[\s\S]{0,15}✓/i.test(text);
-    const m = text.match(/([0-9]+)\s*(?:day|dia|dias|days)?\s*streak/i) || text.match(/([0-9]+)\s*\n?\s*day streak/i);
-    const streak = m ? parseInt(m[1], 10) : null;
-    return { isChecked, streak };
   });
 
-  let alreadyCollected = mobileData.isChecked;
-  mobileStreak = mobileData.streak;
+  let alreadyCollected = isCheckedInitial;
 
   if (!alreadyCollected) {
     const checkinSelectors = [
@@ -239,6 +262,9 @@ async function runCheckin() {
     }
   } catch (e) {}
 
+  // Capturar a sequência de dias (streak) dinamicamente na tela de moedas
+  const mobileStreak = await getStreakFromCoinPage(page);
+
   // Salvar sessão mobile antes de fechar
   try {
     await context.storageState({ path: sessionPath });
@@ -269,14 +295,16 @@ async function runCheckin() {
   const todayCheckinMatch = todaySec.match(/App daily check-in\s*\n\s*\+([0-9]+)/i);
   const coinsGainedToday = todayCheckinMatch ? todayCheckinMatch[1] : '40';
 
-  // 3. Sequência (streak) de dias consecutivos
-  const streakDays = mobileStreak || 202;
+  // 3. Sequência (streak) de dias consecutivos obtida dinamicamente da tela de moedas
+  const streakDays = mobileStreak !== null ? mobileStreak : 'N/D';
 
   let reportLine1 = (alreadyCollected || wasAlreadyCollectedToday)
     ? `já estava coletado (+${coinsGainedToday} moedas)`
     : `${coinsGainedToday} moedas`;
   let reportLine2 = `${totalBalance} moedas`;
-  let reportLine3 = `a sequência subiu (${streakDays} dias seguidos)`;
+  let reportLine3 = (streakDays !== 'N/D')
+    ? `a sequência subiu (${streakDays} dias seguidos)`
+    : 'sequência não identificada na página';
 
   console.log('=== RELATORIO_OUTPUT ===');
   console.log(reportLine1);
