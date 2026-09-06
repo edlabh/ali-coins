@@ -165,7 +165,7 @@ async function runTasks() {
 
   await openDrawer();
 
-  // Ler tarefas
+  // Ler tarefas com suporte a rodadas (ex: 1/2, 2/3)
   async function getTasks() {
     return await page.$$eval('.e2e_normal_task', els => els.map((e, idx) => {
       const title = e.querySelector('.e2e_normal_task_content_title')?.innerText?.trim() || '';
@@ -173,25 +173,58 @@ async function runTasks() {
       const btn = e.querySelector('.e2e_normal_task_right_btn');
       const btnText = btn?.innerText?.trim() || '';
       const btnStyle = btn?.getAttribute('style') || '';
-      const isDone = btnStyle.includes('opacity: 0.5') || btnStyle.includes('cover') || btnText !== 'GO';
+      const statusText = e.querySelector('.statusText')?.innerText?.trim() || '';
+
+      let currentRound = null;
+      let totalRounds = null;
+      if (statusText) {
+        const sm = statusText.match(/^([0-9]+)\/([0-9]+)$/);
+        if (sm) {
+          currentRound = parseInt(sm[1], 10);
+          totalRounds = parseInt(sm[2], 10);
+        }
+      }
+
+      const isDone = btnStyle.includes('opacity: 0.5') ||
+                     btnStyle.includes('cover') ||
+                     btnText !== 'GO' ||
+                     (totalRounds !== null && currentRound >= totalRounds);
+
       const groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
       const allText = e.innerText?.replace(/\n+/g, ' ') || '';
       const coinMatch = allText.match(/\+([0-9]+(?:～[0-9]+)?)/);
       const coins = coinMatch ? `+${coinMatch[1]} moedas` : '+5 moedas';
-      return { index: idx, title, desc, btnText, isDone, groupId, coins, allText };
+      return { index: idx, title, desc, btnText, btnStyle, statusText, currentRound, totalRounds, isDone, groupId, coins, allText };
     }));
   }
 
+  function isInteractiveOrAppOnly(task) {
+    const text = (task.title + ' ' + task.desc).toLowerCase();
+    return text.includes('prize land') || text.includes('0.1') || text.includes('water') || text.includes('regar') ||
+           text.includes('merge boss') || text.includes('game') || text.includes('jogo') ||
+           text.includes('quiz');
+  }
+
   // Função para executar a tarefa de tocar em itens no adclick
-  async function executeSurpriseItems(targetPage, targetTask) {
-    console.log('Executando tarefa: tocar em 3 itens com validação de ponteiro e tracking...');
+  async function executeSurpriseItems(targetPage, startIndex = 0) {
+    console.log(`Executando tarefa: tocar em 3 itens (a partir do card #${startIndex + 1})...`);
     await targetPage.waitForTimeout(2000);
-    const cards = await targetPage.$$('.feeds-discount-card');
+    let cards = await targetPage.$$('.feeds-discount-card');
     console.log(`Encontrados ${cards.length} cards de produtos.`);
+
+    if (startIndex + 3 > cards.length) {
+      await targetPage.evaluate(() => window.scrollBy(0, 800)).catch(() => {});
+      await targetPage.waitForTimeout(1500);
+      cards = await targetPage.$$('.feeds-discount-card');
+    }
+
+    const start = (startIndex < cards.length) ? startIndex : 0;
+    const countToClick = Math.min(3, Math.max(0, cards.length - start));
     let clickedCount = 0;
 
-    for (let c = 0; c < Math.min(3, cards.length); c++) {
-      console.log(`Tocando item ${c + 1}/3...`);
+    for (let c = start; c < start + (countToClick || 3); c++) {
+      if (c >= cards.length) break;
+      console.log(`Tocando item ${clickedCount + 1}/3 (card #${c + 1})...`);
       const card = cards[c];
       await card.scrollIntoViewIfNeeded().catch(() => {});
       await targetPage.waitForTimeout(1000);
@@ -218,39 +251,63 @@ async function runTasks() {
     return clickedCount;
   }
 
-  let tasks = await getTasks();
-  console.log(`Total de tarefas listadas: ${tasks.length}`);
+  // Loop de processamento de tarefas resiliente com suporte a múltiplas rodadas
+  const taskAttempts = {};
+  const maxAttemptsPerTask = 4;
+  let totalActions = 0;
+  const MAX_TOTAL_ACTIONS = 25;
 
-  const results = [];
-
-  // Loop de processamento de tarefas
-  for (let i = 0; i < tasks.length; i++) {
+  while (totalActions < MAX_TOTAL_ACTIONS) {
     await openDrawer();
-    tasks = await getTasks();
-    const task = tasks[i];
+    const currentTasks = await getTasks();
+    if (!currentTasks || currentTasks.length === 0) break;
 
-    if (!task) continue;
+    // Encontrar próxima tarefa que ainda está pendente de execução
+    const pendingTask = currentTasks.find(t => {
+      if (t.isDone) return false;
+      if (t.btnText !== 'GO') return false;
+      const attempts = taskAttempts[t.title] || 0;
+      if (attempts >= maxAttemptsPerTask) return false;
+      return true;
+    });
 
-    console.log(`\n--- Tarefa [${i + 1}/${tasks.length}]: "${task.title}" (${task.coins}) ---`);
-    if (task.isDone) {
-      console.log(`Status: Já concluída anteriormente.`);
-      results.push({ title: task.title, status: 'Já concluída anteriormente', coins: task.coins });
-      continue;
+    if (!pendingTask) {
+      console.log('\nTodas as tarefas disponíveis foram concluídas ou verificadas.');
+      break;
     }
 
-    const titleLower = task.title.toLowerCase();
-    const descLower = task.desc.toLowerCase();
+    const currentAttempt = (taskAttempts[pendingTask.title] || 0) + 1;
+    taskAttempts[pendingTask.title] = currentAttempt;
+    totalActions++;
 
-    // Re-buscar o botão no DOM atual
-    const taskElements = await page.$$('.e2e_normal_task');
-    const currentTaskEl = taskElements[i];
+    const roundInfo = pendingTask.statusText ? ` [Rodada: ${pendingTask.statusText}]` : '';
+    console.log(`\n--- Executando: "${pendingTask.title}"${roundInfo} (${pendingTask.coins}) ---`);
+
+    const titleLower = pendingTask.title.toLowerCase();
+    const descLower = pendingTask.desc.toLowerCase();
+
+    // Localizar elemento correspondente no DOM
+    const currentTaskEls = await page.$$('.e2e_normal_task');
+    let currentTaskEl = currentTaskEls[pendingTask.index];
+    const actualTitle = await currentTaskEl?.$eval('.e2e_normal_task_content_title', el => el.innerText.trim()).catch(() => '');
+    if (actualTitle !== pendingTask.title) {
+      for (const el of currentTaskEls) {
+        const t = await el.$eval('.e2e_normal_task_content_title', e => e.innerText.trim()).catch(() => '');
+        if (t === pendingTask.title) {
+          currentTaskEl = el;
+          break;
+        }
+      }
+    }
+
     if (!currentTaskEl) {
-      results.push({ title: task.title, status: 'Não encontrada no DOM', coins: task.coins });
+      console.log(`Tarefa "${pendingTask.title}" não encontrada no DOM.`);
       continue;
     }
+
     const goBtn = await currentTaskEl.$('.e2e_normal_task_right_btn');
     if (!goBtn) {
-      results.push({ title: task.title, status: 'Botão não encontrado', coins: task.coins });
+      console.log(`Botão GO não encontrado para "${pendingTask.title}".`);
       continue;
     }
 
@@ -261,25 +318,16 @@ async function runTasks() {
 
     const activePage = newPageOpened || page;
     const isNewTab = newPageOpened !== null;
-    const activeUrl = activePage.url();
-    console.log(`Página ativa da tarefa: ${activeUrl}`);
+    console.log(`Página ativa da tarefa: ${activePage.url()}`);
 
     try {
-      if (titleLower.includes('surprise items') || descLower.includes('tap 3 items')) {
-        // Tocar em 3 itens (Rodada 1)
-        const clicked1 = await executeSurpriseItems(activePage, task);
-        console.log(`Rodada 1 concluída: ${clicked1} itens tocados.`);
+      if (titleLower.includes('surprise') || titleLower.includes('surpresa') || descLower.includes('tap 3') || descLower.includes('toque em 3')) {
+        // Tocar em 3 itens (usando offset para rodadas subsequentes)
+        const startCardIdx = (pendingTask.currentRound && pendingTask.currentRound > 0) ? (pendingTask.currentRound * 3) : 0;
+        const clicked = await executeSurpriseItems(activePage, startCardIdx);
+        console.log(`Rodada concluída: ${clicked} itens tocados.`);
 
-        // Se a tarefa possuir 2 rodadas (ex: 0/2 ou 1/2), realizar rodada 2
-        if (task.allText.includes('0/2') && cards.length >= 6) {
-          console.log('Executando rodada 2 de 2...');
-          await executeSurpriseItems(activePage, task);
-        }
-
-        results.push({ title: task.title, status: 'Concluída com sucesso', coins: task.coins });
-
-      } else if (titleLower.includes('search') || descLower.includes('keywords')) {
-        // Tarefa de pesquisa
+      } else if (titleLower.includes('search') || titleLower.includes('pesquisa') || titleLower.includes('buscar') || descLower.includes('keywords') || descLower.includes('palavra')) {
         console.log('Executando tarefa: pesquisa com palavra-chave...');
         const searchInput = await activePage.$('input');
         if (searchInput) {
@@ -287,58 +335,63 @@ async function runTasks() {
           await activePage.waitForTimeout(500);
           await searchInput.press('Enter');
           await waitWithScroll(activePage, 16);
-          results.push({ title: task.title, status: 'Concluída (pesquisa de 15s realizada)', coins: task.coins });
         } else {
           await waitWithScroll(activePage, 16);
-          results.push({ title: task.title, status: 'Concluída (navegação de busca de 15s)', coins: task.coins });
         }
 
-      } else if (titleLower.includes('prize land') || descLower.includes('prize land') || descLower.includes('water') || titleLower.includes('0.1') || descLower.includes('0.1')) {
-        // Fazenda Mágica / Prize land água
-        console.log('Executando tarefa: Prize Land (ganhe itens de US$ 0.10)...');
+      } else if (titleLower.includes('prize land') || descLower.includes('prize land') || descLower.includes('water') || descLower.includes('regar') || titleLower.includes('0.1') || descLower.includes('0.1')) {
+        console.log('Executando tarefa: Prize Land...');
         await activePage.waitForTimeout(3000);
         const waterBtn = await activePage.$('.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"], button:has-text("regar"), button:has-text("Water")');
         if (waterBtn) {
           await activePage.evaluate(el => el.click(), waterBtn);
           await activePage.waitForTimeout(3000);
-          results.push({ title: task.title, status: 'Concluída (água adicionada)', coins: task.coins });
         } else {
-          // O jogo da árvore Prize Land requer o app nativo AliExpress (AliApp/WindVane)
-          results.push({ title: task.title, status: 'Exclusiva do App AliExpress (requer rega no app móvel)', coins: task.coins });
+          console.log('Prize Land requer app AliExpress nativo.');
         }
+        taskAttempts[pendingTask.title] = 999; // Não repetir em novas rodadas
 
-      } else if (titleLower.includes('merge boss') || titleLower.includes('game') || titleLower.includes('quiz')) {
-        // Minigames / Quiz
-        console.log(`Tarefa interativa: ${task.title}`);
-        await activePage.waitForTimeout(4000);
-        results.push({ title: task.title, status: 'Requer interação direta no App AliExpress (minigame/quiz)', coins: task.coins });
-
-      } else if (descLower.includes('15s') || descLower.includes('15 seconds') || titleLower.includes('recap') || titleLower.includes('recently viewed') || titleLower.includes('sponsored') || titleLower.includes('super discounts') || titleLower.includes('coupons')) {
-        // Tarefas de navegação por 15 segundos
-        console.log('Executando tarefa: navegação por 15s com scroll...');
-        await waitWithScroll(activePage, 17);
-        results.push({ title: task.title, status: 'Concluída (aguardou 15s)', coins: task.coins });
+      } else if (titleLower.includes('merge boss') || titleLower.includes('game') || titleLower.includes('jogo') || titleLower.includes('quiz')) {
+        console.log(`Tarefa interativa: ${pendingTask.title}`);
+        await activePage.waitForTimeout(3000);
+        taskAttempts[pendingTask.title] = 999; // Não repetir em novas rodadas
 
       } else {
-        // Genérico: aguardar 15s navegando
-        console.log('Executando tarefa genérica: aguardando 15s com scroll...');
-        await waitWithScroll(activePage, 16);
-        results.push({ title: task.title, status: 'Concluída (aguardou 15s)', coins: task.coins });
+        // Tarefas de navegação por 15 segundos (Sponsored, Super discounts, Recap, Cupons, etc.)
+        console.log(`Executando tarefa: navegação por 15s com scroll ("${pendingTask.title}")...`);
+        await waitWithScroll(activePage, 17);
       }
 
     } catch (taskErr) {
-      console.error(`Erro ao executar "${task.title}":`, taskErr.message);
-      results.push({ title: task.title, status: `Falhou: ${taskErr.message}`, coins: task.coins });
+      console.error(`Erro ao executar "${pendingTask.title}":`, taskErr.message);
     }
 
     // Fechar aba criada para a tarefa e voltar à página principal
     if (isNewTab) {
       await activePage.close().catch(() => {});
-    } else if (page.url() !== 'https://m.aliexpress.com/p/coin-index/index.html') {
+    } else if (!page.url().includes('coin-index/index.html')) {
       await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(4000);
     }
     await page.waitForTimeout(2000);
+  }
+
+  // Obter status consolidado de todas as tarefas
+  await openDrawer();
+  const finalTasks = await getTasks();
+  const results = [];
+  for (const t of finalTasks) {
+    let status = 'Pendente';
+    if (t.isDone) {
+      status = t.statusText ? `Concluída (${t.statusText})` : 'Concluída';
+    } else if (isInteractiveOrAppOnly(t)) {
+      status = (t.title.toLowerCase().includes('quiz') || t.title.toLowerCase().includes('merge boss'))
+        ? 'Requer interação direta no App AliExpress (minigame/quiz)'
+        : 'Exclusiva do App AliExpress (requer rega no app móvel)';
+    } else if (t.statusText) {
+      status = `Executada parcialmente (${t.statusText})`;
+    }
+    results.push({ title: t.title, status, coins: t.coins });
   }
 
   // 3. Confirmar saldo final de moedas
