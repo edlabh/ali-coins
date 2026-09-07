@@ -175,26 +175,30 @@ async function runTasks() {
       const btnStyle = btn?.getAttribute('style') || '';
       const statusText = e.querySelector('.statusText')?.innerText?.trim() || '';
 
+      let completedRounds = null;
       let currentRound = null;
       let totalRounds = null;
       if (statusText) {
         const sm = statusText.match(/^([0-9]+)\/([0-9]+)$/);
         if (sm) {
-          currentRound = parseInt(sm[1], 10);
+          completedRounds = parseInt(sm[1], 10);
           totalRounds = parseInt(sm[2], 10);
+          // O contador da rodada em execução inicia no valor 1
+          // (ex: se o AliExpress indica 0/2 concluídas, estamos na rodada 1; se 1/2, rodada 2)
+          currentRound = Math.min(completedRounds + 1, totalRounds);
         }
       }
 
       const isDone = btnStyle.includes('opacity: 0.5') ||
                      btnStyle.includes('cover') ||
                      btnText !== 'GO' ||
-                     (totalRounds !== null && currentRound >= totalRounds);
+                     (totalRounds !== null && completedRounds !== null && completedRounds >= totalRounds);
 
       const groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
       const allText = e.innerText?.replace(/\n+/g, ' ') || '';
       const coinMatch = allText.match(/\+([0-9]+(?:～[0-9]+)?)/);
       const coins = coinMatch ? `+${coinMatch[1]} moedas` : '+5 moedas';
-      return { index: idx, title, desc, btnText, btnStyle, statusText, currentRound, totalRounds, isDone, groupId, coins, allText };
+      return { index: idx, title, desc, btnText, btnStyle, statusText, completedRounds, currentRound, totalRounds, isDone, groupId, coins, allText };
     }));
   }
 
@@ -280,7 +284,9 @@ async function runTasks() {
     taskAttempts[pendingTask.title] = currentAttempt;
     totalActions++;
 
-    const roundInfo = pendingTask.statusText ? ` [Rodada: ${pendingTask.statusText}]` : '';
+    const roundInfo = (pendingTask.currentRound && pendingTask.totalRounds)
+      ? ` [Rodada: ${pendingTask.currentRound}/${pendingTask.totalRounds}]`
+      : (pendingTask.statusText ? ` [Rodada: ${pendingTask.statusText}]` : '');
     console.log(`\n--- Executando: "${pendingTask.title}"${roundInfo} (${pendingTask.coins}) ---`);
 
     const titleLower = pendingTask.title.toLowerCase();
@@ -323,9 +329,9 @@ async function runTasks() {
     try {
       if (titleLower.includes('surprise') || titleLower.includes('surpresa') || descLower.includes('tap 3') || descLower.includes('toque em 3')) {
         // Tocar em 3 itens (usando offset para rodadas subsequentes)
-        const startCardIdx = (pendingTask.currentRound && pendingTask.currentRound > 0) ? (pendingTask.currentRound * 3) : 0;
+        const startCardIdx = (pendingTask.completedRounds && pendingTask.completedRounds > 0) ? (pendingTask.completedRounds * 3) : 0;
         const clicked = await executeSurpriseItems(activePage, startCardIdx);
-        console.log(`Rodada concluída: ${clicked} itens tocados.`);
+        console.log(`Rodada ${pendingTask.currentRound || 1} concluída: ${clicked} itens tocados.`);
 
       } else if (titleLower.includes('search') || titleLower.includes('pesquisa') || titleLower.includes('buscar') || descLower.includes('keywords') || descLower.includes('palavra')) {
         console.log('Executando tarefa: pesquisa com palavra-chave...');
@@ -337,6 +343,9 @@ async function runTasks() {
           await waitWithScroll(activePage, 16);
         } else {
           await waitWithScroll(activePage, 16);
+        }
+        if (pendingTask.totalRounds) {
+          console.log(`Rodada ${pendingTask.currentRound || 1} concluída com sucesso.`);
         }
 
       } else if (titleLower.includes('prize land') || descLower.includes('prize land') || descLower.includes('water') || descLower.includes('regar') || titleLower.includes('0.1') || descLower.includes('0.1')) {
@@ -360,6 +369,9 @@ async function runTasks() {
         // Tarefas de navegação por 15 segundos (Sponsored, Super discounts, Recap, Cupons, etc.)
         console.log(`Executando tarefa: navegação por 15s com scroll ("${pendingTask.title}")...`);
         await waitWithScroll(activePage, 17);
+        if (pendingTask.totalRounds) {
+          console.log(`Rodada ${pendingTask.currentRound || 1} concluída com sucesso.`);
+        }
       }
 
     } catch (taskErr) {
@@ -383,7 +395,7 @@ async function runTasks() {
   for (const t of finalTasks) {
     let status = 'Pendente';
     if (t.isDone) {
-      status = t.statusText ? `Concluída (${t.statusText})` : 'Concluída';
+      status = t.totalRounds ? `Concluída (${t.totalRounds}/${t.totalRounds})` : (t.statusText ? `Concluída (${t.statusText})` : 'Concluída');
     } else if (isInteractiveOrAppOnly(t)) {
       status = (t.title.toLowerCase().includes('quiz') || t.title.toLowerCase().includes('merge boss'))
         ? 'Requer interação direta no App AliExpress (minigame/quiz)'
