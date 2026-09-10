@@ -31,6 +31,10 @@ Se esses desafios não forem resolvidos, o AliExpress não emite o cookie mestre
 - O check-in não identifica a conta (`0 moedas`, sequência `N/D`).
 - O painel de tarefas ("Ganhe mais moedas") não carrega nem abre a gaveta.
 
+> [!IMPORTANT]
+> **Detecção Automática de Falha de Login:**
+> Se o script não conseguir obter simultaneamente a sequência de dias (*streak*), as moedas do check-in diário e o saldo total da conta, ele alerta explicitamente `[ERRO AO EFETUAR O LOGIN]`, purga a sessão inválida e interrompe a rotina imediatamente para evitar execuções com dados zerados ou travamentos no painel de tarefas.
+
 ---
 
 ## 2. Por que a Autenticação Funciona no PC e Falha na Nuvem?

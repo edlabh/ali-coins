@@ -150,7 +150,9 @@ async function runCheckin() {
   let bodyText = await page.innerText('body').catch(() => '');
   let needsLogin = loginInput !== null || bodyText.includes('Email or phone number') || bodyText.includes('Sign in') || bodyText.includes('Entrar');
 
+  let attemptedLogin = false;
   if (needsLogin) {
+    attemptedLogin = true;
     const username = env.ALI_USER;
     const password = env.ALI_PASSWORD;
 
@@ -432,15 +434,42 @@ async function runCheckin() {
   // 3. Sequência (streak) de dias consecutivos obtida dinamicamente da tela de moedas
   const streakDays = mobileStreak !== null ? mobileStreak : 'N/D';
 
-  // Se saldo e streak não foram encontrados, verificar se a sessão na verdade não está logada
-  if (totalBalance === 'N/D' && streakDays === 'N/D' && !alreadyCollected && !wasAlreadyCollectedToday) {
-    const finalCookies = await desktopCtx.cookies();
-    const isStillAuth = finalCookies.some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
-    if (!isStillAuth) {
-      await desktopCtx.close();
-      await browser.close();
-      throw new Error('A sessão do AliExpress não está autenticada. Faça login ou importe uma sessão válida com "node import_session.js".');
-    }
+  // Validação: Se não conseguir obter streak, moedas do check-in diário e total de moedas
+  const hasStreak = streakDays !== 'N/D' && streakDays !== null;
+  const hasTotalBalance = totalBalance !== 'N/D' && totalBalance !== null;
+  const hasCheckinCoins = (todayCheckinMatch !== null) || ((alreadyCollected || wasAlreadyCollectedToday) && coinsGainedToday !== '0');
+
+  if ((!hasStreak && !hasTotalBalance && !hasCheckinCoins) || (attemptedLogin && !hasStreak && !hasTotalBalance)) {
+    console.error('\n' + '='.repeat(68));
+    console.error(' [ERRO AO EFETUAR O LOGIN]');
+    console.error(` Não foi possível obter o streak, as moedas do check-in diário`);
+    console.error(` nem o saldo total de moedas para a conta "${userEmail}".`);
+    console.error(' O login no AliExpress não foi concluído com sucesso.');
+    console.error('');
+    console.error(' Diagnóstico da coleta:');
+    console.error(' • Streak (sequência): NÃO OBTIDO (N/D)');
+    console.error(' • Moedas do check-in: NÃO OBTIDAS (0 moedas)');
+    console.error(' • Saldo total: NÃO OBTIDO (N/D)');
+    console.error('');
+    console.error(' Possíveis causas:');
+    console.error(' 1. Credenciais inválidas no credentials.env');
+    console.error(' 2. Bloqueio por desafio de segurança (Slide Captcha / verificação por e-mail)');
+    console.error(' 3. Bloqueio anti-bot por IP de Datacenter/Nuvem (Oracle Cloud, AWS, VPS)');
+    console.error('');
+    console.error(' Como resolver:');
+    console.error(' • Em computadores pessoais: execute interativamente e resolva o desafio.');
+    console.error(' • Em servidores na nuvem: gere a sessão no PC local (./run_all.sh)');
+    console.error('   e transfira para a nuvem via: node export_session.js / node import_session.js');
+    console.error(' • Consulte o guia detalhado em: CLOUD_SESSIONS.md');
+    console.error('='.repeat(68) + '\n');
+
+    // Descartar sessão corrompida/inválida
+    if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+    if (fs.existsSync(sessionMetaPath)) fs.unlinkSync(sessionMetaPath);
+
+    await desktopCtx.close();
+    await browser.close();
+    throw new Error(`Erro ao efetuar o login: não foi possível obter o streak, as moedas do check-in diário e o saldo total da conta "${userEmail}".`);
   }
 
   let reportLine1 = (alreadyCollected || wasAlreadyCollectedToday)
