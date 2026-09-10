@@ -102,18 +102,42 @@ Consulte o guia completo com resolução de erros em INSTALL_LINUX.md.
      node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - Chromium rodando!'); await b.close(); })();"
 
 [WINDOWS]
-  npm install
-  npx playwright install chromium
+Consulte o guia completo em INSTALL_WINDOWS.md.
+
+- MODO AUTOMÁTICO (Recomendado):
+    Dê duplo clique no arquivo setup_windows.bat
+
+- MODO MANUAL:
+  1. Instale o Node.js 20 LTS:
+     winget install OpenJS.NodeJS.LTS
+     (ou baixe o instalador .msi em https://nodejs.org/)
+  2. Se usar PowerShell, libere execução de scripts se necessário:
+     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+  3. Instale dependências:
+     npm install
+  4. Baixe o Chromium do Playwright:
+     npx playwright install chromium
+  5. Valide a inicialização:
+     node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - Windows'); await b.close(); })();"
 
 [MACOS]
-  brew install node
-  npm install
-  npx playwright install chromium
+Consulte o guia completo em INSTALL_MACOS.md.
 
-[MACOS]
-  brew install node
-  npm install
-  npx playwright install chromium
+- MODO AUTOMÁTICO (Recomendado):
+    chmod +x setup_macos.sh
+    ./setup_macos.sh
+
+- MODO MANUAL:
+  1. Instale o Node.js 20 LTS via Homebrew:
+     brew install node
+  2. Conceda permissão aos scripts:
+     chmod +x *.sh
+  3. Instale dependências:
+     npm install
+  4. Baixe o Chromium nativo (Apple Silicon ou Intel):
+     npx playwright install chromium
+  5. Valide a inicialização:
+     node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - macOS'); await b.close(); })();"
 
 --------------------------------------------------------------------------------
 4. CONFIGURAÇÃO DAS CREDENCIAIS

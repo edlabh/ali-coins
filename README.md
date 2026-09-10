@@ -41,24 +41,72 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
 
 ---
 
-## 2. Preparação e Uso no Windows
+## 2. Preparação e Uso no Windows (Windows 10 e Windows 11)
 
-### Instalação
-1. Abra o terminal (**Prompt de Comando - CMD** ou **PowerShell**) na pasta do projeto.
-2. Instale as dependências:
-   ```cmd
-   npm install
-   ```
-3. Instale o navegador Chromium do Playwright:
-   ```cmd
-   npx playwright install chromium
-   ```
+> [!TIP]
+> Um manual aprofundado com passo a passo para o Agendador de Tarefas do Windows, comandos do PowerShell e resolução de erros está disponível em [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md).
 
-### Configuração das Credenciais
+Você pode realizar a instalação de forma **automática** através do script incluso ou seguir o **passo a passo manual detalhado**.
+
+---
+
+### Opção A: Instalação Automática via Script (Recomendado)
+
+Dê um duplo clique no arquivo **`setup_windows.bat`** (ou execute-o via terminal Prompt de Comando ou PowerShell).
+
+O script verificará sua versão do Node.js, executará o `npm install`, baixará o Chromium do Playwright, criará seu arquivo de credenciais e validará a inicialização do navegador.
+
+---
+
+### Opção B: Instalação Manual Passo a Passo Detalhada
+
+#### 1. Instalar o Node.js 20 LTS
+Certifique-se de possuir o Node.js 18 ou 20 LTS instalado. Caso precise instalar:
+- **Via Winget (Prompt de Comando ou PowerShell):**
+  ```cmd
+  winget install OpenJS.NodeJS.LTS
+  ```
+- **Ou pelo instalador oficial:** Baixe e execute o `.msi` da versão LTS em [https://nodejs.org/](https://nodejs.org/) (garanta que a opção *"Add to PATH"* permaneça marcada).
+
+> Feche e reabra o terminal após a instalação e confirme com:
+> ```cmd
+> node -v
+> npm -v
+> ```
+
+#### 2. Liberar Execução de Scripts no PowerShell (Se aplicável)
+Se ao executar scripts no PowerShell você receber o erro de política de execução (*ExecutionPolicy*), execute:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+#### 3. Instalar as Dependências do Projeto
+Na pasta do projeto:
+```cmd
+npm install
+```
+
+#### 4. Instalar o Navegador Chromium do Playwright
+```cmd
+npx playwright install chromium
+```
+
+*(Opcional: Caso esteja em uma instalação limpa do Windows e ocorra erro de DLL, instale o pacote de redistribuição da Microsoft: `winget install Microsoft.VCRedist.2015+.x64`)*.
+
+#### 5. Teste de Validação Rápida do Chromium
+```cmd
+node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('Chromium OK no Windows!'); await b.close(); })();"
+```
+
+#### 6. Configuração das Credenciais
 1. Crie o arquivo `credentials.env` a partir do modelo:
    - No CMD: `copy credentials.env.example credentials.env`
    - No PowerShell: `Copy-Item credentials.env.example credentials.env`
-2. Abra o `credentials.env` no Bloco de Notas ou editor de código e insira suas credenciais:
+2. Abra o arquivo no Bloco de Notas:
+   ```cmd
+   notepad credentials.env
+   ```
+3. Preencha seu usuário e senha do AliExpress:
    ```env
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
@@ -71,7 +119,7 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
   # ou via PowerShell:
   .\run_all.ps1
   # ou via npm:
-  npm run all
+  npm start
   ```
 - **Execuções individuais:**
   ```cmd
@@ -81,27 +129,71 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
 
 ---
 
-## 3. Preparação e Uso no macOS (Apple Silicon & Intel)
+## 3. Preparação e Uso no macOS (Apple Silicon M1/M2/M3/M4 & Intel)
 
-### Instalação
-1. Abra o aplicativo **Terminal**.
-2. Verifique se o Node.js está instalado (`node -v`). Se necessário, instale via Homebrew (`brew install node`) ou pelo site oficial.
-3. Instale as dependências do projeto:
-   ```bash
-   npm install
-   ```
-4. Baixe o navegador Chromium compatível com sua arquitetura (M1/M2/M3/M4 ou Intel):
-   ```bash
-   npx playwright install chromium
-   ```
+> [!TIP]
+> Um manual aprofundado com configuração nativa via `launchd`, permissões do sistema no macOS Sequoia/Sonoma e resolução de erros está disponível em [INSTALL_MACOS.md](INSTALL_MACOS.md).
 
-### Configuração das Credenciais
+Você pode realizar a instalação de forma **automática** através do script incluso ou seguir o **passo a passo manual detalhado**.
+
+---
+
+### Opção A: Instalação Automática via Script (Recomendado)
+
+Abra o aplicativo **Terminal** na pasta do projeto e execute:
+```bash
+chmod +x setup_macos.sh
+./setup_macos.sh
+```
+
+O script detecta a arquitetura do seu processador, verifica o Node.js, roda o `npm install`, baixa o binário nativo do Chromium para ARM64 ou Intel e valida a execução.
+
+---
+
+### Opção B: Instalação Manual Passo a Passo Detalhada
+
+#### 1. Instalar o Node.js 20 LTS
+Abra o **Terminal** e verifique se possui o Node.js (`node -v`). Se precisar instalar:
+- **Via Homebrew (Recomendado):**
+  ```bash
+  brew install node
+  ```
+- **Ou pelo instalador oficial:** Baixe o pacote `.pkg` da versão LTS em [https://nodejs.org/](https://nodejs.org/).
+
+Confirme as versões instaladas:
+```bash
+node -v
+npm -v
+```
+
+#### 2. Permissões de Execução dos Scripts
+```bash
+chmod +x *.sh
+```
+
+#### 3. Instalar Dependências do Projeto
+```bash
+npm install
+```
+
+#### 4. Baixar o Chromium Nativo via Playwright
+O Playwright detecta automaticamente se o Mac é Apple Silicon (arm64) ou Intel (x64) e baixa o binário otimizado:
+```bash
+npx playwright install chromium
+```
+
+#### 5. Teste de Validação Rápida do Chromium
+```bash
+node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('Chromium OK no macOS!'); await b.close(); })();"
+```
+
+#### 6. Configuração das Credenciais
 1. Crie o arquivo `credentials.env`:
    ```bash
    cp credentials.env.example credentials.env
    chmod 600 credentials.env
    ```
-2. Edite o arquivo `credentials.env`:
+2. Edite o arquivo (`nano credentials.env` ou `open -e credentials.env`):
    ```env
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
@@ -112,7 +204,7 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
   ```bash
   ./run_all.sh
   # ou via npm:
-  npm run all
+  npm start
   ```
 - **Execuções individuais:**
   ```bash
