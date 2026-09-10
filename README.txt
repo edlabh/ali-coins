@@ -58,26 +58,55 @@ Compatível com: Windows 10/11, macOS (Apple Silicon & Intel) e Linux (Ubuntu/De
 - Via npm:            npm run tasks
 
 --------------------------------------------------------------------------------
-3. INSTALAÇÃO RÁPIDA
+3. INSTALAÇÃO (LINUX, WINDOWS, MACOS)
 --------------------------------------------------------------------------------
 
 [LINUX - UBUNTU 20.04 / 22.04 / 24.04 E DEBIAN]
-- Modo Automático (Recomendado):
+Consulte o guia completo com resolução de erros em INSTALL_LINUX.md.
+
+- MODO AUTOMÁTICO (Recomendado - 1 comando):
     chmod +x setup_linux.sh
     ./setup_linux.sh
 
-- Modo Manual:
-  1. Instale Node.js 20 LTS (o Node padrão do Ubuntu 22.04 é antigo/incompatível):
+- MODO MANUAL PASSO A PASSO:
+  1. Instale o Node.js 20 LTS (o Node 12 padrão do Ubuntu 22.04 é incompatível):
+     # Se já instalou o node antigo pelo apt, remova:
+     sudo apt-get remove -y nodejs npm && sudo apt-get autoremove -y
+     # Instale o Node 20 LTS via NodeSource:
+     sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg git
      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-     sudo apt-get install -y nodejs git
-  2. Dê permissão aos scripts e instale dependências:
+     sudo apt-get install -y nodejs
+     # Verifique: node -v (deve ser v20.x)
+
+  2. Conceda permissão aos scripts:
      chmod +x *.sh
+
+  3. Instale as dependências do projeto:
      npm install
+
+  4. Baixe o navegador Chromium:
      npx playwright install chromium
-  3. Instale as bibliotecas do sistema para o Chromium:
+
+  5. Instale as bibliotecas nativas de sistema para o Chromium:
+     # Via Playwright (recomendado):
      sudo npx playwright install-deps chromium
+     
+     # Ou via apt-get (Ubuntu 22.04):
+     sudo apt-get update && sudo apt-get install -y \
+       libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 \
+       libcups2 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0 libnspr4 libnss3 \
+       libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
+       libxfixes3 libxkbcommon0 libxrandr2 fonts-liberation fonts-noto-color-emoji
+
+  6. Validar se o Chromium inicia perfeitamente:
+     node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - Chromium rodando!'); await b.close(); })();"
 
 [WINDOWS]
+  npm install
+  npx playwright install chromium
+
+[MACOS]
+  brew install node
   npm install
   npx playwright install chromium
 

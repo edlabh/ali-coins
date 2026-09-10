@@ -124,6 +124,9 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
 
 ## 4. Preparação e Uso no Ubuntu / Linux (Ubuntu 20.04, 22.04, 24.04 e Debian)
 
+> [!TIP]
+> Um guia aprofundado com resolução de erros, configuração de VPS headless (Oracle Cloud, AWS, DigitalOcean) e criação de memória Swap está disponível em [INSTALL_LINUX.md](INSTALL_LINUX.md).
+
 Você pode realizar a instalação de forma **100% automatizada** através do script incluso ou seguir o **passo a passo manual detalhado**.
 
 ---
@@ -140,14 +143,20 @@ chmod +x setup_linux.sh
 
 ---
 
-### Opção B: Instalação Manual Passo a Passo
+### Opção B: Instalação Manual Passo a Passo Detalhada
 
 Caso prefira executar cada etapa manualmente:
 
 #### 1. Instalar o Node.js 20 LTS
 > [!IMPORTANT]
-> No Ubuntu 22.04 LTS, o comando padrão `sudo apt install nodejs` instala uma versão muito antiga (v12), incompatível com o Playwright. É necessário instalar o **Node.js 20 LTS** via NodeSource ou NVM:
+> No Ubuntu 22.04 LTS, o comando padrão `sudo apt install nodejs` instala a versão legada `v12.22.9`, incompatível com o Playwright (que exige Node >= 18).
+>
+> Se você já tiver instalado essa versão antiga, remova-a primeiro:
+> ```bash
+> sudo apt-get remove -y nodejs npm && sudo apt-get autoremove -y
+> ```
 
+**Instalação via NodeSource (Recomendado para servidores/VPS):**
 ```bash
 # Atualizar repositórios e instalar utilitários básicos
 sudo apt-get update
@@ -160,6 +169,13 @@ sudo apt-get install -y nodejs
 # Confirmar versões (Node >= 18 e npm >= 9)
 node -v
 npm -v
+```
+
+*(Alternativa via NVM - gerenciamento no espaço de usuário sem sudo):*
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+source ~/.bashrc
+nvm install 20 && nvm use 20
 ```
 
 #### 2. Permissões de Execução dos Scripts
@@ -180,7 +196,7 @@ npx playwright install chromium
 
 #### 5. Instalar Dependências do Sistema Operacional para o Chromium
 
-O Chromium requer bibliotecas gráficas e de áudio do sistema (mesmo em modo headless).
+Mesmo em modo headless (sem interface gráfica), o Chromium requer bibliotecas nativas do sistema para renderização e decodificação:
 
 - **Método Oficial Playwright (Recomendado):**
   ```bash
@@ -208,7 +224,16 @@ O Chromium requer bibliotecas gráficas e de áudio do sistema (mesmo em modo he
       fonts-liberation fonts-noto-color-emoji
     ```
 
-#### 6. Configuração das Credenciais
+#### 6. Teste de Validação Rápida do Chromium
+Para certificar-se de que o navegador inicia perfeitamente sem erros de bibliotecas ausentes:
+```bash
+node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('✅ Chromium iniciado com sucesso!'); await b.close(); })();"
+```
+
+> [!TIP]
+> Caso algum erro de biblioteca ocorra, execute `ldd ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome | grep "not found"` para identificar exatamente qual pacote `.so` falta.
+
+#### 7. Configuração das Credenciais
 1. Crie o arquivo `credentials.env`:
    ```bash
    cp credentials.env.example credentials.env

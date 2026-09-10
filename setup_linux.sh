@@ -112,7 +112,7 @@ else
 fi
 
 # 6. Permissões de scripts e arquivo de credenciais
-echo "[6/6] Ajustando permissões e credenciais..."
+echo "[6/7] Ajustando permissões e credenciais..."
 chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 
 if [ ! -f "$SCRIPT_DIR/credentials.env" ]; then
@@ -123,6 +123,19 @@ if [ ! -f "$SCRIPT_DIR/credentials.env" ]; then
   fi
 else
   echo "Arquivo 'credentials.env' já existente (mantido)."
+fi
+
+# 7. Teste de inicialização do Chromium
+echo "[7/7] Testando inicialização do Chromium no ambiente..."
+if [ -d "$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu" ]; then
+  export LD_LIBRARY_PATH="$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+fi
+if node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true, args: ['--no-sandbox'] }); await b.close(); })();" 2>/dev/null; then
+  echo "✅ Sucesso: O navegador Chromium iniciou normalmente sem erros de dependência!"
+else
+  echo "⚠️ Aviso: O Chromium encontrou dificuldades ao iniciar."
+  echo "Para verificar bibliotecas faltantes no sistema, execute:"
+  echo "  ldd ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome | grep 'not found'"
 fi
 
 echo ""
