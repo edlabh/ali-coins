@@ -12,18 +12,20 @@ async function main() {
   try {
     checkinResult = await runCheckin();
   } catch (err) {
-    console.error('Aviso na etapa de check-in:', err.message);
+    console.error('\nErro na etapa de check-in:', err.message);
+  }
+
+  if (!checkinResult) {
+    console.error('\n[ERRO CRÍTICO] Falha na etapa de check-in / autenticação.');
+    console.error('Abortando a etapa de tarefas diárias para evitar execução inválida.\n');
+    process.exit(1);
   }
 
   console.log('\n---------------------------------------------------------------');
-  if (checkinResult) {
-    console.log(`[Login] Conta: ${checkinResult.userEmail}`);
-    console.log(`[Check-in] Status: ${checkinResult.alreadyCollected ? 'Já realizado hoje' : 'Coletado agora'} (+${checkinResult.coinsGainedToday} moedas)`);
-    console.log(`[Sequência] ${checkinResult.streakDays} dias seguidos sem falha`);
-    console.log(`[Saldo Parcial] ${checkinResult.totalBalance} moedas`);
-  } else {
-    console.log('[Check-in] Executado.');
-  }
+  console.log(`[Login] Conta: ${checkinResult.userEmail}`);
+  console.log(`[Check-in] Status: ${checkinResult.alreadyCollected ? 'Já realizado hoje' : 'Coletado agora'} (+${checkinResult.coinsGainedToday} moedas)`);
+  console.log(`[Sequência] ${checkinResult.streakDays} dias seguidos sem falha`);
+  console.log(`[Saldo Parcial] ${checkinResult.totalBalance} moedas`);
   console.log('---------------------------------------------------------------\n');
 
   // ETAPA 2: Execução das tarefas diárias

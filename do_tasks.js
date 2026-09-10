@@ -41,12 +41,17 @@ async function runTasks() {
 
   if (fs.existsSync(sessionPath)) {
     try {
-      if (fs.existsSync(sessionMetaPath)) {
-        const meta = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
-        if (meta.user === env.ALI_USER) isAccountMatch = true;
-      } else {
-        const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
-        if (env.ALI_USER && sessionContent.includes(env.ALI_USER)) isAccountMatch = true;
+      const sessionData = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
+      const hasAuthCookie = (sessionData.cookies || []).some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
+
+      if (hasAuthCookie) {
+        if (fs.existsSync(sessionMetaPath)) {
+          const meta = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
+          if (meta.user === env.ALI_USER) isAccountMatch = true;
+        } else {
+          const sessionContent = JSON.stringify(sessionData);
+          if (env.ALI_USER && sessionContent.includes(env.ALI_USER)) isAccountMatch = true;
+        }
       }
     } catch (e) {}
   }
@@ -177,7 +182,17 @@ async function runTasks() {
     return isDrawerOpen;
   }
 
-  await openDrawer();
+  const drawerOpened = await openDrawer();
+  if (!drawerOpened) {
+    console.warn('[Aviso] Não foi possível abrir o painel "Ganhe mais moedas" após 6 tentativas.');
+    console.warn('[Aviso] Verifique se a sessão ainda é válida ou se o AliExpress exigiu verificação de segurança.');
+    await page.screenshot({ path: path.join(__dirname, 'tasks_drawer_failed.png'), fullPage: true }).catch(() => {});
+    await browser.close();
+    return {
+      results: [],
+      finalCoins: 'N/D'
+    };
+  }
 
   // Ler tarefas com suporte a rodadas (ex: 1/2, 2/3)
   async function getTasks() {

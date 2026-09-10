@@ -3,6 +3,7 @@ libs/
 credentials.env*
 session.json
 session_meta.json
+session_token.txt
 scratch/
 *.bak
 *.png

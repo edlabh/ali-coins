@@ -293,4 +293,20 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
   ```
 
+### E. Servidores em Nuvem (Oracle Cloud, AWS, VPS): Desafio de Captcha ou Bloqueio no Login
+- **Causa:** O AliExpress implementa um controle rigoroso anti-bot (Baxia). Quando uma tentativa de login (usuário e senha) parte de um IP de Datacenter/Nuvem (como Oracle Cloud, AWS ou DigitalOcean), o AliExpress quase sempre bloqueia o envio exibindo um Slide Captcha de alta precisão ou solicitando código de confirmação 2FA por e-mail/SMS.
+- **Por que isso não afeta computadores locais?** Em conexões residenciais (seu PC com Windows, macOS ou Linux Desktop), o IP é considerado confiável e o login ocorre com facilidade.
+- **Como resolver em 10 segundos:**
+  1. Em seu computador local (onde o IP residencial não é bloqueado), execute:
+     ```bash
+     node export_session.js
+     ```
+     O script exibirá um comando de importação contendo o token compacto da sessão.
+  2. No terminal do seu servidor na nuvem (Oracle Cloud / VPS), dentro da pasta `ali-coins`, cole e execute o comando exibido:
+     ```bash
+     node import_session.js '<TOKEN_GERADO>'
+     ```
+  3. Pronto! Os arquivos `session.json` e `session_meta.json` serão gravados e o `./run_all.sh` rodará diariamente na nuvem reutilizando a sessão sem necessidade de refazer login por semanas ou meses.
+
 ---
+

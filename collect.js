@@ -58,22 +58,33 @@ async function runCheckin() {
   if (fs.existsSync(sessionPath)) {
     try {
       let isAccountMatch = false;
+      let hasAuthCookie = false;
+
+      const sessionData = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
+      hasAuthCookie = (sessionData.cookies || []).some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
+
       if (fs.existsSync(sessionMetaPath)) {
         const meta = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
         if (meta.user === env.ALI_USER) isAccountMatch = true;
       } else {
-        const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
+        const sessionContent = JSON.stringify(sessionData);
         if (env.ALI_USER && sessionContent.includes(env.ALI_USER)) isAccountMatch = true;
       }
 
-      if (env.ALI_USER && !isAccountMatch) {
+      if (!hasAuthCookie) {
+        console.log('[Login] Arquivo session.json não possui cookies válidos de autenticação.');
+        if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+        if (fs.existsSync(sessionMetaPath)) fs.unlinkSync(sessionMetaPath);
+      } else if (env.ALI_USER && !isAccountMatch) {
         console.log(`[Login] Conta alterada para "${env.ALI_USER}". Renovando sessão...`);
         if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
         if (fs.existsSync(sessionMetaPath)) fs.unlinkSync(sessionMetaPath);
       } else {
         hasValidSession = true;
       }
-    } catch (e) {}
+    } catch (e) {
+      if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+    }
   }
 
   if (hasValidSession && fs.existsSync(sessionPath)) {
@@ -153,6 +164,44 @@ async function runCheckin() {
       loginInput = await page.waitForSelector('input.cosmos-input, input[type="text"], input[type="email"]', { timeout: 10000 }).catch(() => null);
     }
 
+    // Função auxiliar para tentar resolver slide captcha em qualquer frame ou página principal
+    async function trySolveSlider(p) {
+      const targets = [p, ...p.frames()];
+      for (const target of targets) {
+        try {
+          const sliderHandle = await target.$('#nc_1_n1z, .btn_slide, span[class*="btn_slide"], #nc_1__scale_text .btn_slide, div[id*="nocaptcha"] span');
+          if (sliderHandle) {
+            console.log('[Login] Verificação de segurança (slide captcha) detectada. Tentando deslizar...');
+            const box = await sliderHandle.boundingBox();
+            if (box) {
+              const trackBox = await target.$eval('#nc_1__scale_text, .nc_scale, div[id*="nocaptcha"]', el => {
+                const b = el.getBoundingClientRect();
+                return { width: b.width };
+              }).catch(() => ({ width: 320 }));
+              const distance = (trackBox && trackBox.width > 150) ? (trackBox.width - box.width + 10) : 300;
+
+              await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+              await p.mouse.down();
+              const steps = 30;
+              for (let i = 1; i <= steps; i++) {
+                const progress = i / steps;
+                const ease = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+                const currentX = box.x + box.width / 2 + (distance * ease);
+                const jitterY = box.y + box.height / 2 + (Math.random() * 2 - 1);
+                await p.mouse.move(currentX, jitterY);
+                await p.waitForTimeout(15 + Math.floor(Math.random() * 10));
+              }
+              await p.waitForTimeout(100);
+              await p.mouse.up();
+              await p.waitForTimeout(4000);
+              return true;
+            }
+          }
+        } catch (e) {}
+      }
+      return false;
+    }
+
     if (loginInput) {
       console.log(`[Login] Autenticando com credenciais de "${username}"...`);
       await loginInput.fill(username);
@@ -160,12 +209,16 @@ async function runCheckin() {
       await loginInput.press('Enter');
       await page.waitForTimeout(4000);
 
+      // Checar se apareceu slider logo após digitar o usuário
+      await trySolveSlider(page);
+
       let passwordInput = await page.$('input[type="password"], #fm-login-password');
       if (!passwordInput) {
         const continueBtn = await page.$('button.cosmos-btn-primary, button:has-text("Continue"), button:has-text("Continuar")');
         if (continueBtn) {
           await page.evaluate(el => el.click(), continueBtn);
           await page.waitForTimeout(4000);
+          await trySolveSlider(page);
           passwordInput = await page.$('input[type="password"], #fm-login-password');
         }
       }
@@ -181,45 +234,74 @@ async function runCheckin() {
           await passwordInput.press('Enter');
         }
         await page.waitForTimeout(6000);
+
+        // Checar se apareceu slider após envio da senha
+        await trySolveSlider(page);
       }
 
-      // Checar se apareceu desafio de slide captcha (Baxia)
-      const frame = page.frames().find(f => f.url().includes('punish') || f.name() === 'baxia-dialog-content');
-      if (frame) {
-        console.log('[Login] Verificação de segurança (slide captcha) detectada. Tentando deslizar...');
-        const sliderBtn = await frame.waitForSelector('#nc_1_n1z, .btn_slide, span[class*="btn_slide"]', { timeout: 8000 }).catch(() => null);
-        if (sliderBtn) {
-          const box = await sliderBtn.boundingBox();
-          if (box) {
-            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-            await page.mouse.down();
-            for (let i = 1; i <= 25; i++) {
-              await page.waitForTimeout(20);
-              await page.mouse.move(box.x + box.width / 2 + (280 * i / 25), box.y + box.height / 2);
-            }
-            await page.waitForTimeout(100);
-            await page.mouse.up();
-            await page.waitForTimeout(5000);
+      // Checar se há campo de código de verificação 2FA (por e-mail ou SMS)
+      const codeInput = await page.$('input[placeholder*="code" i], input[name*="code" i], input[class*="code" i], input[type="tel"][maxlength="6"]').catch(() => null);
+      if (codeInput && process.stdin.isTTY) {
+        console.log('\n[Segurança AliExpress] Código de verificação requerido pelo AliExpress.');
+        const readline = require('readline');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const code = await new Promise(resolve => rl.question('>> Digite o código de 6 dígitos enviado para seu e-mail/SMS: ', ans => {
+          rl.close();
+          resolve(ans.trim());
+        }));
+        if (code) {
+          await codeInput.fill(code);
+          await page.waitForTimeout(500);
+          const submitCodeBtn = await page.$('button[type="submit"], button.cosmos-btn-primary, button:has-text("Confirm"), button:has-text("Verify"), button:has-text("Confirmar")');
+          if (submitCodeBtn) {
+            await page.evaluate(el => el.click(), submitCodeBtn);
+          } else {
+            await codeInput.press('Enter');
           }
+          await page.waitForTimeout(6000);
         }
       }
 
-      // Aguardar confirmação de login na página de moedas
-      await page.waitForSelector('#signButton, [class*="aecoin"], button:has-text("Collect"), button:has-text("Coletar"), div:has-text("Collect")', { timeout: 15000 }).catch(() => {});
+      // Aguardar confirmação e verificar se os cookies reais de autenticação foram gerados
+      let cookies = await context.cookies();
+      let hasAuthCookie = cookies.some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
 
-      const checkAuthSuccess = await page.evaluate(() => {
-        const text = document.body.innerText || '';
-        return text.includes('streak') || text.includes('Collect') || text.includes('Coletar') || text.includes('moedas') || !!document.querySelector('#signButton, [class*="aecoin"]');
-      });
+      if (!hasAuthCookie) {
+        for (let waitSec = 0; waitSec < 6; waitSec++) {
+          await page.waitForTimeout(2000);
+          cookies = await context.cookies();
+          hasAuthCookie = cookies.some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
+          if (hasAuthCookie) break;
+        }
+      }
 
-      if (checkAuthSuccess) {
+      if (hasAuthCookie) {
         try {
           await context.storageState({ path: sessionPath });
-          fs.writeFileSync(sessionMetaPath, JSON.stringify({ user: username, savedAt: new Date().toISOString() }), 'utf-8');
+          fs.writeFileSync(sessionMetaPath, JSON.stringify({ user: username, savedAt: new Date().toISOString() }, null, 2), 'utf-8');
           console.log('[Login] Nova sessão autenticada e salva com sucesso.');
         } catch (e) {}
       } else {
-        console.log('[Aviso] Confirmação de login pendente ou exigência de verificação adicional.');
+        const errScreenshot = path.join(__dirname, 'login_failed.png');
+        await page.screenshot({ path: errScreenshot, fullPage: true }).catch(() => {});
+
+        console.error('\n' + '='.repeat(65));
+        console.error(' [ERRO DE AUTENTICAÇÃO]');
+        console.error(` Falha ao autenticar a conta "${username}".`);
+        console.error(' O AliExpress bloqueou o login automático exigindo verificação');
+        console.error(' de segurança (Slide Captcha / código enviado por e-mail).');
+        console.error('');
+        console.error(' Uma captura de tela foi salva em: login_failed.png');
+        console.error('');
+        console.error(' SOLUÇÃO (Recomendada para Oracle Cloud / AWS / VPS):');
+        console.error(' 1. Execute em seu computador local (onde o login funciona sem bloqueio):');
+        console.error('    node export_session.js');
+        console.error(' 2. No servidor na nuvem, execute o comando gerado:');
+        console.error('    node import_session.js \'<TOKEN>\'');
+        console.error(' 3. A sessão será importada e continuará válida por semanas/meses!');
+        console.error('='.repeat(65) + '\n');
+        await browser.close();
+        throw new Error('Falha de autenticação no AliExpress (desafio de segurança não superado).');
       }
     }
   }
@@ -349,6 +431,17 @@ async function runCheckin() {
 
   // 3. Sequência (streak) de dias consecutivos obtida dinamicamente da tela de moedas
   const streakDays = mobileStreak !== null ? mobileStreak : 'N/D';
+
+  // Se saldo e streak não foram encontrados, verificar se a sessão na verdade não está logada
+  if (totalBalance === 'N/D' && streakDays === 'N/D' && !alreadyCollected && !wasAlreadyCollectedToday) {
+    const finalCookies = await desktopCtx.cookies();
+    const isStillAuth = finalCookies.some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
+    if (!isStillAuth) {
+      await desktopCtx.close();
+      await browser.close();
+      throw new Error('A sessão do AliExpress não está autenticada. Faça login ou importe uma sessão válida com "node import_session.js".');
+    }
+  }
 
   let reportLine1 = (alreadyCollected || wasAlreadyCollectedToday)
     ? `já estava coletado (+${coinsGainedToday} moedas)`

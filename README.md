@@ -385,4 +385,15 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 - **Login inicial:** Na primeira execução, o script realiza a autenticação com as credenciais do `credentials.env` e salva os tokens e cookies em `session.json`.
 - **Reutilização transparente:** Nas execuções seguintes, a sessão em `session.json` é aproveitada diretamente, evitando telas de login e verificações redundantes.
 - **Troca de Conta:** Se você alterar o `ALI_USER` no arquivo `credentials.env`, o script detecta automaticamente a mudança e descarta a sessão antiga, realizando um novo login transparente com a nova conta.
-- **Segurança:** Nunca envie nem comite os arquivos `credentials.env` ou `session.json`. Eles já estão protegidos pelo `.gitignore`.
+- **Sincronização em Nuvem (Oracle Cloud / AWS / VPS):** Em provedores de nuvem, tentativas de login direto por senha frequentemente sofrem bloqueio por IP de datacenter (Slide Captcha do AliExpress). Para sincronizar a sessão de forma rápida e segura:
+  1. Em seu computador local (onde o IP residencial não sofre bloqueio), execute:
+     ```bash
+     node export_session.js
+     ```
+  2. No terminal do servidor na nuvem, dentro da pasta `ali-coins`, cole e execute o comando exibido:
+     ```bash
+     node import_session.js '<TOKEN>'
+     ```
+  3. A sessão será importada e continuará válida por semanas ou meses sem precisar refazer login.
+- **Segurança:** Nunca envie nem comite os arquivos `credentials.env`, `session.json` ou `session_token.txt`. Eles já estão protegidos pelo `.gitignore`.
+
