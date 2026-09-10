@@ -173,11 +173,23 @@ Abra o arquivo credentials.env e preencha suas informações:
      Iniciar em: pasta completa do projeto ali-coins.
 
 --------------------------------------------------------------------------------
-6. SEGURANÇA E PERSISTÊNCIA
+6. GUIAS DE AJUDA DETALHADOS (ARQUIVOS SEPARADOS)
 --------------------------------------------------------------------------------
 
-- A sessão autenticada é guardada em 'session.json' para evitar telas de login
-  nas próximas execuções.
-- Se alterar o usuário no credentials.env, a troca é automática.
-- Os arquivos 'credentials.env' e 'session.json' nunca devem ser compartilhados.
+- Linux / Ubuntu 22.04 / 24.04:  Consulte INSTALL_LINUX.md
+- Windows 10 e 11:               Consulte INSTALL_WINDOWS.md
+- macOS Apple Silicon & Intel:   Consulte INSTALL_MACOS.md
+- Servidores na Nuvem e Sessões: Consulte CLOUD_SESSIONS.md
+
+--------------------------------------------------------------------------------
+7. SEGURANÇA E NUVEM (ORACLE CLOUD / AWS / VPS)
+--------------------------------------------------------------------------------
+
+- A sessão autenticada é salva em 'session.json'.
+- Para servidores em nuvem com bloqueio de IP no login, gere a sessão no PC:
+    node export_session.js
+  E importe no servidor:
+    node import_session.js '<TOKEN>'
+- Os arquivos 'credentials.env', 'session.json' e 'session_token.txt'
+  estão no .gitignore e nunca devem ser compartilhados.
 ================================================================================
