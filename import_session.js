@@ -45,15 +45,32 @@ async function importSession() {
 
   let payload;
   try {
-    const jsonStr = zlib.gunzipSync(Buffer.from(rawToken, 'base64')).toString('utf-8');
-    payload = JSON.parse(jsonStr);
+    let content = rawToken;
+    if (fs.existsSync(rawToken)) {
+      content = fs.readFileSync(rawToken, 'utf-8').trim();
+    }
+
+    if (content.startsWith('{')) {
+      const parsed = JSON.parse(content);
+      payload = parsed.session ? parsed : { session: parsed, meta: { user: 'importado' } };
+    } else {
+      try {
+        const jsonStr = zlib.gunzipSync(Buffer.from(content, 'base64')).toString('utf-8');
+        payload = JSON.parse(jsonStr);
+      } catch (gzErr) {
+        // Fallback para base64 direto sem compressao gzip
+        const jsonStr = Buffer.from(content, 'base64').toString('utf-8');
+        const parsed = JSON.parse(jsonStr);
+        payload = parsed.session ? parsed : { session: parsed, meta: { user: 'importado' } };
+      }
+    }
   } catch (e) {
-    console.error('[ERRO] Token inválido ou corrompido:', e.message);
+    console.error('[ERRO] Token ou arquivo inválido/incompleto:', e.message);
     process.exit(1);
   }
 
   if (!payload.session || !payload.session.cookies) {
-    console.error('[ERRO] Estrutura de sessão inválida no token.');
+    console.error('[ERRO] Estrutura de sessão inválida (campo "cookies" ausente).');
     process.exit(1);
   }
 
