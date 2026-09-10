@@ -58,7 +58,36 @@ Compatível com: Windows 10/11, macOS (Apple Silicon & Intel) e Linux (Ubuntu/De
 - Via npm:            npm run tasks
 
 --------------------------------------------------------------------------------
-3. CONFIGURAÇÃO DAS CREDENCIAIS
+3. INSTALAÇÃO RÁPIDA
+--------------------------------------------------------------------------------
+
+[LINUX - UBUNTU 20.04 / 22.04 / 24.04 E DEBIAN]
+- Modo Automático (Recomendado):
+    chmod +x setup_linux.sh
+    ./setup_linux.sh
+
+- Modo Manual:
+  1. Instale Node.js 20 LTS (o Node padrão do Ubuntu 22.04 é antigo/incompatível):
+     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+     sudo apt-get install -y nodejs git
+  2. Dê permissão aos scripts e instale dependências:
+     chmod +x *.sh
+     npm install
+     npx playwright install chromium
+  3. Instale as bibliotecas do sistema para o Chromium:
+     sudo npx playwright install-deps chromium
+
+[WINDOWS]
+  npm install
+  npx playwright install chromium
+
+[MACOS]
+  brew install node
+  npm install
+  npx playwright install chromium
+
+--------------------------------------------------------------------------------
+4. CONFIGURAÇÃO DAS CREDENCIAIS
 --------------------------------------------------------------------------------
 
 Crie o arquivo credentials.env a partir de credentials.env.example:
@@ -73,11 +102,14 @@ Abra o arquivo credentials.env e preencha suas informações:
   ALI_PASSWORD="sua_senha"
 
 --------------------------------------------------------------------------------
-4. AGENDAMENTO DIÁRIO AUTOMÁTICO
+5. AGENDAMENTO DIÁRIO AUTOMÁTICO
 --------------------------------------------------------------------------------
 
 - NO LINUX / MACOS (CRON):
-  Abra com 'crontab -e' e configure, por exemplo, para as 08:00 todos os dias:
+  Abra com 'crontab -e' e configure, por exemplo, para as 08:00 todos os dias
+  (inclua PATH no topo do crontab para garantir que o node seja encontrado):
+  SHELL=/bin/bash
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   0 8 * * * cd /caminho/para/ali-coins && ./run_all.sh >> coins_daily.log 2>&1
 
 - NO WINDOWS (AGENDADOR DE TAREFAS / TASK SCHEDULER):
@@ -88,7 +120,7 @@ Abra o arquivo credentials.env e preencha suas informações:
      Iniciar em: pasta completa do projeto ali-coins.
 
 --------------------------------------------------------------------------------
-5. SEGURANÇA E PERSISTÊNCIA
+6. SEGURANÇA E PERSISTÊNCIA
 --------------------------------------------------------------------------------
 
 - A sessão autenticada é guardada em 'session.json' para evitar telas de login

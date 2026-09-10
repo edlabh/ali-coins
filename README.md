@@ -122,34 +122,99 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
 
 ---
 
-## 4. Preparação e Uso no Ubuntu / Linux
+## 4. Preparação e Uso no Ubuntu / Linux (Ubuntu 20.04, 22.04, 24.04 e Debian)
 
-### Instalação
-1. Instale as dependências:
-   ```bash
-   npm install
-   ```
-2. Instale o navegador Chromium do Playwright:
-   ```bash
-   npx playwright install chromium
-   ```
-3. Instale as dependências de sistema para o Chromium:
-   - **Com permissão sudo / root:**
-     ```bash
-     sudo npx playwright install-deps
-     # ou:
-     sudo apt-get update && sudo apt-get install -y libnss3 libnspr4 libasound2t64
-     ```
-   - **Sem root (espaço de usuário local):**
-     O projeto já contém o mecanismo de fallback em `./libs` com `LD_LIBRARY_PATH` automático.
+Você pode realizar a instalação de forma **100% automatizada** através do script incluso ou seguir o **passo a passo manual detalhado**.
 
-### Configuração das Credenciais
+---
+
+### Opção A: Instalação Automática via Script (Recomendado)
+
+O projeto inclui um script que detecta sua versão do Ubuntu/Debian, instala o **Node.js 20 LTS** caso não possua, baixa o Chromium, instala todas as dependências nativas do sistema, concede permissões de execução e prepara seu arquivo de credenciais:
+
+```bash
+# Na pasta do projeto:
+chmod +x setup_linux.sh
+./setup_linux.sh
+```
+
+---
+
+### Opção B: Instalação Manual Passo a Passo
+
+Caso prefira executar cada etapa manualmente:
+
+#### 1. Instalar o Node.js 20 LTS
+> [!IMPORTANT]
+> No Ubuntu 22.04 LTS, o comando padrão `sudo apt install nodejs` instala uma versão muito antiga (v12), incompatível com o Playwright. É necessário instalar o **Node.js 20 LTS** via NodeSource ou NVM:
+
+```bash
+# Atualizar repositórios e instalar utilitários básicos
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg git
+
+# Adicionar repositório oficial do Node.js 20 LTS e instalar
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Confirmar versões (Node >= 18 e npm >= 9)
+node -v
+npm -v
+```
+
+#### 2. Permissões de Execução dos Scripts
+Garanta que os scripts do projeto tenham permissão de execução:
+```bash
+chmod +x *.sh
+```
+
+#### 3. Instalar Dependências do Projeto
+```bash
+npm install
+```
+
+#### 4. Instalar o Chromium do Playwright
+```bash
+npx playwright install chromium
+```
+
+#### 5. Instalar Dependências do Sistema Operacional para o Chromium
+
+O Chromium requer bibliotecas gráficas e de áudio do sistema (mesmo em modo headless).
+
+- **Método Oficial Playwright (Recomendado):**
+  ```bash
+  sudo npx playwright install-deps chromium
+  ```
+
+- **Ou via `apt-get` manual:**
+  - **Para Ubuntu 22.04 LTS (Jammy) e Debian 11/12:**
+    ```bash
+    sudo apt-get update && sudo apt-get install -y \
+      libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 \
+      libcairo2 libcups2 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0 \
+      libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
+      libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+      fonts-liberation fonts-noto-color-emoji
+    ```
+
+  - **Para Ubuntu 24.04 LTS (Noble):**
+    ```bash
+    sudo apt-get update && sudo apt-get install -y \
+      libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+      libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+      libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
+      libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+      fonts-liberation fonts-noto-color-emoji
+    ```
+
+#### 6. Configuração das Credenciais
 1. Crie o arquivo `credentials.env`:
    ```bash
    cp credentials.env.example credentials.env
    chmod 600 credentials.env
    ```
-2. Preencha `credentials.env`:
+2. Abra e preencha suas credenciais do AliExpress:
    ```env
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
@@ -160,7 +225,7 @@ Você pode rodar tudo junto de uma só vez ou os módulos individualmente:
   ```bash
   ./run_all.sh
   # ou via npm:
-  npm run all
+  npm start
   ```
 - **Execuções individuais:**
   ```bash
@@ -179,8 +244,11 @@ Abra a edição do seu agendador:
 ```bash
 crontab -e
 ```
-Adicione a linha para executar todo dia, por exemplo, às 08:00 da manhã via modo unificado:
+Adicione a linha para executar todo dia, por exemplo, às 08:00 da manhã via modo unificado (recomendamos incluir as variáveis `SHELL` e `PATH` no topo da crontab para garantir que o binário do Node.js seja localizado corretamente pelo daemon cron):
 ```cron
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 0 8 * * * cd /caminho/completo/para/ali-coins && ./run_all.sh >> coins_daily.log 2>&1
 ```
 
