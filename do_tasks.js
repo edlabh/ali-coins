@@ -57,11 +57,39 @@ async function runTasks() {
   }
 
   if (!isAccountMatch) {
-    console.log(`[Aviso] Sessão ausente ou alterada para "${env.ALI_USER}". Inicializando autenticação via check-in...`);
+    console.log(`[Aviso] Sessão ausente ou não autenticada para "${env.ALI_USER}". Inicializando autenticação via check-in...`);
     if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
     if (fs.existsSync(sessionMetaPath)) fs.unlinkSync(sessionMetaPath);
     const { runCheckin } = require('./collect');
-    await runCheckin();
+    try {
+      await runCheckin();
+    } catch (authErr) {
+      console.error('\n' + '='.repeat(68));
+      console.error(' [ERRO DE LOGIN - TAREFAS INTERROMPIDAS]');
+      console.error(` O login da conta "${env.ALI_USER}" falhou durante o check-in.`);
+      console.error(` Motivo: ${authErr.message}`);
+      console.error(' A execução das tarefas foi interrompida.');
+      console.error('='.repeat(68) + '\n');
+      throw authErr;
+    }
+  }
+
+  // Verificar se a sessão é estritamente válida antes de abrir o navegador
+  if (!fs.existsSync(sessionPath)) {
+    console.error('\n[ERRO DE LOGIN] Sessão não disponível. Execução das tarefas interrompida.\n');
+    throw new Error('Falha de login: arquivo session.json não encontrado.');
+  }
+
+  try {
+    const sessionData = JSON.parse(fs.readFileSync(sessionPath, 'utf-8'));
+    const hasAuthCookie = (sessionData.cookies || []).some(c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value);
+    if (!hasAuthCookie) {
+      console.error('\n[ERRO DE LOGIN] Sessão sem cookies válidos de autenticação. Execução das tarefas interrompida.\n');
+      if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+      throw new Error('Falha de login: cookies de autenticação ausentes.');
+    }
+  } catch (e) {
+    throw e;
   }
 
   const userEmail = env.ALI_USER || 'edelanoali@gmail.com';
@@ -120,6 +148,19 @@ async function runTasks() {
     await page.setViewportSize({ width: 412, height: 915 });
     await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
+  }
+
+  // Verificar se a página está deslogada (solicitando login)
+  const loginInput = await page.$('input.cosmos-input, input[type="text"], input[type="email"], #fm-login-id');
+  const bodyText = await page.innerText('body').catch(() => '');
+  if (loginInput !== null || bodyText.includes('Email or phone number') || bodyText.includes('Sign in')) {
+    console.error('\n' + '='.repeat(68));
+    console.error(' [ERRO DE LOGIN - TAREFAS INTERROMPIDAS]');
+    console.error(' A página de moedas exigiu login. A sessão expirou ou é inválida.');
+    console.error(' A execução das tarefas diárias foi interrompida imediatamente.');
+    console.error('='.repeat(68) + '\n');
+    await browser.close();
+    throw new Error('Execução de tarefas interrompida: sessão não autenticada no AliExpress.');
   }
 
   // 1. Check-in diário se ainda não tiver sido feito
@@ -184,14 +225,14 @@ async function runTasks() {
 
   const drawerOpened = await openDrawer();
   if (!drawerOpened) {
-    console.warn('[Aviso] Não foi possível abrir o painel "Ganhe mais moedas" após 6 tentativas.');
-    console.warn('[Aviso] Verifique se a sessão ainda é válida ou se o AliExpress exigiu verificação de segurança.');
+    console.error('\n' + '='.repeat(68));
+    console.error(' [ERRO - TAREFAS INTERROMPIDAS]');
+    console.error(' Não foi possível abrir o painel "Ganhe mais moedas" após 6 tentativas.');
+    console.error(' A execução das tarefas foi cancelada (possível falha de login ou bloqueio).');
+    console.error('='.repeat(68) + '\n');
     await page.screenshot({ path: path.join(__dirname, 'tasks_drawer_failed.png'), fullPage: true }).catch(() => {});
     await browser.close();
-    return {
-      results: [],
-      finalCoins: 'N/D'
-    };
+    throw new Error('Execução de tarefas interrompida: painel "Ganhe mais moedas" inacessível.');
   }
 
   // Ler tarefas com suporte a rodadas (ex: 1/2, 2/3)

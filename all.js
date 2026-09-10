@@ -12,12 +12,17 @@ async function main() {
   try {
     checkinResult = await runCheckin();
   } catch (err) {
-    console.error('\nErro na etapa de check-in:', err.message);
+    console.error('\n' + '='.repeat(68));
+    console.error(' [ERRO DE LOGIN DETECTADO]');
+    console.error(` ${err.message}`);
+    console.error(' Interrompendo a execução: as tarefas NÃO serão executadas.');
+    console.error('='.repeat(68) + '\n');
+    process.exit(1);
   }
 
   if (!checkinResult) {
-    console.error('\n[ERRO CRÍTICO] Falha na etapa de check-in / autenticação.');
-    console.error('Abortando a etapa de tarefas diárias para evitar execução inválida.\n');
+    console.error('\n[ERRO CRÍTICO] Falha na etapa de check-in / login.');
+    console.error('Interrompendo a execução: as tarefas NÃO serão executadas.\n');
     process.exit(1);
   }
 
