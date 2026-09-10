@@ -36,17 +36,30 @@ async function runTasks() {
 
   console.log('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
 
+  const sessionMetaPath = path.join(__dirname, 'session_meta.json');
+  let isAccountMatch = false;
+
   if (fs.existsSync(sessionPath)) {
     try {
-      const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
-      if (env.ALI_USER && !sessionContent.includes(env.ALI_USER)) {
-        console.log(`[Aviso] Conta alterada em credentials.env (${env.ALI_USER}). Renovando sessão...`);
-        fs.unlinkSync(sessionPath);
+      if (fs.existsSync(sessionMetaPath)) {
+        const meta = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
+        if (meta.user === env.ALI_USER) isAccountMatch = true;
+      } else {
+        const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
+        if (env.ALI_USER && sessionContent.includes(env.ALI_USER)) isAccountMatch = true;
       }
     } catch (e) {}
   }
 
-  const userEmail = env.ALI_USER || 'agiler@gmail.com';
+  if (!isAccountMatch) {
+    console.log(`[Aviso] Sessão ausente ou alterada para "${env.ALI_USER}". Inicializando autenticação via check-in...`);
+    if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+    if (fs.existsSync(sessionMetaPath)) fs.unlinkSync(sessionMetaPath);
+    const { runCheckin } = require('./collect');
+    await runCheckin();
+  }
+
+  const userEmail = env.ALI_USER || 'edelanoali@gmail.com';
   console.log(`[Login] Sessão autenticada para: ${userEmail}`);
 
   const pixel7 = devices['Pixel 7'];
@@ -79,6 +92,7 @@ async function runTasks() {
   const context = await browser.newContext(contextOptions);
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
   });
 
   let newPageOpened = null;

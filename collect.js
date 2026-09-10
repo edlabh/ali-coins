@@ -52,18 +52,31 @@ async function runCheckin() {
 
   let wasAlreadyCollectedToday = false;
   const ptDate = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) + ' PT';
+  const sessionMetaPath = path.join(__dirname, 'session_meta.json');
+  let hasValidSession = false;
 
   if (fs.existsSync(sessionPath)) {
     try {
-      const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
-      if (env.ALI_USER && !sessionContent.includes(env.ALI_USER)) {
+      let isAccountMatch = false;
+      if (fs.existsSync(sessionMetaPath)) {
+        const meta = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
+        if (meta.user === env.ALI_USER) isAccountMatch = true;
+      } else {
+        const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
+        if (env.ALI_USER && sessionContent.includes(env.ALI_USER)) isAccountMatch = true;
+      }
+
+      if (env.ALI_USER && !isAccountMatch) {
         console.log(`[Login] Conta alterada para "${env.ALI_USER}". Renovando sessão...`);
-        fs.unlinkSync(sessionPath);
+        if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+        if (fs.existsSync(sessionMetaPath)) fs.unlinkSync(sessionMetaPath);
+      } else {
+        hasValidSession = true;
       }
     } catch (e) {}
   }
 
-  if (fs.existsSync(sessionPath)) {
+  if (hasValidSession && fs.existsSync(sessionPath)) {
     try {
       const checkCtx = await browser.newContext({ storageState: sessionPath });
       const checkPage = await checkCtx.newPage();
@@ -83,7 +96,7 @@ async function runCheckin() {
     locale: 'pt-BR'
   };
 
-  if (fs.existsSync(sessionPath)) {
+  if (hasValidSession && fs.existsSync(sessionPath)) {
     try {
       contextOptions.storageState = sessionPath;
     } catch (e) {}
@@ -92,20 +105,26 @@ async function runCheckin() {
   const context = await browser.newContext(contextOptions);
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
   });
 
   const page = await context.newPage();
 
-  // Handshake inicial para garantir sincronização de tokens
-  await page.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-  await page.waitForTimeout(1500);
+  // Handshake inicial APENAS se já possuir sessão válida
+  if (hasValidSession) {
+    await page.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
 
-  // Passo 1 a 4: Navegar para coin-index
+  // Navegar para coin-index
   await page.goto('https://m.aliexpress.com/p/coin-index/index.html', {
     waitUntil: 'domcontentloaded',
     timeout: 45000
   });
-  await page.waitForTimeout(3000);
+
+  // Aguardar montagem dos elementos (seja form de login ou tela de moedas)
+  await page.waitForSelector('input.cosmos-input, input[type="text"], input[type="email"], #signButton, [class*="aecoin"], button:has-text("Collect"), button:has-text("Coletar")', { timeout: 12000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 
   let currentUrl = page.url();
   if (currentUrl.includes('coin-pc-index')) {
@@ -118,7 +137,7 @@ async function runCheckin() {
   // Passo 5: Checar se precisa de login
   let loginInput = await page.$('input.cosmos-input, input[type="text"], input[type="email"]');
   let bodyText = await page.innerText('body').catch(() => '');
-  let needsLogin = loginInput !== null && (bodyText.includes('Email or phone number') || bodyText.includes('Sign in') || bodyText.includes('Entrar'));
+  let needsLogin = loginInput !== null || bodyText.includes('Email or phone number') || bodyText.includes('Sign in') || bodyText.includes('Entrar');
 
   if (needsLogin) {
     const username = env.ALI_USER;
@@ -130,52 +149,80 @@ async function runCheckin() {
       process.exit(2);
     }
 
-    console.log(`[Login] Autenticando com credenciais de "${username}"...`);
-    await loginInput.fill(username);
-    await page.waitForTimeout(500);
-    await loginInput.press('Enter');
-    await page.waitForTimeout(4000);
-
-    let passwordInput = await page.$('input[type="password"], #fm-login-password');
-    if (!passwordInput) {
-      const continueBtn = await page.$('button.cosmos-btn-primary, button:has-text("Continue"), button:has-text("Continuar")');
-      if (continueBtn) {
-        await page.evaluate(el => el.click(), continueBtn);
-        await page.waitForTimeout(4000);
-        passwordInput = await page.$('input[type="password"], #fm-login-password');
-      }
+    if (!loginInput) {
+      loginInput = await page.waitForSelector('input.cosmos-input, input[type="text"], input[type="email"]', { timeout: 10000 }).catch(() => null);
     }
 
-    if (passwordInput) {
-      await passwordInput.fill(password);
+    if (loginInput) {
+      console.log(`[Login] Autenticando com credenciais de "${username}"...`);
+      await loginInput.fill(username);
       await page.waitForTimeout(500);
-
-      const signInBtn = await page.$('button.cosmos-btn-primary, button[type="submit"], button:has-text("Sign in"), button:has-text("Entrar")');
-      if (signInBtn) {
-        await page.evaluate(el => el.click(), signInBtn);
-      } else {
-        await passwordInput.press('Enter');
-      }
-      await page.waitForTimeout(8000);
-    }
-
-    // Salvar sessão
-    try {
-      await context.storageState({ path: sessionPath });
-      console.log('[Login] Nova sessão salva com sucesso.');
-    } catch (e) {}
-
-    // Garantir que está na página de moedas
-    if (!page.url().includes('coin-index')) {
-      await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await loginInput.press('Enter');
       await page.waitForTimeout(4000);
+
+      let passwordInput = await page.$('input[type="password"], #fm-login-password');
+      if (!passwordInput) {
+        const continueBtn = await page.$('button.cosmos-btn-primary, button:has-text("Continue"), button:has-text("Continuar")');
+        if (continueBtn) {
+          await page.evaluate(el => el.click(), continueBtn);
+          await page.waitForTimeout(4000);
+          passwordInput = await page.$('input[type="password"], #fm-login-password');
+        }
+      }
+
+      if (passwordInput) {
+        await passwordInput.fill(password);
+        await page.waitForTimeout(500);
+
+        const signInBtn = await page.$('button.cosmos-btn-primary, button[type="submit"], button:has-text("Sign in"), button:has-text("Entrar")');
+        if (signInBtn) {
+          await page.evaluate(el => el.click(), signInBtn);
+        } else {
+          await passwordInput.press('Enter');
+        }
+        await page.waitForTimeout(6000);
+      }
+
+      // Checar se apareceu desafio de slide captcha (Baxia)
+      const frame = page.frames().find(f => f.url().includes('punish') || f.name() === 'baxia-dialog-content');
+      if (frame) {
+        console.log('[Login] Verificação de segurança (slide captcha) detectada. Tentando deslizar...');
+        const sliderBtn = await frame.waitForSelector('#nc_1_n1z, .btn_slide, span[class*="btn_slide"]', { timeout: 8000 }).catch(() => null);
+        if (sliderBtn) {
+          const box = await sliderBtn.boundingBox();
+          if (box) {
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            for (let i = 1; i <= 25; i++) {
+              await page.waitForTimeout(20);
+              await page.mouse.move(box.x + box.width / 2 + (280 * i / 25), box.y + box.height / 2);
+            }
+            await page.waitForTimeout(100);
+            await page.mouse.up();
+            await page.waitForTimeout(5000);
+          }
+        }
+      }
+
+      // Aguardar confirmação de login na página de moedas
+      await page.waitForSelector('#signButton, [class*="aecoin"], button:has-text("Collect"), button:has-text("Coletar"), div:has-text("Collect")', { timeout: 15000 }).catch(() => {});
+
+      const checkAuthSuccess = await page.evaluate(() => {
+        const text = document.body.innerText || '';
+        return text.includes('streak') || text.includes('Collect') || text.includes('Coletar') || text.includes('moedas') || !!document.querySelector('#signButton, [class*="aecoin"]');
+      });
+
+      if (checkAuthSuccess) {
+        try {
+          await context.storageState({ path: sessionPath });
+          fs.writeFileSync(sessionMetaPath, JSON.stringify({ user: username, savedAt: new Date().toISOString() }), 'utf-8');
+          console.log('[Login] Nova sessão autenticada e salva com sucesso.');
+        } catch (e) {}
+      } else {
+        console.log('[Aviso] Confirmação de login pendente ou exigência de verificação adicional.');
+      }
     }
   }
-
-  // Atualizar sessão salva
-  try {
-    await context.storageState({ path: sessionPath });
-  } catch (e) {}
 
   await page.waitForTimeout(3000);
   await page.waitForFunction(() => !document.querySelector('.login-pending-container'), { timeout: 20000 }).catch(() => {});
@@ -188,7 +235,7 @@ async function runCheckin() {
       const dayEl = document.querySelector('[class*="dayNumber"], [class*="checkedDay"]');
       if (dayEl && dayEl.innerText.trim()) {
         const val = parseInt(dayEl.innerText.trim(), 10);
-        if (!isNaN(val) && val > 0) return val;
+        if (!isNaN(val) && val >= 0) return val;
       }
 
       // 2. Container do cabeçalho de check-in (ex: ".aecoin-titleContainer", "203 day streak")
@@ -198,7 +245,7 @@ async function runCheckin() {
         const m = containerText.match(/([0-9]+)\s*(?:day|dia|dias|days)?\s*streak/i) || containerText.match(/([0-9]+)/);
         if (m) {
           const val = parseInt(m[1], 10);
-          if (!isNaN(val) && val > 0) return val;
+          if (!isNaN(val) && val >= 0) return val;
         }
       }
 
@@ -227,7 +274,11 @@ async function runCheckin() {
       'button#signButton',
       '.signButton',
       'div[class*="aecoin-signButton"]',
-      'div[class*="aecoin-button"]'
+      'div[class*="aecoin-button"]',
+      'button:has-text("Collect")',
+      'button:has-text("Coletar")',
+      'div:has-text("Collect")',
+      'div:has-text("Coletar")'
     ];
 
     for (const sel of checkinSelectors) {
@@ -293,7 +344,8 @@ async function runCheckin() {
   // 2. Histórico de check-in (fuso PT)
   const todaySec = desktopText.split(ptDate)[1]?.split(/[0-9]+\/[0-9]+\/[0-9]+ PT/)[0] || '';
   const todayCheckinMatch = todaySec.match(/App daily check-in\s*\n\s*\+([0-9]+)/i);
-  const coinsGainedToday = todayCheckinMatch ? todayCheckinMatch[1] : '40';
+  const isCollected = (alreadyCollected || wasAlreadyCollectedToday);
+  const coinsGainedToday = todayCheckinMatch ? todayCheckinMatch[1] : (isCollected ? '10' : '0');
 
   // 3. Sequência (streak) de dias consecutivos obtida dinamicamente da tela de moedas
   const streakDays = mobileStreak !== null ? mobileStreak : 'N/D';
