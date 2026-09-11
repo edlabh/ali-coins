@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium, devices } = require('playwright');
+const { formatDate, formatTime, formatDateTime, formatDuration } = require('./time_utils');
 
 function loadEnv(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -23,12 +24,14 @@ function loadEnv(filePath) {
 }
 
 async function runCheckin() {
+  const checkinStartTime = new Date();
   const envPath = path.join(__dirname, 'credentials.env');
   const sessionPath = path.join(__dirname, 'session.json');
   const env = loadEnv(envPath);
 
   const userEmail = env.ALI_USER || 'agiler@gmail.com';
   console.log('================ CHECK-IN DIÁRIO ================');
+  console.log(`[Dia e Hora]: ${formatDateTime(checkinStartTime)}`);
   console.log(`[Login] Usuário: ${userEmail}`);
 
   const pixel7 = devices['Pixel 7'];
@@ -480,10 +483,19 @@ async function runCheckin() {
     ? `a sequência subiu (${streakDays} dias seguidos)`
     : 'sequência não identificada na página';
 
+  const checkinEndTime = new Date();
+  const checkinDuration = formatDuration(checkinEndTime - checkinStartTime);
+
   console.log('=== RELATORIO_OUTPUT ===');
   console.log(reportLine1);
   console.log(reportLine2);
   console.log(reportLine3);
+  console.log('---------------------------------------------------------------');
+  console.log(`Data:                ${formatDate(checkinStartTime)}`);
+  console.log(`Hora de Início:      ${formatTime(checkinStartTime)}`);
+  console.log(`Hora de Finalização: ${formatTime(checkinEndTime)}`);
+  console.log(`Duração Total:       ${checkinDuration}`);
+  console.log('===============================================================\n');
 
   await browser.close();
   return {
@@ -491,7 +503,10 @@ async function runCheckin() {
     alreadyCollected: (alreadyCollected || wasAlreadyCollectedToday),
     coinsGainedToday,
     totalBalance,
-    streakDays
+    streakDays,
+    startTime: checkinStartTime,
+    endTime: checkinEndTime,
+    duration: checkinDuration
   };
 }
 

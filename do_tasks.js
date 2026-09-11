@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium, devices } = require('playwright');
+const { formatDate, formatTime, formatDateTime, formatDuration } = require('./time_utils');
 
 async function waitWithScroll(page, seconds) {
   const intervals = Math.floor(seconds / 3);
@@ -30,11 +31,13 @@ function loadEnv(filePath) {
 }
 
 async function runTasks() {
+  const tasksStartTime = new Date();
   const envPath = path.join(__dirname, 'credentials.env');
   const sessionPath = path.join(__dirname, 'session.json');
   const env = loadEnv(envPath);
 
   console.log('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
+  console.log(`[Dia e Hora]: ${formatDateTime(tasksStartTime)}`);
 
   const sessionMetaPath = path.join(__dirname, 'session_meta.json');
   let isAccountMatch = false;
@@ -354,10 +357,12 @@ async function runTasks() {
     taskAttempts[pendingTask.title] = currentAttempt;
     totalActions++;
 
+    const taskStartTime = new Date();
     const roundInfo = (pendingTask.currentRound && pendingTask.totalRounds)
       ? ` [Rodada: ${pendingTask.currentRound}/${pendingTask.totalRounds}]`
       : (pendingTask.statusText ? ` [Rodada: ${pendingTask.statusText}]` : '');
     console.log(`\n--- Executando: "${pendingTask.title}"${roundInfo} (${pendingTask.coins}) ---`);
+    console.log(`    Dia e Hora de Início: ${formatDateTime(taskStartTime)}`);
 
     const titleLower = pendingTask.title.toLowerCase();
     const descLower = pendingTask.desc.toLowerCase();
@@ -456,6 +461,10 @@ async function runTasks() {
       await page.waitForTimeout(4000);
     }
     await page.waitForTimeout(2000);
+
+    const taskEndTime = new Date();
+    const taskDuration = formatDuration(taskEndTime - taskStartTime);
+    console.log(`    Concluída em: ${formatTime(taskEndTime)} | Duração: ${taskDuration}`);
   }
 
   // Obter status consolidado de todas as tarefas
@@ -496,14 +505,23 @@ async function runTasks() {
     await desktopCtx.close();
   } catch (e) {}
 
+  const tasksEndTime = new Date();
+  const tasksDuration = formatDuration(tasksEndTime - tasksStartTime);
+
   console.log('\n================ RESUMO DAS TAREFAS ================');
   for (const r of results) {
     console.log(`- ${r.title}: ${r.status} (${r.coins || ''})`);
   }
   console.log(`\nSaldo total final: ${finalCoins}`);
+  console.log('----------------------------------------------------');
+  console.log(`Data:                ${formatDate(tasksStartTime)}`);
+  console.log(`Hora de Início:      ${formatTime(tasksStartTime)}`);
+  console.log(`Hora de Finalização: ${formatTime(tasksEndTime)}`);
+  console.log(`Duração Total:       ${tasksDuration}`);
+  console.log('====================================================\n');
 
   await browser.close();
-  return { results, finalCoins };
+  return { results, finalCoins, startTime: tasksStartTime, endTime: tasksEndTime, duration: tasksDuration };
 }
 
 if (require.main === module) {
