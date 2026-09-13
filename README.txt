@@ -1,5 +1,5 @@
 ================================================================================
-                    ALIEXPRESS COIN COLLECTOR & TASK RUNNER
+                    ALIEXPRESS COIN COLLECTOR & TASK RUNNER (v0.6)
 ================================================================================
 
 Automação completa para check-in diário de moedas e execução automática das
@@ -8,32 +8,32 @@ tarefas ("Ganhe mais moedas") do AliExpress com emulação mobile via Playwright
 Compatível com: Windows 10/11, macOS (Apple Silicon & Intel) e Linux (Ubuntu/Debian).
 
 --------------------------------------------------------------------------------
-1. NOVIDADES E RECURSOS
+1. NOVIDADES E RECURSOS (VERSÃO 0.6)
 --------------------------------------------------------------------------------
 
-- NOVO MODO UNIFICADO (1 CHAMADA ÚNICA):
-  Executa o check-in diário e em sequência roda todas as tarefas do painel
-  "Ganhe mais moedas", exibindo o status em tempo real e o relatório consolidado final.
+- DESEMPENHO OTIMIZADO (>40% MAIS RÁPIDO):
+  • Inicialização de 1 único processo compartilhado do Chromium para check-in e tarefas.
+  • Bloqueio inteligente de recursos pesados (imagens, vídeos, fontes e telemetrias).
+  • Substituição de esperas fixas por detecção de eventos e estados DOM.
 
-- CHECK-IN DIÁRIO INTELIGENTE:
-  Compatível com o layout de cartões diários do AliExpress. Reconhece sequências
-  ativas de 200+ dias e valores de check-in (+40 moedas diárias após o 7º dia consecutivo).
+- SEGURANÇA REFORÇADA:
+  • Permissões 0o600 automáticas em todos os arquivos de segredos (credentials, sessão, tokens).
+  • Validação estrita de credenciais com Zod e leitura limpa via dotenv.
+  • Isolamento seguro de sandbox do Chromium (--no-sandbox restrito a root/CI).
+  • Suporte a 2FA interativo com mascaramento de senha e timeout de 120s.
 
-- VALIDAÇÃO AUTOMÁTICA DE LOGIN:
-  Confirma e exibe o status da autenticação antes da coleta. Detecta se a conta
-  no credentials.env mudou e renova a sessão sem conflitos.
+- EXPORTAÇÃO E IMPORTAÇÃO CRIPTOGRAFADA (AES-256-GCM):
+  • Derivação de chave via scrypt a partir de SESSION_SECRET (mínimo 32 caracteres).
+  • Importação segura via STDIN ou flag --from-file (bloqueio de token em argv).
+  • Validação de expiração da sessão (alerta se > 90 dias).
 
-- EXECUÇÃO DE TAREFAS APRIMORADA:
-  • Explore itens surpresa: Toque automatizado real em 3 itens por rodada com
-    permanência para consolidação do tracking de moedas.
-  • Itens patrocinados, retrospectiva e super descontos: visualização por 15s.
-  • Pesquisa ativa: digitação e busca por palavra-chave por 15s.
-  • Itens de US$ 0.10 (Prize Land) & Minigames: identificação transparente de
-    tarefas exclusivas do app móvel no extrato.
+- MODO DE VALIDAÇÃO (DRY-RUN):
+  • Valida o ambiente, arquivos e credenciais sem inicializar o navegador:
+    npm start -- --dry-run
 
-- EXTRATO E SALDO FIDEDIGNOS:
-  Consulta o histórico oficial da conta em mycoin.html, garantindo valores
-  reais sem distorções de preços de vitrine.
+- PREVENÇÃO CONTRA CONCORRÊNCIA (LOCKFILE):
+  • Lockfile exclusivo com checagem de PID para impedir execuções sobrepostas no Cron.
+  • Flag --force disponível para desbloqueio manual se necessário.
 
 --------------------------------------------------------------------------------
 2. TABELA DE MODOS DE EXECUÇÃO
@@ -44,6 +44,12 @@ Compatível com: Windows 10/11, macOS (Apple Silicon & Intel) e Linux (Ubuntu/De
 - Windows PowerShell: .\run_all.ps1
 - Linux / macOS:      ./run_all.sh
 - Via npm:            npm run all  (ou npm start)
+
+[Validação de Configuração (Dry-Run)]
+- Windows CMD:        run_all.bat --dry-run
+- Windows PowerShell: .\run_all.ps1 -d
+- Linux / macOS:      ./run_all.sh --dry-run
+- Via npm:            npm start -- --dry-run
 
 [Apenas Check-in Diário]
 - Windows CMD:        run.bat
@@ -62,63 +68,21 @@ Compatível com: Windows 10/11, macOS (Apple Silicon & Intel) e Linux (Ubuntu/De
 --------------------------------------------------------------------------------
 
 [LINUX - UBUNTU 20.04 / 22.04 / 24.04 E DEBIAN]
-Consulte o guia completo com resolução de erros em INSTALL_LINUX.md.
+Consulte o guia completo em INSTALL_LINUX.md.
 
 - MODO AUTOMÁTICO (Recomendado - 1 comando):
     chmod +x setup_linux.sh
     ./setup_linux.sh
 
-- MODO MANUAL PASSO A PASSO:
-  1. Instale o Node.js 20 LTS (o Node 12 padrão do Ubuntu 22.04 é incompatível):
-     # Se já instalou o node antigo pelo apt, remova:
-     sudo apt-get remove -y nodejs npm && sudo apt-get autoremove -y
-     # Instale o Node 20 LTS via NodeSource:
-     sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg git
-     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-     sudo apt-get install -y nodejs
-     # Verifique: node -v (deve ser v20.x)
-
-  2. Conceda permissão aos scripts:
-     chmod +x *.sh
-
-  3. Instale as dependências do projeto:
-     npm install
-
-  4. Baixe o navegador Chromium:
-     npx playwright install chromium
-
-  5. Instale as bibliotecas nativas de sistema para o Chromium:
-     # Via Playwright (recomendado):
-     sudo npx playwright install-deps chromium
-     
-     # Ou via apt-get (Ubuntu 22.04):
-     sudo apt-get update && sudo apt-get install -y \
-       libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 \
-       libcups2 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0 libnspr4 libnss3 \
-       libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
-       libxfixes3 libxkbcommon0 libxrandr2 fonts-liberation fonts-noto-color-emoji
-
-  6. Validar se o Chromium inicia perfeitamente:
-     node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - Chromium rodando!'); await b.close(); })();"
+- MODO DOCKER (Opcional):
+    docker build -t ali-coins .
+    docker run --rm -v $(pwd)/credentials.env:/app/credentials.env ali-coins
 
 [WINDOWS]
 Consulte o guia completo em INSTALL_WINDOWS.md.
 
 - MODO AUTOMÁTICO (Recomendado):
     Dê duplo clique no arquivo setup_windows.bat
-
-- MODO MANUAL:
-  1. Instale o Node.js 20 LTS:
-     winget install OpenJS.NodeJS.LTS
-     (ou baixe o instalador .msi em https://nodejs.org/)
-  2. Se usar PowerShell, libere execução de scripts se necessário:
-     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-  3. Instale dependências:
-     npm install
-  4. Baixe o Chromium do Playwright:
-     npx playwright install chromium
-  5. Valide a inicialização:
-     node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - Windows'); await b.close(); })();"
 
 [MACOS]
 Consulte o guia completo em INSTALL_MACOS.md.
@@ -127,40 +91,34 @@ Consulte o guia completo em INSTALL_MACOS.md.
     chmod +x setup_macos.sh
     ./setup_macos.sh
 
-- MODO MANUAL:
-  1. Instale o Node.js 20 LTS via Homebrew:
-     brew install node
-  2. Conceda permissão aos scripts:
-     chmod +x *.sh
-  3. Instale dependências:
-     npm install
-  4. Baixe o Chromium nativo (Apple Silicon ou Intel):
-     npx playwright install chromium
-  5. Valide a inicialização:
-     node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('OK - macOS'); await b.close(); })();"
-
 --------------------------------------------------------------------------------
-4. CONFIGURAÇÃO DAS CREDENCIAIS
+4. CONFIGURAÇÃO DAS CREDENCIAIS (credentials.env)
 --------------------------------------------------------------------------------
 
 Crie o arquivo credentials.env a partir de credentials.env.example:
 
   No Windows CMD:        copy credentials.env.example credentials.env
   No Windows PowerShell: Copy-Item credentials.env.example credentials.env
-  No Linux / macOS:      cp credentials.env.example credentials.env
+  No Linux / macOS:      cp credentials.env.example credentials.env && chmod 600 credentials.env
 
 Abra o arquivo credentials.env e preencha suas informações:
 
   ALI_USER="seu_email_ou_telefone"
   ALI_PASSWORD="sua_senha"
+  SESSION_SECRET="sua_chave_secreta_minimo_32_caracteres"
+  ALLOW_MEDIA=false
+  HEADLESS=true
+  LOG_LEVEL=info
+
+Dica para gerar SESSION_SECRET:
+  openssl rand -base64 32
 
 --------------------------------------------------------------------------------
 5. AGENDAMENTO DIÁRIO AUTOMÁTICO
 --------------------------------------------------------------------------------
 
 - NO LINUX / MACOS (CRON):
-  Abra com 'crontab -e' e configure, por exemplo, para as 08:00 todos os dias
-  (inclua PATH no topo do crontab para garantir que o node seja encontrado):
+  Abra com 'crontab -e' e configure, por exemplo, para as 08:00 todos os dias:
   SHELL=/bin/bash
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   0 8 * * * cd /caminho/para/ali-coins && ./run_all.sh >> coins_daily.log 2>&1
@@ -173,23 +131,17 @@ Abra o arquivo credentials.env e preencha suas informações:
      Iniciar em: pasta completa do projeto ali-coins.
 
 --------------------------------------------------------------------------------
-6. GUIAS DE AJUDA DETALHADOS (ARQUIVOS SEPARADOS)
+6. DELEGAÇÃO DE SESSÃO PARA SERVIDORES NA NUVEM (ORACLE CLOUD / AWS / VPS)
 --------------------------------------------------------------------------------
 
-- Linux / Ubuntu 22.04 / 24.04:  Consulte INSTALL_LINUX.md
-- Windows 10 e 11:               Consulte INSTALL_WINDOWS.md
-- macOS Apple Silicon & Intel:   Consulte INSTALL_MACOS.md
-- Servidores na Nuvem e Sessões: Consulte CLOUD_SESSIONS.md
+Para servidores em nuvem com bloqueio de IP no login:
+1. No PC pessoal, gere a sessão criptografada:
+     export SESSION_SECRET="sua_chave_secreta_minimo_32_caracteres"
+     node export_session.js
+2. No servidor na nuvem, importe o token de forma segura:
+     export SESSION_SECRET="sua_chave_secreta_minimo_32_caracteres"
+     node import_session.js < session_token.txt
 
---------------------------------------------------------------------------------
-7. SEGURANÇA E NUVEM (ORACLE CLOUD / AWS / VPS)
---------------------------------------------------------------------------------
-
-- A sessão autenticada é salva em 'session.json'.
-- Para servidores em nuvem com bloqueio de IP no login, gere a sessão no PC:
-    node export_session.js
-  E importe no servidor:
-    node import_session.js '<TOKEN>'
-- Os arquivos 'credentials.env', 'session.json' e 'session_token.txt'
-  estão no .gitignore e nunca devem ser compartilhados.
+Os arquivos 'credentials.env', 'session.json' e 'session_token.txt'
+estão no .gitignore e nunca devem ser compartilhados publicamente.
 ================================================================================

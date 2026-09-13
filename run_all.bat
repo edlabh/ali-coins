@@ -1,2 +1,2 @@
 @echo off
-node "%~dp0all.js"
+node "%~dp0all.js" %*

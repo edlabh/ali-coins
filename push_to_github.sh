@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/github_token.env"
@@ -9,24 +9,30 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# Ler variáveis sem aspas e sem problemas de formatação
-eval $(node -e "
-const fs = require('fs');
-const content = fs.readFileSync('$ENV_FILE', 'utf-8');
-for (const line of content.split(/\r?\n/)) {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith('#')) continue;
-  const eq = trimmed.indexOf('=');
-  if (eq !== -1) {
-    const k = trimmed.slice(0, eq).trim();
-    let v = trimmed.slice(eq + 1).trim();
-    if ((v.startsWith('\"') && v.endsWith('\"')) || (v.startsWith('\'') && v.endsWith('\''))) {
-      v = v.slice(1, -1);
-    }
-    console.log(k + '=\"' + v + '\"');
-  }
-}
-")
+GITHUB_USER=""
+GITHUB_TOKEN=""
+GITHUB_REPO=""
+
+# Ler variáveis de forma segura linha a linha sem usar eval
+while IFS='=' read -r key val || [ -n "$key" ]; do
+  # Remover espaços em branco no início e no fim
+  key="$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  case "$key" in
+    \#*|"") continue ;;
+  esac
+  val="$(echo "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  # Remover aspas externas simples ou duplas
+  val="${val#\"}"
+  val="${val%\"}"
+  val="${val#\'}"
+  val="${val%\'}"
+
+  case "$key" in
+    GITHUB_USER) GITHUB_USER="$val" ;;
+    GITHUB_TOKEN) GITHUB_TOKEN="$val" ;;
+    GITHUB_REPO) GITHUB_REPO="$val" ;;
+  esac
+done < "$ENV_FILE"
 
 if [ -z "$GITHUB_USER" ] || [ -z "$GITHUB_TOKEN" ]; then
   echo "ERRO: GITHUB_USER ou GITHUB_TOKEN vazios no github_token.env."
@@ -34,25 +40,28 @@ if [ -z "$GITHUB_USER" ] || [ -z "$GITHUB_TOKEN" ]; then
 fi
 
 REPO_NAME="${GITHUB_REPO:-ali-coins}"
+PUBLIC_REMOTE="https://github.com/${GITHUB_USER}/${REPO_NAME}.git"
+
+# Garantir que mesmo em caso de falha o remote nunca contenha tokens
+cleanup() {
+  git remote set-url origin "$PUBLIC_REMOTE" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 echo "Configurando repositório remoto para: ${GITHUB_USER}/${REPO_NAME} ..."
-REMOTE_URL="https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
 
 if git remote | grep -q "^origin$"; then
-  git remote set-url origin "$REMOTE_URL"
+  git remote set-url origin "$PUBLIC_REMOTE"
 else
-  git remote add origin "$REMOTE_URL"
+  git remote add origin "$PUBLIC_REMOTE"
 fi
 
 echo "Enviando branch 'main'..."
-git push -u origin main "$@"
+# Autenticação segura via header HTTP Authorization: Bearer sem expor o token na URL do remote
+git -c http.extraHeader="Authorization: Bearer ${GITHUB_TOKEN}" push -u origin main "$@"
 
 echo "Enviando tags de release..."
-git push origin --tags "$@"
-
-# Mascarar token no remote por segurança
-PUBLIC_REMOTE="https://github.com/${GITHUB_USER}/${REPO_NAME}.git"
-git remote set-url origin "$PUBLIC_REMOTE"
+git -c http.extraHeader="Authorization: Bearer ${GITHUB_TOKEN}" push origin --tags "$@"
 
 echo ""
 echo "=========================================================="

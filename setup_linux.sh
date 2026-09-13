@@ -86,6 +86,7 @@ else
   echo "Aviso: 'playwright install-deps' não pôde ser executado automaticamente. Tentando instalação via apt-get..."
   # Detectar versão do Ubuntu
   if [ -f /etc/os-release ]; then
+    # shellcheck source=/dev/null
     . /etc/os-release
     UBUNTU_CODENAME="${VERSION_CODENAME:-jammy}"
   else
@@ -122,8 +123,10 @@ if [ ! -f "$SCRIPT_DIR/credentials.env" ]; then
     echo "Arquivo 'credentials.env' criado a partir do modelo."
   fi
 else
+  chmod 600 "$SCRIPT_DIR/credentials.env" 2>/dev/null || true
   echo "Arquivo 'credentials.env' já existente (mantido)."
 fi
+chmod 600 "$SCRIPT_DIR"/session*.json "$SCRIPT_DIR"/session_token.txt 2>/dev/null || true
 
 # 7. Teste de inicialização do Chromium
 echo "[7/7] Testando inicialização do Chromium no ambiente..."

@@ -63,8 +63,10 @@ if [ ! -f "$SCRIPT_DIR/credentials.env" ]; then
     echo "Arquivo 'credentials.env' criado a partir do modelo."
   fi
 else
+  chmod 600 "$SCRIPT_DIR/credentials.env" 2>/dev/null || true
   echo "Arquivo 'credentials.env' já existente (mantido)."
 fi
+chmod 600 "$SCRIPT_DIR"/session*.json "$SCRIPT_DIR"/session_token.txt 2>/dev/null || true
 
 # 5. Teste de inicialização do Chromium
 echo "[5/5] Testando inicialização do Chromium no macOS..."

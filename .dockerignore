@@ -1,0 +1,14 @@
+node_modules/
+credentials.env
+credentials.env.bak
+session.json
+session_meta.json
+session_token.txt
+github_token.env
+*.png
+*.log
+*.lock
+ali-coins.lock
+scratch/
+.git
+.gitignore

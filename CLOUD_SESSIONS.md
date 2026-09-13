@@ -67,24 +67,25 @@ flowchart LR
 
 ### Método 1: Utilitários Automáticos (`export_session.js` e `import_session.js`)
 
-O projeto inclui scripts dedicados para exportação e importação de sessão sem necessidade de configurar chaves SSH ou SCP:
+O projeto inclui scripts dedicados para exportação e importação de sessão criptografada com **AES-256-GCM** (usando `scrypt` para derivação de chave e tag de autenticação):
 
 1. **No seu computador pessoal (onde o login foi realizado):**
+   Defina a variável `SESSION_SECRET` (mínimo de 32 caracteres) e exporte a sessão:
    ```bash
+   export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"
    node export_session.js
    ```
-   O script exibirá na tela um comando formatado como:
-   ```bash
-   node import_session.js '<TOKEN_COMPACTO>'
-   ```
-   *(O token também é salvo no arquivo `session_token.txt`)*.
+   O script gerará um token criptografado (formato `v1:iv:tag:ciphertext:base64`), salvando-o com permissão restrita `0o600` em `session_token.txt`. Por segurança contra vazamento em telas e logs, o terminal exibirá apenas o fingerprint SHA-256 e o tamanho do arquivo. (Caso precise exibir o token completo na tela, adicione a flag `--show-token`).
 
 2. **No terminal do servidor na nuvem (dentro de `~/ali-coins`):**
-   Cole e execute o comando gerado:
+   Transfira o arquivo `session_token.txt` ou envie seu conteúdo via STDIN:
    ```bash
-   node import_session.js '<TOKEN_COMPACTO>'
+   export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"
+   node import_session.js < session_token.txt
+   # ou via argumento de arquivo:
+   node import_session.js --from-file=session_token.txt
    ```
-   O utilitário validará os cookies essenciais, criará o `session.json` e o `session_meta.json` e confirmará a prontidão do ambiente.
+   > 🔒 **Importante:** O script recusa tokens diretamente em `process.argv` para impedir vazamento de credenciais no histórico do shell (`~/.bash_history`) ou na listagem do `ps aux`. A memória do token é zerada logo após a descriptografia. O utilitário valida a estrutura via schema `zod`, cria o `session.json` e o `session_meta.json` com permissão `0o600` e confirma a prontidão do ambiente.
 
 ---
 

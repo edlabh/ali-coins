@@ -219,6 +219,19 @@ Se o comando imprimir `✅ Chromium iniciado com sucesso no Linux!`, seu ambient
    ```env
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha_do_aliexpress"
+
+   # Chave para criptografia de exportação de sessão (mínimo 32 caracteres)
+   # Gere no terminal com: openssl rand -base64 32
+   SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
+
+   # Bloqueio de mídia para acelerar execução (padrão: false)
+   ALLOW_MEDIA=false
+
+   # Modo headless (padrão: true)
+   HEADLESS=true
+
+   # Nível de log estruturado (padrão: info)
+   LOG_LEVEL=info
    ```
 
 ### Passo 8: Primeira Execução
@@ -295,18 +308,27 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
 
 ### E. Servidores em Nuvem (Oracle Cloud, AWS, VPS): Desafio de Captcha ou Bloqueio no Login
 - **Causa:** O AliExpress implementa um controle rigoroso anti-bot (Baxia). Quando uma tentativa de login (usuário e senha) parte de um IP de Datacenter/Nuvem (como Oracle Cloud, AWS ou DigitalOcean), o AliExpress quase sempre bloqueia o envio exibindo um Slide Captcha de alta precisão ou solicitando código de confirmação 2FA por e-mail/SMS.
-- **Por que isso não afeta computadores locais?** Em conexões residenciais (seu PC com Windows, macOS ou Linux Desktop), o IP é considerado confiável e o login ocorre com facilidade.
-- **Como resolver em 10 segundos:**
-  1. Em seu computador local (onde o IP residencial não é bloqueado), execute:
+- **Como resolver com exportação/importação criptografada (AES-256-GCM):**
+  1. Em seu computador local (onde o IP residencial não é bloqueado):
      ```bash
+     export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"
      node export_session.js
      ```
-     O script exibirá um comando de importação contendo o token compacto da sessão.
-  2. No terminal do seu servidor na nuvem (Oracle Cloud / VPS), dentro da pasta `ali-coins`, cole e execute o comando exibido:
+  2. No servidor na nuvem (Oracle Cloud / VPS), dentro da pasta `ali-coins`, importe com segurança:
      ```bash
-     node import_session.js '<TOKEN_GERADO>'
+     export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"
+     node import_session.js < session_token.txt
      ```
-  3. Pronto! Os arquivos `session.json` e `session_meta.json` serão gravados e o `./run_all.sh` rodará diariamente na nuvem reutilizando a sessão sem necessidade de refazer login por semanas ou meses.
+  3. Pronto! Os arquivos `session.json` e `session_meta.json` serão gravados com permissões restritas `0o600` e o `./run_all.sh` rodará diariamente na nuvem sem necessidade de refazer login por semanas ou meses.
+
+### F. Diretório de Cache dos Navegadores (`PLAYWRIGHT_BROWSERS_PATH`)
+- Por padrão, o Playwright instala os binários do Chromium em `~/.cache/ms-playwright`.
+- Em ambientes de servidor ou containers com múltiplos usuários / volumes dedicados, você pode customizar o local definindo:
+  ```bash
+  export PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+  npx playwright install chromium
+  ```
+  Isso permite reaproveitar o download do navegador entre diferentes instâncias ou containers sem baixar novamente.
 
 ---
 
