@@ -56,12 +56,14 @@ else
   git remote add origin "$PUBLIC_REMOTE"
 fi
 
+BASIC_AUTH="$(printf '%s:%s' "$GITHUB_USER" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+
 echo "Enviando branch 'main'..."
-# Autenticação segura via header HTTP Authorization: Bearer sem expor o token na URL do remote
-git -c http.extraHeader="Authorization: Bearer ${GITHUB_TOKEN}" push -u origin main "$@"
+# Autenticação segura via header HTTP Authorization: Basic sem expor o token na URL do remote
+git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push -u origin main "$@"
 
 echo "Enviando tags de release..."
-git -c http.extraHeader="Authorization: Bearer ${GITHUB_TOKEN}" push origin --tags "$@"
+git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push origin --tags "$@"
 
 echo ""
 echo "=========================================================="
