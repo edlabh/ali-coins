@@ -41,7 +41,13 @@ const configSchema = z.object({
     }
     return val !== undefined ? Boolean(val) : true;
   }, z.boolean()).default(true),
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info')
+  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  NO_SANDBOX: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      return val.toLowerCase() === 'true' || val === '1';
+    }
+    return Boolean(val);
+  }, z.boolean()).default(false)
 });
 
 function isDryRun() {
@@ -59,7 +65,8 @@ function loadConfig(requireCredentials = true) {
     SESSION_SECRET: process.env.SESSION_SECRET,
     ALLOW_MEDIA: process.env.ALLOW_MEDIA,
     HEADLESS: process.env.HEADLESS,
-    LOG_LEVEL: process.env.LOG_LEVEL
+    LOG_LEVEL: process.env.LOG_LEVEL,
+    NO_SANDBOX: process.env.NO_SANDBOX
   };
 
   // Se não for estritamente obrigatório (ex: durante import de sessão), fornecer dummy caso ausente
@@ -111,6 +118,7 @@ function handleDryRun() {
     console.log(` • Bloqueio de mídia (ALLOW_MEDIA): ${cfg.ALLOW_MEDIA}`);
     console.log(` • Modo Headless: ${cfg.HEADLESS}`);
     console.log(` • Nível de Log: ${cfg.LOG_LEVEL}`);
+    console.log(` • Sandbox do Chromium: ${cfg.NO_SANDBOX ? 'Desativado (--no-sandbox)' : 'Ativado (Padrão de Segurança)'}`);
     if (cfg.SESSION_SECRET) {
       console.log(` • SESSION_SECRET: [CONFIGURADO - ${cfg.SESSION_SECRET.length} caracteres]`);
     } else {

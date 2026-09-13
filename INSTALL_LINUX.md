@@ -330,5 +330,88 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
   ```
   Isso permite reaproveitar o download do navegador entre diferentes instâncias ou containers sem baixar novamente.
 
+### G. Ubuntu 23.10 e Ubuntu 24.04 LTS: Bloqueio do Sandbox do Chromium via AppArmor (User Namespaces Restritos)
+
+#### O que é e por que ocorre
+A partir do **Ubuntu 23.10** e consolidado como padrão de segurança no **Ubuntu 24.04 LTS (Noble Numbat)**, o kernel do Ubuntu bloqueia por padrão a criação de *unprivileged user namespaces* (`CLONE_NEWUSER`) para aplicações que não possuam um perfil explícito do AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`).
+
+O navegador Chromium (utilizado pelo Playwright) requer a capacidade de criar user namespaces para inicializar o seu mecanismo de isolamento de processos (*sandbox* de segurança em camadas / Layer-1 Sandbox).
+
+Como o Playwright faz o download do binário do Chromium no diretório pessoal do usuário (`~/.cache/ms-playwright/chromium-.../chrome-linux/chrome`) em vez de instalá-lo como um pacote `.deb` registrado no sistema, o kernel intercepta e nega a chamada de sistema com erro `EPERM` (`apparmor="DENIED" operation="userns_create"`).
+
+**Sintomas e Mensagens de Erro Típicas:**
+```text
+[FATAL:zygote_host_impl_linux.cc(117)] No usable sandbox! Update your kernel or see https://chromium.googlesource.com/chromium/src/+/main/docs/linux/sandboxing.md for more information.
+```
+ou
+```text
+browserType.launch: Failed to launch the browser process!
+```
+
 ---
+
+#### Soluções Disponíveis
+
+Existem **3 soluções** possíveis. Escolha a que melhor se adapta ao seu ambiente:
+
+---
+
+#### Solução 1: Criar um Perfil AppArmor para o Playwright (Recomendada / Mantém a Segurança Ativa)
+Esta é a solução recomendada pela Canonical e pelo time do Playwright, pois **mantém a proteção do sistema ativa** e autoriza especificamente os binários do Chromium gerenciados pelo Playwright a utilizarem user namespaces.
+
+1. Crie o arquivo de perfil `/etc/apparmor.d/playwright-chrome`:
+   ```bash
+   sudo tee /etc/apparmor.d/playwright-chrome << 'EOF'
+   # Perfil AppArmor para o Chromium do Playwright (Ubuntu 23.10 / 24.04 LTS)
+   abi <abi/4.0>,
+   include <tunables/global>
+
+   profile playwright-chrome /**/.cache/ms-playwright/**/chrome flags=(unconfined) {
+     userns,
+
+     include if exists <local/playwright-chrome>
+   }
+   EOF
+   ```
+
+2. Carregue o novo perfil no AppArmor:
+   ```bash
+   sudo apparmor_parser -r /etc/apparmor.d/playwright-chrome
+   ```
+   *(ou alternativamente recarregue o serviço: `sudo systemctl reload apparmor`)*
+
+3. Pronto! O Chromium agora inicializará normalmente com sandbox completo ativado, sem necessidade de `--no-sandbox`.
+
+---
+
+#### Solução 2: Desativar a Restrição de User Namespaces no Kernel via sysctl (Ajuste Global do Host)
+Se o seu host remoto for um servidor dedicado ou VPS sob seu controle e você preferir restaurar o comportamento padrão de versões anteriores do Ubuntu (22.04 LTS, Debian 11/12, etc.):
+
+- **Temporário (imediato, dura até o próximo reboot):**
+  ```bash
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  ```
+
+- **Permanente (persiste após reiniciar o servidor):**
+  ```bash
+  echo "kernel.apparmor_restrict_unprivileged_userns = 0" | sudo tee /etc/sysctl.d/60-apparmor-namespace.conf
+  sudo sysctl --system
+  ```
+
+---
+
+#### Solução 3: Desativar a Sandbox do Chromium na Aplicação (`NO_SANDBOX=true`)
+Se você está em um ambiente onde **não possui privilégios `sudo`** para alterar `/etc/apparmor.d` ou parâmetros do kernel via `sysctl` (por exemplo, hospedagens compartilhadas, containers restritos ou instâncias corporativas gerenciadas):
+
+1. Adicione a variável no seu `credentials.env`:
+   ```env
+   NO_SANDBOX=true
+   ```
+   Ou execute diretamente no terminal / crontab:
+   ```bash
+   NO_SANDBOX=true ./run_all.sh
+   ```
+
+> [!WARNING]
+> **Aviso de Segurança:** A opção `NO_SANDBOX=true` instrui o Playwright a repassar as flags `--no-sandbox` e `--disable-setuid-sandbox` ao Chromium, desativando o sandbox de isolamento de processos do navegador. Como este projeto acessa estritamente as páginas oficiais do AliExpress para coleta de moedas e tarefas diárias, o risco prático é mínimo em servidores dedicados. No entanto, em ambientes multiusuário, recomenda-se priorizar a **Solução 1**.
 

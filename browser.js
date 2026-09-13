@@ -12,16 +12,43 @@ const logger = require('./logger');
  * ataques remotos via conteúdo web malicioso. Ela só é aplicada caso o processo esteja
  * rodando como ROOT (UID 0) ou em ambiente de Integração Contínua (CI).
  */
-function getChromiumArgs() {
+/**
+ * Verifica se a sandbox deve ser desativada (--no-sandbox).
+ * Condições: execução como root (UID 0), ambiente CI, ou configuração explícita NO_SANDBOX=true.
+ */
+function isNoSandboxRequired() {
   const isRoot = typeof os.userInfo === 'function' && os.userInfo().uid === 0;
   const isCI = Boolean(process.env.CI);
+  const isExplicitNoSandbox = Boolean(
+    process.env.NO_SANDBOX &&
+    (process.env.NO_SANDBOX.toLowerCase() === 'true' || process.env.NO_SANDBOX === '1')
+  );
+  return {
+    isRoot,
+    isCI,
+    isExplicitNoSandbox,
+    shouldDisable: isRoot || isCI || isExplicitNoSandbox
+  };
+}
+
+/**
+ * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança.
+ * AVISO DE SEGURANÇA:
+ * A flag --no-sandbox desativa a camada de isolamento do Chromium e só deve ser usada
+ * caso necessário (ex: execução como ROOT, CI, ou Ubuntu 23.10/24.04 com AppArmor userns restrito).
+ */
+function getChromiumArgs() {
+  const { isRoot, isCI, isExplicitNoSandbox, shouldDisable } = isNoSandboxRequired();
   const args = [
     '--disable-dev-shm-usage',
     '--disable-blink-features=AutomationControlled'
   ];
 
-  if (isRoot || isCI) {
-    logger.warn({ isRoot, isCI }, 'Aplicando --no-sandbox por execução como root ou ambiente CI.');
+  if (shouldDisable) {
+    logger.warn(
+      { isRoot, isCI, isExplicitNoSandbox },
+      'Aplicando --no-sandbox (--disable-setuid-sandbox) ao Chromium.'
+    );
     args.push('--no-sandbox', '--disable-setuid-sandbox');
   }
 
@@ -47,12 +74,13 @@ function getChromiumEnv() {
  * @returns {Promise<import('playwright').Browser>}
  */
 async function launchBrowser(options = {}) {
+  const { shouldDisable } = isNoSandboxRequired();
   const defaultArgs = getChromiumArgs();
   const defaultEnv = getChromiumEnv();
 
   const launchOptions = {
     headless: options.headless !== undefined ? options.headless : true,
-    chromiumSandbox: true,
+    chromiumSandbox: options.chromiumSandbox !== undefined ? options.chromiumSandbox : !shouldDisable,
     args: [...defaultArgs, ...(options.args || [])],
     env: { ...defaultEnv, ...(options.env || {}) },
     ...options

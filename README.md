@@ -78,7 +78,7 @@ Execute o modo unificado:
 
 Para instruções passo a passo aprofundadas, resolução de dependências e configuração de agendadores automáticos, consulte o manual específico do seu ambiente:
 
-- 🐧 **[Guia Detalhado de Instalação no Linux](INSTALL_LINUX.md):** Passo a passo manual para Ubuntu 22.04/24.04 e Debian, resolução de bibliotecas nativas de C/C++, swap em VPS e agendamento via `cron`.
+- 🐧 **[Guia Detalhado de Instalação no Linux](INSTALL_LINUX.md):** Passo a passo manual para Ubuntu 22.04/24.04 LTS e Debian, configuração do AppArmor para user namespaces no Ubuntu 23.10/24.04, resolução de bibliotecas nativas de C/C++, swap em VPS e agendamento via `cron`.
 - 🪟 **[Guia Detalhado de Instalação no Windows](INSTALL_WINDOWS.md):** Políticas de execução do PowerShell, dependências de runtime e agendamento via Agendador de Tarefas (*Task Scheduler*).
 - 🍎 **[Guia Detalhado de Instalação no macOS](INSTALL_MACOS.md):** Suporte nativo para Apple Silicon (M1/M2/M3/M4) e Intel, permissões do sistema e agendamento contínuo via `launchd`.
 - ☁️ **[Guia de Execução na Nuvem e Sessões](CLOUD_SESSIONS.md):** Entenda como funciona a proteção anti-bot em IPs de Datacenter (Oracle Cloud, AWS, GCP) e como delegar a sessão criptografada (AES-256-GCM) do seu computador para o servidor em segundos.

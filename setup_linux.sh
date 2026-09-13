@@ -112,7 +112,31 @@ else
   fi
 fi
 
-# 6. Permissões de scripts e arquivo de credenciais
+# 6. Configurar perfil AppArmor se Ubuntu 23.10 / 24.04+ com restrição de userns
+if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+  RESTRICT_USERNS="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo "0")"
+  if [ "$RESTRICT_USERNS" = "1" ] && [ -d /etc/apparmor.d ] && command -v apparmor_parser >/dev/null 2>&1; then
+    echo "Detectada restrição de User Namespaces ativa no kernel (Ubuntu 23.10 / 24.04+)."
+    if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; then
+      echo "Configurando perfil AppArmor para o Chromium do Playwright (/etc/apparmor.d/playwright-chrome)..."
+      $SUDO tee /etc/apparmor.d/playwright-chrome >/dev/null << 'EOF'
+# Perfil AppArmor para o Chromium do Playwright (Ubuntu 23.10 / 24.04 LTS)
+abi <abi/4.0>,
+include <tunables/global>
+
+profile playwright-chrome /**/.cache/ms-playwright/**/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/playwright-chrome>
+}
+EOF
+      $SUDO apparmor_parser -r /etc/apparmor.d/playwright-chrome 2>/dev/null || true
+      echo "Perfil AppArmor configurado com sucesso."
+    fi
+  fi
+fi
+
+# 7. Permissões de scripts e arquivo de credenciais
 echo "[6/7] Ajustando permissões e credenciais..."
 chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 
@@ -128,13 +152,16 @@ else
 fi
 chmod 600 "$SCRIPT_DIR"/session*.json "$SCRIPT_DIR"/session_token.txt 2>/dev/null || true
 
-# 7. Teste de inicialização do Chromium
+# 8. Teste de inicialização do Chromium
 echo "[7/7] Testando inicialização do Chromium no ambiente..."
 if [ -d "$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu" ]; then
   export LD_LIBRARY_PATH="$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
 fi
-if node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true, args: ['--no-sandbox'] }); await b.close(); })();" 2>/dev/null; then
-  echo "✅ Sucesso: O navegador Chromium iniciou normalmente sem erros de dependência!"
+if node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); await b.close(); })();" 2>/dev/null; then
+  echo "✅ Sucesso: O navegador Chromium iniciou normalmente com sandbox ativado!"
+elif node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true, args: ['--no-sandbox'] }); await b.close(); })();" 2>/dev/null; then
+  echo "✅ Sucesso: O navegador Chromium iniciou em modo sem sandbox (--no-sandbox)."
+  echo "   Nota: Caso encontre restrições no Ubuntu 24.04, configure o AppArmor ou use NO_SANDBOX=true (veja INSTALL_LINUX.md)."
 else
   echo "⚠️ Aviso: O Chromium encontrou dificuldades ao iniciar."
   echo "Para verificar bibliotecas faltantes no sistema, execute:"
