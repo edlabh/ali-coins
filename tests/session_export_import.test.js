@@ -92,6 +92,13 @@ test('export_session & import_session - roundtrip completo em ambiente isolado',
     const lsItems = restoredSession.origins[0].localStorage;
     assert.strictEqual(lsItems.length, 1);
     assert.strictEqual(lsItems[0].name, 'user_session_token');
+
+    // Verificar que session_meta.json registra que a sessão é importada de outro host
+    assert.ok(fs.existsSync(mPath));
+    const restoredMeta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
+    assert.strictEqual(restoredMeta.isImported, true);
+    assert.ok(restoredMeta.importedAt);
+    assert.strictEqual(restoredMeta.user, 'export_test_user@example.com');
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);

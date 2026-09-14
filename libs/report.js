@@ -1,5 +1,251 @@
+const { z } = require('zod');
 const { formatDate, formatTime } = require('../time_utils');
 const logger = require('../logger');
+
+/**
+ * Esquema Zod de validação do contrato JSON do relatório unificado
+ */
+const unifiedReportSchema = z.object({
+  type: z.literal('unified_report'),
+  user: z.string().optional(),
+  checkin: z
+    .object({
+      alreadyCollected: z.boolean(),
+      coinsGainedToday: z.string(),
+      streakDays: z.union([z.number(), z.string()]),
+      previousStreakDays: z.union([z.number(), z.string()]).optional().nullable(),
+      totalBalance: z.string(),
+      duration: z.string()
+    })
+    .nullable(),
+  tasks: z
+    .object({
+      results: z
+        .array(
+          z.object({
+            title: z.string(),
+            status: z.string(),
+            coins: z.string().optional()
+          })
+        )
+        .optional(),
+      finalCoins: z.string(),
+      duration: z.string()
+    })
+    .nullable(),
+  meta: z.object({
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+    totalDuration: z.string().optional(),
+    step1Duration: z.string().optional(),
+    step2Duration: z.string().optional(),
+    finalBalance: z.string()
+  })
+});
+
+/**
+ * Esquema Zod de validação do contrato JSON do relatório multi-conta
+ */
+const multiAccountReportSchema = z.object({
+  type: z.literal('multi_account_report'),
+  accounts: z.array(
+    z.object({
+      user: z.string(),
+      checkin: z
+        .object({
+          alreadyCollected: z.boolean(),
+          coinsGainedToday: z.string(),
+          streakDays: z.union([z.number(), z.string()]),
+          previousStreakDays: z.union([z.number(), z.string()]).optional().nullable(),
+          totalBalance: z.string(),
+          duration: z.string()
+        })
+        .nullable(),
+      tasks: z
+        .object({
+          results: z
+            .array(
+              z.object({
+                title: z.string(),
+                status: z.string(),
+                coins: z.string().optional()
+              })
+            )
+            .optional(),
+          finalCoins: z.string(),
+          duration: z.string()
+        })
+        .nullable(),
+      error: z.string().optional(),
+      meta: z.object({
+        finalBalance: z.string()
+      })
+    })
+  ),
+  meta: z.object({
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+    totalDuration: z.string().optional(),
+    totalAccounts: z.number(),
+    successfulAccounts: z.number()
+  })
+});
+
+/**
+ * Determina se houve quebra de sequência (streak break)
+ * Regras:
+ * 1. currentStreak e previousStreak devem ser números válidos.
+ * 2. previousStreak deve ser > 1 (primeira execução ou dia 1 não tem histórico prévio de sequência quebrável).
+ * 3. Se alreadyCollected e currentStreak >= previousStreak, não é quebra (re-execução no mesmo dia).
+ * 4. Se currentStreak < previousStreak, houve queda ou reset (ex: 200 -> 1).
+ * @param {number|null} currentStreak
+ * @param {number|null} previousStreak
+ * @param {boolean} [alreadyCollected=false]
+ * @returns {boolean}
+ */
+function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) {
+  if (typeof currentStreak !== 'number' || isNaN(currentStreak)) return false;
+  if (typeof previousStreak !== 'number' || isNaN(previousStreak)) return false;
+  if (previousStreak <= 1) return false;
+
+  if (alreadyCollected && currentStreak >= previousStreak) {
+    return false;
+  }
+
+  if (currentStreak < previousStreak) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Constrói o objeto estruturado do relatório unificado
+ * @param {object} checkinResult
+ * @param {object} tasksResult
+ * @param {object} meta
+ * @returns {object}
+ */
+function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
+  const finalBalance =
+    tasksResult && tasksResult.finalCoins && tasksResult.finalCoins !== 'N/D'
+      ? tasksResult.finalCoins
+      : checkinResult
+        ? `${checkinResult.totalBalance} moedas`
+        : 'N/D';
+
+  return {
+    type: 'unified_report',
+    user: checkinResult ? checkinResult.userEmail : undefined,
+    checkin: checkinResult
+      ? {
+          alreadyCollected: checkinResult.alreadyCollected,
+          coinsGainedToday: checkinResult.coinsGainedToday,
+          streakDays: checkinResult.streakDays,
+          previousStreakDays: checkinResult.previousStreakDays,
+          totalBalance: checkinResult.totalBalance,
+          duration: checkinResult.duration
+        }
+      : null,
+    tasks: tasksResult
+      ? {
+          results: tasksResult.results,
+          finalCoins: tasksResult.finalCoins,
+          duration: tasksResult.duration
+        }
+      : null,
+    meta: {
+      startTime: meta.mainStartTime ? meta.mainStartTime.toISOString() : undefined,
+      endTime: meta.mainEndTime ? meta.mainEndTime.toISOString() : undefined,
+      totalDuration: meta.totalDuration,
+      step1Duration: meta.step1Duration,
+      step2Duration: meta.step2Duration,
+      finalBalance
+    }
+  };
+}
+
+/**
+ * Envia notificação para Webhook genérico (Discord/Telegram/HTTP POST) com timeout de 5s
+ * Nunca lança erro ou interrompe o fluxo de execução
+ * @param {object} payload
+ * @param {string} [customUrl]
+ * @returns {Promise<boolean>}
+ */
+async function sendWebhookNotification(payload, customUrl = null) {
+  const webhookUrl = customUrl || process.env.NOTIFY_WEBHOOK_URL;
+  if (!webhookUrl) return false;
+
+  try {
+    const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
+    const isTelegram = webhookUrl.includes('api.telegram.org/bot');
+
+    let bodyData = JSON.stringify(payload);
+    const headers = { 'Content-Type': 'application/json' };
+
+    const targetUser =
+      payload.user ||
+      (payload.meta?.totalAccounts
+        ? `${payload.meta.successfulAccounts}/${payload.meta.totalAccounts} contas`
+        : 'N/D');
+    const targetBalance =
+      payload.meta?.finalBalance ||
+      payload.finalCoins ||
+      payload.totalBalance ||
+      (payload.meta?.totalAccounts ? `${payload.meta.successfulAccounts} contas OK` : 'N/D');
+
+    if (isDiscord) {
+      const summaryText =
+        `**AliExpress Coins Report** (${payload.type || 'relatório'})\n` +
+        `Conta: ${targetUser}\n` +
+        `Saldo: ${targetBalance}`;
+      bodyData = JSON.stringify({
+        content: summaryText,
+        embeds: [
+          {
+            title: 'Relatório AliExpress Moedas',
+            description: 'Execução concluída com sucesso.',
+            fields: [
+              { name: 'Tipo', value: String(payload.type || 'N/D'), inline: true },
+              { name: 'Conta', value: String(targetUser), inline: true },
+              {
+                name: 'Duração',
+                value: String(payload.meta?.totalDuration || payload.duration || 'N/D'),
+                inline: true
+              }
+            ]
+          }
+        ]
+      });
+    } else if (isTelegram) {
+      const text = `AliExpress Coins (${payload.type})\nConta: ${targetUser}\nSaldo: ${targetBalance}`;
+      bodyData = JSON.stringify({ text });
+    }
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body: bodyData,
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (!response.ok) {
+      logger.warn(
+        { status: response.status, statusText: response.statusText },
+        'Webhook notification retornou status não-2xx.'
+      );
+      return false;
+    }
+    logger.info('Notificação via Webhook enviada com sucesso.');
+    return true;
+  } catch (err) {
+    logger.debug(
+      { err: err.message },
+      'Falha silenciosa ao enviar notificação webhook (job preservado).'
+    );
+    return false;
+  }
+}
 
 /**
  * Renderiza o relatório do check-in diário
@@ -9,7 +255,9 @@ const logger = require('../logger');
  */
 function renderCheckinReport(checkinResult, options = {}) {
   if (options.json) {
-    process.stdout.write(JSON.stringify({ type: 'checkin', ...checkinResult }, null, 2) + '\n');
+    const payload = { type: 'checkin', ...checkinResult };
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+    sendWebhookNotification(payload).catch(() => {});
     return;
   }
 
@@ -32,6 +280,13 @@ function renderCheckinReport(checkinResult, options = {}) {
   logger.info(`Hora de Finalização: ${formatTime(checkinResult.endTime)}`);
   logger.info(`Duração Total:       ${checkinResult.duration}`);
   logger.info('===============================================================\n');
+
+  sendWebhookNotification({
+    type: 'checkin',
+    alreadyCollected: checkinResult.alreadyCollected,
+    totalBalance: checkinResult.totalBalance,
+    duration: checkinResult.duration
+  }).catch(() => {});
 }
 
 /**
@@ -42,7 +297,9 @@ function renderCheckinReport(checkinResult, options = {}) {
  */
 function renderTasksReport(tasksResult, options = {}) {
   if (options.json) {
-    process.stdout.write(JSON.stringify({ type: 'tasks', ...tasksResult }, null, 2) + '\n');
+    const payload = { type: 'tasks', ...tasksResult };
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+    sendWebhookNotification(payload).catch(() => {});
     return;
   }
 
@@ -59,6 +316,12 @@ function renderTasksReport(tasksResult, options = {}) {
   logger.info(`Hora de Finalização: ${formatTime(tasksResult.endTime)}`);
   logger.info(`Duração Total:       ${tasksResult.duration}`);
   logger.info('====================================================\n');
+
+  sendWebhookNotification({
+    type: 'tasks',
+    finalCoins: tasksResult.finalCoins,
+    duration: tasksResult.duration
+  }).catch(() => {});
 }
 
 /**
@@ -70,43 +333,11 @@ function renderTasksReport(tasksResult, options = {}) {
  * @param {boolean} [options.json=false]
  */
 function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}) {
-  const finalBalance =
-    tasksResult && tasksResult.finalCoins && tasksResult.finalCoins !== 'N/D'
-      ? tasksResult.finalCoins
-      : checkinResult
-        ? `${checkinResult.totalBalance} moedas`
-        : 'N/D';
+  const jsonOutput = buildUnifiedReportPayload(checkinResult, tasksResult, meta);
 
   if (options.json) {
-    const jsonOutput = {
-      type: 'unified_report',
-      user: checkinResult ? checkinResult.userEmail : undefined,
-      checkin: checkinResult
-        ? {
-            alreadyCollected: checkinResult.alreadyCollected,
-            coinsGainedToday: checkinResult.coinsGainedToday,
-            streakDays: checkinResult.streakDays,
-            totalBalance: checkinResult.totalBalance,
-            duration: checkinResult.duration
-          }
-        : null,
-      tasks: tasksResult
-        ? {
-            results: tasksResult.results,
-            finalCoins: tasksResult.finalCoins,
-            duration: tasksResult.duration
-          }
-        : null,
-      meta: {
-        startTime: meta.mainStartTime ? meta.mainStartTime.toISOString() : undefined,
-        endTime: meta.mainEndTime ? meta.mainEndTime.toISOString() : undefined,
-        totalDuration: meta.totalDuration,
-        step1Duration: meta.step1Duration,
-        step2Duration: meta.step2Duration,
-        finalBalance
-      }
-    };
     process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');
+    sendWebhookNotification(jsonOutput).catch(() => {});
     return;
   }
 
@@ -132,7 +363,7 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   }
 
   logger.info('---------------------------------------------------------------');
-  logger.info(`Saldo Total Atualizado: ${finalBalance}`);
+  logger.info(`Saldo Total Atualizado: ${jsonOutput.meta.finalBalance}`);
   logger.info('---------------------------------------------------------------');
   if (meta.mainStartTime && meta.mainEndTime) {
     logger.info(`Data:                ${formatDate(meta.mainStartTime)}`);
@@ -143,10 +374,141 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   if (meta.step2Duration) logger.info(`Duração Etapa 2:     ${meta.step2Duration}`);
   if (meta.totalDuration) logger.info(`Duração Total:       ${meta.totalDuration}`);
   logger.info('===============================================================\n');
+
+  sendWebhookNotification(jsonOutput).catch(() => {});
+}
+
+/**
+ * Constrói o objeto estruturado do relatório multi-conta
+ * @param {Array<{ account?: object, user?: string, checkinResult?: object, tasksResult?: object, error?: string }>} accountResults
+ * @param {object} meta
+ * @returns {object}
+ */
+function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
+  const accounts = accountResults.map((item) => {
+    const checkin = item.checkinResult;
+    const tasks = item.tasksResult;
+    const finalBalance =
+      tasks && tasks.finalCoins && tasks.finalCoins !== 'N/D'
+        ? tasks.finalCoins
+        : checkin
+          ? `${checkin.totalBalance} moedas`
+          : 'N/D';
+
+    return {
+      user: item.account ? item.account.maskedUser : item.user || 'Desconhecido',
+      checkin: checkin
+        ? {
+            alreadyCollected: checkin.alreadyCollected,
+            coinsGainedToday: checkin.coinsGainedToday,
+            streakDays: checkin.streakDays,
+            totalBalance: checkin.totalBalance,
+            duration: checkin.duration
+          }
+        : null,
+      tasks: tasks
+        ? {
+            results: tasks.results,
+            finalCoins: tasks.finalCoins,
+            duration: tasks.duration
+          }
+        : null,
+      error: item.error || undefined,
+      meta: {
+        finalBalance
+      }
+    };
+  });
+
+  const successfulAccounts = accountResults.filter((a) => !a.error).length;
+
+  return {
+    type: 'multi_account_report',
+    accounts,
+    meta: {
+      startTime: meta.mainStartTime ? meta.mainStartTime.toISOString() : undefined,
+      endTime: meta.mainEndTime ? meta.mainEndTime.toISOString() : undefined,
+      totalDuration: meta.totalDuration,
+      totalAccounts: accountResults.length,
+      successfulAccounts
+    }
+  };
+}
+
+/**
+ * Renderiza o relatório consolidado final multi-conta
+ * @param {Array<object>} accountResults
+ * @param {object} meta
+ * @param {object} [options={}]
+ * @param {boolean} [options.json=false]
+ */
+function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) {
+  const jsonOutput = buildMultiAccountReportPayload(accountResults, meta);
+
+  if (options.json) {
+    process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');
+    sendWebhookNotification(jsonOutput).catch(() => {});
+    return;
+  }
+
+  logger.info('\n===============================================================');
+  logger.info(`       RELATÓRIO CONSOLIDADO FINAL - MULTI-CONTA (${accountResults.length} contas)`);
+  logger.info('===============================================================');
+
+  accountResults.forEach((res, idx) => {
+    const userDisplay = res.account ? res.account.maskedUser : res.user || `Conta ${idx + 1}`;
+    logger.info(`\n[Conta ${idx + 1}/${accountResults.length}]: ${userDisplay}`);
+    if (res.error) {
+      logger.info(`  • Status: FALHA (${res.error})`);
+      return;
+    }
+
+    if (res.checkinResult) {
+      logger.info(
+        `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${res.checkinResult.coinsGainedToday} moedas/dia)`
+      );
+      logger.info(
+        `  • Check-in: ${res.checkinResult.alreadyCollected ? 'Já coletado' : 'Coletado com sucesso'} (+${res.checkinResult.coinsGainedToday} moedas)`
+      );
+    }
+
+    if (res.tasksResult && res.tasksResult.results) {
+      logger.info(`  • Tarefas executadas: ${res.tasksResult.totalActions || 0}`);
+      for (const r of res.tasksResult.results) {
+        logger.info(`    - ${r.title}: ${r.status} (${r.coins || ''})`);
+      }
+    }
+
+    const finalBal =
+      res.tasksResult && res.tasksResult.finalCoins && res.tasksResult.finalCoins !== 'N/D'
+        ? res.tasksResult.finalCoins
+        : res.checkinResult
+          ? `${res.checkinResult.totalBalance} moedas`
+          : 'N/D';
+    logger.info(`  • Saldo Final: ${finalBal}`);
+  });
+
+  logger.info('\n---------------------------------------------------------------');
+  if (meta.mainStartTime && meta.mainEndTime) {
+    logger.info(`Data:                ${formatDate(meta.mainStartTime)}`);
+    logger.info(`Hora de Início:      ${formatTime(meta.mainStartTime)}`);
+    logger.info(`Hora de Finalização: ${formatTime(meta.mainEndTime)}`);
+  }
+  if (meta.totalDuration) logger.info(`Duração Total:       ${meta.totalDuration}`);
+  logger.info('===============================================================\n');
+
+  sendWebhookNotification(jsonOutput).catch(() => {});
 }
 
 module.exports = {
+  unifiedReportSchema,
+  multiAccountReportSchema,
+  buildUnifiedReportPayload,
+  buildMultiAccountReportPayload,
+  sendWebhookNotification,
   renderCheckinReport,
   renderTasksReport,
-  renderUnifiedReport
+  renderUnifiedReport,
+  renderMultiAccountReport,
+  isStreakBreak
 };

@@ -1,6 +1,7 @@
 const {
   loadConfig,
   sessionPath,
+  sessionMetaPath,
   handleDryRun,
   isForce,
   isJson,
@@ -9,7 +10,12 @@ const {
 const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
 const { acquireLock, LockActiveError } = require('./lockfile');
-const { validateAndRefresh, saveSession, clearSession } = require('./libs/session');
+const {
+  validateAndRefresh,
+  saveSession,
+  clearSession,
+  updateSessionStreak
+} = require('./libs/session');
 const { SELECTORS } = require('./libs/selectors');
 const {
   gotoWithRetry,
@@ -30,8 +36,17 @@ const logger = require('./logger');
  */
 async function runCheckin(options = {}) {
   const checkinStartTime = new Date();
-  const config = loadConfig(true);
-  const userEmail = config.ALI_USER;
+  const config = options.config || loadConfig(true);
+  const account = options.account || null;
+  const userEmail = (account && account.user) || options.userEmail || config.ALI_USER;
+  const currentSessionPath = (account && account.sessionPath) || options.sessionPath || sessionPath;
+  const currentSessionMetaPath =
+    (account && account.sessionMetaPath) || options.sessionMetaPath || sessionMetaPath;
+  const sessionOpts = {
+    sessionPath: currentSessionPath,
+    sessionMetaPath: currentSessionMetaPath,
+    account
+  };
 
   logger.info('================ CHECK-IN DIÁRIO ================');
   logger.info(`[Dia e Hora]: ${formatDateTime(checkinStartTime)}`);
@@ -49,19 +64,26 @@ async function runCheckin(options = {}) {
 
   try {
     // 1. Carregar e validar sessão existente
-    const sessionStatus = await validateAndRefresh(userEmail, sessionData);
+    const sessionStatus = await validateAndRefresh(userEmail, sessionData, sessionOpts);
     const hasValidSession = sessionStatus.valid;
+    const isImportedSession = Boolean(sessionStatus.isImported);
     sessionData = sessionStatus.sessionData;
+    const previousStreakDays =
+      sessionStatus.metaData?.lastStreakDays ?? sessionStatus.previousMeta?.lastStreakDays ?? null;
 
     // 2. Checagem prévia rápida no desktop se já foi coletado hoje
+    let earlyDesktopStreak = null;
     if (hasValidSession) {
       try {
-        const desktopCheck = await getBalanceDesktop(browser, sessionPath, {
+        const desktopCheck = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
           allowMedia: config.ALLOW_MEDIA,
           timeout: config.NAV_TIMEOUT_SHORT
         });
         if (desktopCheck.hasAppCheckinToday) {
           wasAlreadyCollectedToday = true;
+        }
+        if (desktopCheck.desktopStreak !== null && desktopCheck.desktopStreak !== undefined) {
+          earlyDesktopStreak = desktopCheck.desktopStreak;
         }
       } catch (checkErr) {
         logger.debug({ err: checkErr.message }, 'Checagem prévia de desktop ignorada.');
@@ -69,9 +91,13 @@ async function runCheckin(options = {}) {
     }
 
     // 3. Inicializar contexto mobile
-    const context = await newMobileContext(browser, hasValidSession ? sessionPath : null, {
-      allowMedia: config.ALLOW_MEDIA
-    });
+    const context = await newMobileContext(
+      browser,
+      hasValidSession ? sessionData || currentSessionPath : null,
+      {
+        allowMedia: config.ALLOW_MEDIA
+      }
+    );
     const page = await context.newPage();
     let attemptedLogin = false;
 
@@ -123,7 +149,36 @@ async function runCheckin(options = {}) {
 
       if (needsLogin) {
         attemptedLogin = true;
-        sessionData = await performMobileLogin(page, context, config);
+        if (isImportedSession) {
+          logger.warn(
+            '[Sessão Remota] Autenticação necessária com sessão importada. Em servidores remotos (VPS/nuvem), desafios de segurança anti-bot podem impedir o login automático.'
+          );
+        }
+        try {
+          sessionData = await performMobileLogin(page, context, config, sessionOpts);
+        } catch (loginErr) {
+          if (isImportedSession) {
+            logger.error(
+              '[Sessão Remota Expirada] Falha ao autenticar no AliExpress. A sessão importada de outro host expirou ou foi invalidada. ' +
+                'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+            );
+            loginErr.isImportedSessionExpired = true;
+          }
+          throw loginErr;
+        }
+
+        // Aguardar o redirecionamento pós-login concluir e assegurar navegação para o coin-index
+        await page.waitForURL(/coin-index/, { timeout: config.NAV_TIMEOUT_SHORT }).catch(() => {});
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForLoadState('networkidle').catch(() => {});
+
+        if (!page.url().includes('coin-index')) {
+          await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+            waitUntil: 'domcontentloaded',
+            timeout: config.NAV_TIMEOUT
+          }).catch(() => {});
+          await page.waitForLoadState('networkidle').catch(() => {});
+        }
       }
 
       await page
@@ -133,16 +188,19 @@ async function runCheckin(options = {}) {
         .catch(() => {});
 
       // 4. Checagem e coleta do check-in
-      const isCheckedInitial = await page.evaluate(() => {
-        const text = document.body.innerText || '';
-        return (
-          Boolean(
-            document.querySelector('[class*="today-checked"], [class*="aecoin-today-checked"]')
-          ) || /Today[\s\S]{0,15}✓/i.test(text)
-        );
-      });
+      const isCheckedInitial = await page
+        .evaluate(() => {
+          const text = (document.body && document.body.innerText) || '';
+          return (
+            Boolean(
+              document.querySelector('[class*="today-checked"], [class*="aecoin-today-checked"]')
+            ) || /Today[\s\S]{0,15}✓/i.test(text)
+          );
+        })
+        .catch(() => false);
 
       let alreadyCollected = isCheckedInitial;
+      let mobileStreak = null;
 
       if (!alreadyCollected) {
         for (const sel of SELECTORS.checkin.collectButtonList) {
@@ -167,7 +225,15 @@ async function runCheckin(options = {}) {
         }
       }
 
+      // Tentar capturar o streak imediatamente (modal de sucesso ainda visível se houve clique)
+      mobileStreak = await getStreakFromCoinPage(page);
+
       await closeModals(page);
+
+      // Se ainda não capturou, tenta novamente após fechar os modais
+      if (mobileStreak === null) {
+        mobileStreak = await getStreakFromCoinPage(page);
+      }
 
       // Coletar água da Fazenda Mágica se visível
       try {
@@ -181,12 +247,15 @@ async function runCheckin(options = {}) {
         // Ignorar
       }
 
-      const mobileStreak = await getStreakFromCoinPage(page);
+      // Se ainda não capturou, faz tentativa final antes de fechar o contexto mobile
+      if (mobileStreak === null) {
+        mobileStreak = await getStreakFromCoinPage(page);
+      }
 
       try {
         const updatedStorage = await context.storageState();
         sessionData = updatedStorage;
-        await saveSession(updatedStorage, userEmail);
+        await saveSession(updatedStorage, userEmail, sessionOpts);
       } catch {
         // Ignorar
       }
@@ -194,7 +263,7 @@ async function runCheckin(options = {}) {
       await closeContextWithDiagnostics(context, { failed: false, name: 'checkin-mobile' });
 
       // 5. Confirmar resultado e saldo no desktop
-      const desktopResult = await getBalanceDesktop(browser, sessionPath, {
+      const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
         allowMedia: config.ALLOW_MEDIA,
         timeout: config.NAV_TIMEOUT_SHORT
       });
@@ -208,9 +277,16 @@ async function runCheckin(options = {}) {
       const coinsGainedToday = desktopResult.todayCheckinCoins
         ? desktopResult.todayCheckinCoins
         : isCollected
-          ? '10'
+          ? 'N/D'
           : '0';
-      const streakDays = mobileStreak !== null ? mobileStreak : 'N/D';
+      const streakDays =
+        mobileStreak !== null && mobileStreak !== 'N/D'
+          ? mobileStreak
+          : desktopResult.desktopStreak !== null && desktopResult.desktopStreak !== 'N/D'
+            ? desktopResult.desktopStreak
+            : earlyDesktopStreak !== null && earlyDesktopStreak !== 'N/D'
+              ? earlyDesktopStreak
+              : 'N/D';
 
       const hasStreak = streakDays !== 'N/D' && streakDays !== null;
       const hasTotalBalance = totalBalance !== 'N/D' && totalBalance !== null;
@@ -221,14 +297,28 @@ async function runCheckin(options = {}) {
         (!hasStreak && !hasTotalBalance && !hasCheckinCoins) ||
         (attemptedLogin && !hasStreak && !hasTotalBalance)
       ) {
+        if (isImportedSession) {
+          logger.error(
+            '[Sessão Remota Expirada] Não foi possível obter streak e saldo. A sessão importada de outro host expirou ou foi invalidada pelo AliExpress. ' +
+              'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+          );
+        }
         logger.error(
           { user: userEmail, streakDays, totalBalance, coinsGainedToday },
           'Erro ao efetuar o login: não foi possível obter streak e saldo.'
         );
-        await clearSession();
-        throw new Error(
+        await clearSession(sessionOpts);
+        const loginErr = new Error(
           `Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "${userEmail}".`
         );
+        if (isImportedSession) {
+          loginErr.isImportedSessionExpired = true;
+        }
+        throw loginErr;
+      }
+
+      if (streakDays !== 'N/D' && streakDays !== null) {
+        await updateSessionStreak(streakDays, sessionOpts);
       }
 
       const checkinEndTime = new Date();
@@ -240,15 +330,28 @@ async function runCheckin(options = {}) {
         coinsGainedToday,
         totalBalance,
         streakDays,
+        previousStreakDays,
         startTime: checkinStartTime,
         endTime: checkinEndTime,
         duration: checkinDuration,
         sessionData
       };
 
-      renderCheckinReport(result, { json: isJson() });
+      if (!options.skipReport) {
+        renderCheckinReport(result, { json: isJson() });
+      }
       return result;
     } catch (flowErr) {
+      if (isImportedSession && !flowErr.isImportedSessionExpired) {
+        const msg = flowErr && flowErr.message ? flowErr.message : '';
+        if (/login|autentic|sess[aã]o|streak|saldo|desafio|challenge|cookie|navigat/i.test(msg)) {
+          flowErr.isImportedSessionExpired = true;
+          logger.error(
+            '[Sessão Remota Expirada] A execução falhou e a sessão ativa foi importada de outro host. ' +
+              'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+          );
+        }
+      }
       await closeContextWithDiagnostics(context, { failed: true, name: 'checkin-failed' });
       throw flowErr;
     }
@@ -263,32 +366,52 @@ if (require.main === module) {
   if (checkAndDisplayHelp()) {
     process.exit(0);
   }
-  if (handleDryRun()) {
-    process.exit(0);
-  }
 
   (async () => {
+    if (await handleDryRun()) {
+      process.exit(0);
+    }
+
+    const { sendTelegram } = require('./libs/notify');
     let releaseLock = null;
+    let cfg = null;
+    try {
+      cfg = loadConfig(true);
+    } catch {
+      // Ignorar se falhar antes do lock
+    }
+
     try {
       releaseLock = await acquireLock(isForce());
     } catch (err) {
       if (err instanceof LockActiveError) {
+        await sendTelegram({ config: cfg, event: 'lock_active', error: err }).catch(() => {});
         process.exit(3);
       }
       logger.error({ err: err.message }, 'Falha ao obter lock.');
+      await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
       process.exit(1);
     }
 
     try {
       const result = await runCheckin();
       if (releaseLock) await releaseLock();
+      const report = { type: 'checkin', ...result };
+      const event = result && result.alreadyCollected ? 'already_collected' : 'success';
+      await sendTelegram({ config: cfg, report, event }).catch(() => {});
       if (result && result.alreadyCollected) {
         process.exit(2);
       }
       process.exit(0);
     } catch (err) {
       if (releaseLock) await releaseLock();
+      if (err.isImportedSessionExpired) {
+        logger.error(
+          '[Sessão Remota Expirada] Login falhou em servidor remoto. Sugestão: gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+        );
+      }
       logger.error({ err: err.message }, 'Falha no check-in diário.');
+      await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
       process.exit(1);
     }
   })();

@@ -5,6 +5,7 @@ Este manual foi criado para guiar passo a passo a instalação completa do **Ali
 ---
 
 ## Sumário
+
 1. [Requisitos Mínimos](#1-requisitos-m%C3%ADnimos)
 2. [Método A: Instalação Automática (Recomendado - 1 Comando)](#2-m%C3%A9todo-a-instala%C3%A7%C3%A3o-autom%C3%A1tica-recomendado---1-comando)
 3. [Método B: Instalação Manual Passo a Passo Detalhada](#3-m%C3%A9todo-b-instala%C3%A7%C3%A3o-manual-passo-a-passo-detalhada)
@@ -40,6 +41,7 @@ chmod +x setup_linux.sh
 ```
 
 O instalador automático realiza sozinho:
+
 1. Instalação de utilitários de sistema (`curl`, `git`, `ca-certificates`, `gnupg`);
 2. Instalação do **Node.js 20 LTS** caso o sistema não tenha ou tenha versão inferior à 18;
 3. Execução do `npm install`;
@@ -57,6 +59,7 @@ Após a conclusão, basta editar suas credenciais com `nano credentials.env` e r
 Siga as etapas abaixo caso queira controle total sobre cada pacote instalado em seu sistema operacional.
 
 ### Passo 1: Limpeza de versões antigas do Node.js
+
 No Ubuntu 22.04 LTS padrão, o repositório da Canonical instala o Node.js `v12.22.9`. O Playwright exige **Node.js 18 ou superior**. Se você já instalou o pacote padrão do apt anteriormente, remova-o primeiro:
 
 ```bash
@@ -67,6 +70,7 @@ sudo apt-get autoremove -y
 ### Passo 2: Instalação do Node.js 20 LTS
 
 #### Opção 1: Via Repositório Oficial NodeSource (Recomendado para servidores/VPS)
+
 Instala o binário estável mais recente do Node.js 20 LTS e o npm atualizado:
 
 ```bash
@@ -86,6 +90,7 @@ npm -v
 ```
 
 #### Opção 2: Via NVM (Node Version Manager)
+
 Caso você prefira gerenciar versões no espaço de usuário sem instalar pacotes globais no sistema:
 
 ```bash
@@ -125,6 +130,7 @@ Isso instalará a versão travada do Playwright declarada no `package.json` (`^1
 O Playwright gerencia seus navegadores de forma isolada no diretório `~/.cache/ms-playwright/`.
 
 1. **Baixar o binário do Chromium:**
+
    ```bash
    npx playwright install chromium
    ```
@@ -133,6 +139,7 @@ O Playwright gerencia seus navegadores de forma isolada no diretório `~/.cache/
    Mesmo rodando em modo headless (sem interface gráfica), o Chromium depende de diversas bibliotecas nativas de decodificação de imagem, áudio, rede e renderização X11.
 
    - **Método Oficial Automatizado do Playwright (Mais fácil):**
+
      ```bash
      sudo npx playwright install-deps chromium
      ```
@@ -141,6 +148,7 @@ O Playwright gerencia seus navegadores de forma isolada no diretório `~/.cache/
      Se preferir instalar pacote por pacote ou se estiver customizando uma imagem Docker/minimalista:
 
      **Para Ubuntu 22.04 LTS (Jammy) e Debian 11/12:**
+
      ```bash
      sudo apt-get update && sudo apt-get install -y \
        libasound2 \
@@ -169,7 +177,8 @@ O Playwright gerencia seus navegadores de forma isolada no diretório `~/.cache/
      ```
 
      **Para Ubuntu 24.04 LTS (Noble):**
-     *(Nota: No Ubuntu 24.04, diversos pacotes foram renomeados com o sufixo `t64` devido à transição de 64 bits do kernel Linux):*
+     _(Nota: No Ubuntu 24.04, diversos pacotes foram renomeados com o sufixo `t64` devido à transição de 64 bits do kernel Linux):_
+
      ```bash
      sudo apt-get update && sudo apt-get install -y \
        libasound2t64 \
@@ -210,6 +219,7 @@ Se o comando imprimir `✅ Chromium iniciado com sucesso no Linux!`, seu ambient
 ### Passo 7: Configuração de Credenciais
 
 1. Copie o arquivo de exemplo:
+
    ```bash
    cp credentials.env.example credentials.env
    chmod 600 credentials.env
@@ -251,15 +261,19 @@ npm start
 Para garantir que suas moedas sejam coletadas diariamente sem intervenção manual, configure o `cron`.
 
 ### O problema clássico do Cron no Linux
+
 O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH` contém apenas `/usr/bin:/bin`. Se você instalou o Node via `/usr/local/bin` ou NVM, o cron falhará silenciosamente com o erro `node: command not found`.
 
 ### Como configurar corretamente:
+
 1. Abra a edição do crontab do seu usuário:
+
    ```bash
    crontab -e
    ```
 
 2. Adicione a definição explícita do `SHELL` e `PATH` no topo, seguida da linha do agendador (exemplo para rodar todo dia às 08:00):
+
    ```cron
    SHELL=/bin/bash
    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -279,10 +293,12 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
 ## 5. Resolução de Problemas Frequentes (Troubleshooting)
 
 ### A. Erro: `E: Unable to locate package libasound2t64`
+
 - **Causa:** Esse erro ocorre ao tentar instalar um pacote exclusivo do Ubuntu 24.04 em sistemas Ubuntu 22.04 ou Debian.
 - **Solução:** No Ubuntu 22.04 LTS, instale `libasound2` (sem o sufixo `t64`).
 
 ### B. Erro: `Host system is missing dependencies to run browsers`
+
 - **Causa:** Faltam bibliotecas nativas de C/C++ exigidas pelo Chromium.
 - **Como diagnosticar exatamente quais bibliotecas estão faltando:**
   Execute o comando `ldd` no binário do Chromium baixado pelo Playwright:
@@ -292,11 +308,13 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
 - **Solução:** Execute `sudo npx playwright install-deps chromium` ou instale os pacotes listados no [Passo 5](#passo-5-instala%C3%A7%C3%A3o-do-chromium-e-depend%C3%AAncias-nativas-do-so).
 
 ### C. Erro: `SyntaxError: Unexpected token '?'` ou falha no npm
+
 - **Causa:** Você está utilizando uma versão legada do Node.js (como a versão 12 padrão do Ubuntu 22.04).
 - **Solução:** Siga o [Passo 2](#passo-2-instala%C3%A7%C3%A3o-do-nodejs-20-lts) para instalar o **Node.js 20 LTS**.
 
 ### D. Servidores com Pouca Memória RAM (VPS de 512 MB ou 1 GB)
-- **Causa:** O navegador Chromium pode ser finalizado pelo kernel Linux (*Out of Memory Killer*) se a memória esgotar durante a renderização de páginas pesadas do AliExpress.
+
+- **Causa:** O navegador Chromium pode ser finalizado pelo kernel Linux (_Out of Memory Killer_) se a memória esgotar durante a renderização de páginas pesadas do AliExpress.
 - **Solução:** Crie um arquivo de Swap de 1 GB ou 2 GB:
   ```bash
   sudo fallocate -l 2G /swapfile
@@ -307,6 +325,7 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
   ```
 
 ### E. Servidores em Nuvem (Oracle Cloud, AWS, VPS): Desafio de Captcha ou Bloqueio no Login
+
 - **Causa:** O AliExpress implementa um controle rigoroso anti-bot (Baxia). Quando uma tentativa de login (usuário e senha) parte de um IP de Datacenter/Nuvem (como Oracle Cloud, AWS ou DigitalOcean), o AliExpress quase sempre bloqueia o envio exibindo um Slide Captcha de alta precisão ou solicitando código de confirmação 2FA por e-mail/SMS.
 - **Como resolver com exportação/importação criptografada (AES-256-GCM):**
   1. Em seu computador local (onde o IP residencial não é bloqueado):
@@ -322,6 +341,7 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
   3. Pronto! Os arquivos `session.json` e `session_meta.json` serão gravados com permissões restritas `0o600` e o `./run_all.sh` rodará diariamente na nuvem sem necessidade de refazer login por semanas ou meses.
 
 ### F. Diretório de Cache dos Navegadores (`PLAYWRIGHT_BROWSERS_PATH`)
+
 - Por padrão, o Playwright instala os binários do Chromium em `~/.cache/ms-playwright`.
 - Em ambientes de servidor ou containers com múltiplos usuários / volumes dedicados, você pode customizar o local definindo:
   ```bash
@@ -333,17 +353,21 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
 ### G. Ubuntu 23.10 e Ubuntu 24.04 LTS: Bloqueio do Sandbox do Chromium via AppArmor (User Namespaces Restritos)
 
 #### O que é e por que ocorre
-A partir do **Ubuntu 23.10** e consolidado como padrão de segurança no **Ubuntu 24.04 LTS (Noble Numbat)**, o kernel do Ubuntu bloqueia por padrão a criação de *unprivileged user namespaces* (`CLONE_NEWUSER`) para aplicações que não possuam um perfil explícito do AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`).
 
-O navegador Chromium (utilizado pelo Playwright) requer a capacidade de criar user namespaces para inicializar o seu mecanismo de isolamento de processos (*sandbox* de segurança em camadas / Layer-1 Sandbox).
+A partir do **Ubuntu 23.10** e consolidado como padrão de segurança no **Ubuntu 24.04 LTS (Noble Numbat)**, o kernel do Ubuntu bloqueia por padrão a criação de _unprivileged user namespaces_ (`CLONE_NEWUSER`) para aplicações que não possuam um perfil explícito do AppArmor (`kernel.apparmor_restrict_unprivileged_userns = 1`).
+
+O navegador Chromium (utilizado pelo Playwright) requer a capacidade de criar user namespaces para inicializar o seu mecanismo de isolamento de processos (_sandbox_ de segurança em camadas / Layer-1 Sandbox).
 
 Como o Playwright faz o download do binário do Chromium no diretório pessoal do usuário (`~/.cache/ms-playwright/chromium-.../chrome-linux/chrome`) em vez de instalá-lo como um pacote `.deb` registrado no sistema, o kernel intercepta e nega a chamada de sistema com erro `EPERM` (`apparmor="DENIED" operation="userns_create"`).
 
 **Sintomas e Mensagens de Erro Típicas:**
+
 ```text
 [FATAL:zygote_host_impl_linux.cc(117)] No usable sandbox! Update your kernel or see https://chromium.googlesource.com/chromium/src/+/main/docs/linux/sandboxing.md for more information.
 ```
+
 ou
+
 ```text
 browserType.launch: Failed to launch the browser process!
 ```
@@ -357,9 +381,11 @@ Existem **3 soluções** possíveis. Escolha a que melhor se adapta ao seu ambie
 ---
 
 #### Solução 1: Criar um Perfil AppArmor para o Playwright (Recomendada / Mantém a Segurança Ativa)
+
 Esta é a solução recomendada pela Canonical e pelo time do Playwright, pois **mantém a proteção do sistema ativa** e autoriza especificamente os binários do Chromium gerenciados pelo Playwright a utilizarem user namespaces.
 
 1. Crie o arquivo de perfil `/etc/apparmor.d/playwright-chrome`:
+
    ```bash
    sudo tee /etc/apparmor.d/playwright-chrome << 'EOF'
    # Perfil AppArmor para o Chromium do Playwright (Ubuntu 23.10 / 24.04 LTS)
@@ -375,19 +401,23 @@ Esta é a solução recomendada pela Canonical e pelo time do Playwright, pois *
    ```
 
 2. Carregue o novo perfil no AppArmor:
+
    ```bash
    sudo apparmor_parser -r /etc/apparmor.d/playwright-chrome
    ```
-   *(ou alternativamente recarregue o serviço: `sudo systemctl reload apparmor`)*
+
+   _(ou alternativamente recarregue o serviço: `sudo systemctl reload apparmor`)_
 
 3. Pronto! O Chromium agora inicializará normalmente com sandbox completo ativado, sem necessidade de `--no-sandbox`.
 
 ---
 
 #### Solução 2: Desativar a Restrição de User Namespaces no Kernel via sysctl (Ajuste Global do Host)
+
 Se o seu host remoto for um servidor dedicado ou VPS sob seu controle e você preferir restaurar o comportamento padrão de versões anteriores do Ubuntu (22.04 LTS, Debian 11/12, etc.):
 
 - **Temporário (imediato, dura até o próximo reboot):**
+
   ```bash
   sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
   ```
@@ -401,6 +431,7 @@ Se o seu host remoto for um servidor dedicado ou VPS sob seu controle e você pr
 ---
 
 #### Solução 3: Desativar a Sandbox do Chromium na Aplicação (`NO_SANDBOX=true`)
+
 Se você está em um ambiente onde **não possui privilégios `sudo`** para alterar `/etc/apparmor.d` ou parâmetros do kernel via `sysctl` (por exemplo, hospedagens compartilhadas, containers restritos ou instâncias corporativas gerenciadas):
 
 1. Adicione a variável no seu `credentials.env`:
@@ -414,4 +445,3 @@ Se você está em um ambiente onde **não possui privilégios `sudo`** para alte
 
 > [!WARNING]
 > **Aviso de Segurança:** A opção `NO_SANDBOX=true` instrui o Playwright a repassar as flags `--no-sandbox` e `--disable-setuid-sandbox` ao Chromium, desativando o sandbox de isolamento de processos do navegador. Como este projeto acessa estritamente as páginas oficiais do AliExpress para coleta de moedas e tarefas diárias, o risco prático é mínimo em servidores dedicados. No entanto, em ambientes multiusuário, recomenda-se priorizar a **Solução 1**.
-

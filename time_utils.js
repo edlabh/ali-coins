@@ -60,9 +60,39 @@ function formatDuration(ms) {
   return `${seconds}s`;
 }
 
+/**
+ * Calcula tempo de backoff exponencial com jitter por tentativa de falha
+ * @param {number} attempt Índice da tentativa de falha (0-based)
+ * @param {number} [baseMs] Base em ms (default: process.env.ACCOUNT_BACKOFF_BASE_MS ou 2000)
+ * @param {number} [maxMs=30000] Teto máximo em ms (default: 30000)
+ * @param {number} [jitterFraction] Fração para cálculo de jitter previsível (0.0 a 1.0)
+ * @returns {number} Tempo em ms
+ */
+function calculateAccountBackoff(
+  attempt = 0,
+  baseMs = null,
+  maxMs = 30000,
+  jitterFraction = Math.random()
+) {
+  const envBase = Number(process.env.ACCOUNT_BACKOFF_BASE_MS);
+  const effectiveBase =
+    typeof baseMs === 'number' && baseMs > 0
+      ? baseMs
+      : !isNaN(envBase) && envBase > 0
+        ? envBase
+        : 2000;
+
+  const exponentialMs = effectiveBase * Math.pow(2, Math.max(0, attempt));
+  const cappedMs = Math.min(exponentialMs, maxMs);
+  // Jitter entre 80% e 120%
+  const jitterFactor = 0.8 + 0.4 * jitterFraction;
+  return Math.min(Math.round(cappedMs * jitterFactor), maxMs);
+}
+
 module.exports = {
   formatDate,
   formatTime,
   formatDateTime,
-  formatDuration
+  formatDuration,
+  calculateAccountBackoff
 };

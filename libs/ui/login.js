@@ -2,7 +2,7 @@ const { SELECTORS } = require('../selectors');
 const { waitAndClick, trySolveSlider } = require('./navigation');
 const { saveFailureScreenshot } = require('./diagnostics');
 const { saveSession } = require('../session');
-const { readMasked2FACode } = require('../../security');
+const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../../security');
 const logger = require('../../logger');
 
 /**
@@ -12,9 +12,9 @@ const logger = require('../../logger');
  * @param {object} config
  * @returns {Promise<object>} Nova sessão autenticada (storageState)
  */
-async function performMobileLogin(page, context, config) {
-  const username = config.ALI_USER;
-  const password = config.ALI_PASSWORD;
+async function performMobileLogin(page, context, config, options = {}) {
+  const username = (options.account && options.account.user) || config.ALI_USER;
+  const password = (options.account && options.account.password) || config.ALI_PASSWORD;
   logger.info(`[Login] Autenticando com credenciais de "${username}"...`);
 
   let loginInput = await page
@@ -26,7 +26,9 @@ async function performMobileLogin(page, context, config) {
   }
 
   if (!loginInput) {
-    throw new Error('Campo de identificador de usuário (e-mail/telefone) não encontrado na página.');
+    throw new Error(
+      'Campo de identificador de usuário (e-mail/telefone) não encontrado na página.'
+    );
   }
 
   await loginInput.fill(username);
@@ -81,6 +83,9 @@ async function performMobileLogin(page, context, config) {
   const codeInput = await page.$(SELECTORS.login.twoFactorInput).catch(() => null);
   if (codeInput) {
     logger.warn('[Segurança AliExpress] Código de verificação 2FA solicitado pelo AliExpress.');
+    if (!process.stdin.isTTY) {
+      throw new TwoFactorRequiredNonInteractive();
+    }
     const code = await readMasked2FACode(
       '>> Digite o código de 6 dígitos enviado para seu e-mail/SMS: ',
       120000
@@ -125,11 +130,12 @@ async function performMobileLogin(page, context, config) {
   }
 
   const rawStorage = await context.storageState();
-  await saveSession(rawStorage, username);
+  await saveSession(rawStorage, username, options);
   logger.info('[Login] Nova sessão autenticada salva com sucesso.');
   return rawStorage;
 }
 
 module.exports = {
-  performMobileLogin
+  performMobileLogin,
+  TwoFactorRequiredNonInteractive
 };

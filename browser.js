@@ -19,7 +19,7 @@ function isNoSandboxRequired() {
   const isCI = Boolean(process.env.CI);
   const isExplicitNoSandbox = Boolean(
     process.env.NO_SANDBOX &&
-      (process.env.NO_SANDBOX.toLowerCase() === 'true' || process.env.NO_SANDBOX === '1')
+    (process.env.NO_SANDBOX.toLowerCase() === 'true' || process.env.NO_SANDBOX === '1')
   );
   return {
     isRoot,
@@ -117,7 +117,44 @@ async function setupResourceBlocking(context, allowMedia = false) {
   });
 }
 
-
+/**
+ * Resolve e normaliza o storageState para uso no Playwright.
+ * Aceita objeto em memória, caminho para arquivo .json existente,
+ * ou caminho para arquivo .enc que é descriptografado automaticamente.
+ * Evita passar caminhos inexistentes ao Playwright (prevenindo ENOENT).
+ * @param {string|object} storageState
+ * @returns {Promise<string|object|null>}
+ */
+async function resolveStorageState(storageState) {
+  if (!storageState) return null;
+  if (typeof storageState === 'object') return storageState;
+  if (typeof storageState === 'string') {
+    if (storageState.endsWith('.enc') && fs.existsSync(storageState)) {
+      try {
+        const { loadSessionFiles } = require('./libs/session');
+        const loaded = await loadSessionFiles({ sessionPath: storageState });
+        return loaded.sessionData || null;
+      } catch {
+        return null;
+      }
+    }
+    if (fs.existsSync(storageState)) {
+      return storageState;
+    }
+    const encCandidate = storageState.endsWith('.enc') ? storageState : `${storageState}.enc`;
+    if (fs.existsSync(encCandidate)) {
+      try {
+        const { loadSessionFiles } = require('./libs/session');
+        const loaded = await loadSessionFiles({ sessionPath: storageState });
+        return loaded.sessionData || null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+  return null;
+}
 
 /**
  * Cria um contexto mobile emulando o Pixel 7 com idioma pt-BR
@@ -128,10 +165,11 @@ async function setupResourceBlocking(context, allowMedia = false) {
  */
 async function newMobileContext(browser, storageState = null, options = {}) {
   const pixel7 = devices['Pixel 7'];
+  const resolvedStorage = await resolveStorageState(storageState);
   let contextOptions = {
     ...pixel7,
     locale: 'pt-BR',
-    ...(storageState ? { storageState } : {}),
+    ...(resolvedStorage ? { storageState: resolvedStorage } : {}),
     ...options
   };
 
@@ -157,9 +195,10 @@ async function newMobileContext(browser, storageState = null, options = {}) {
  * @returns {Promise<import('playwright').BrowserContext>}
  */
 async function newDesktopContext(browser, storageState = null, options = {}) {
+  const resolvedStorage = await resolveStorageState(storageState);
   let contextOptions = {
     locale: 'pt-BR',
-    ...(storageState ? { storageState } : {}),
+    ...(resolvedStorage ? { storageState: resolvedStorage } : {}),
     ...options
   };
 
@@ -244,6 +283,7 @@ module.exports = {
   launchBrowser,
   newMobileContext,
   newDesktopContext,
+  resolveStorageState,
   setupResourceBlocking,
   retry,
   waitWithScroll,

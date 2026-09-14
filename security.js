@@ -174,8 +174,12 @@ const sessionPayloadSchema = z.object({
       user: z.string().min(1, 'O usuário no metadado da sessão não pode ser vazio.'),
       exportedAt: z.string().optional(),
       expiresAt: z.string().optional(),
-      savedAt: z.string().optional()
+      savedAt: z.string().optional(),
+      exportedFrom: z.string().optional(),
+      isImported: z.boolean().optional(),
+      importedAt: z.string().optional()
     })
+    .passthrough()
     .optional()
 });
 
@@ -283,6 +287,23 @@ function validateSession(sessionData, metaData, expectedUser) {
 }
 
 /**
+ * Erro lançado quando verificação 2FA é solicitada em ambiente não-interativo (sem TTY, como cron/CI)
+ */
+class TwoFactorRequiredNonInteractive extends Error {
+  constructor(message) {
+    super(
+      message ||
+        'Execução não-interativa detectada (sem TTY). O AliExpress solicitou verificação de código 2FA.\n' +
+          'Solução: Execute localmente em terminal interativo (./run_all.sh), resolva o desafio, ' +
+          'e use "node export_session.js" / "node import_session.js" para transferir a sessão autenticada para o servidor.'
+    );
+    this.name = 'TwoFactorRequiredNonInteractive';
+    this.code = 'TWO_FACTOR_REQUIRED_NON_INTERACTIVE';
+    this.is2FARequired = true;
+  }
+}
+
+/**
  * Solicita código 2FA mascarado no terminal com timeout configurável
  * Falha se não for TTY
  * @param {string} promptText
@@ -295,13 +316,7 @@ function readMasked2FACode(
 ) {
   return new Promise((resolve, reject) => {
     if (!process.stdin.isTTY) {
-      return reject(
-        new Error(
-          'Execução não-interativa detectada (sem TTY). O AliExpress solicitou verificação 2FA.\n' +
-            'Solução: Execute localmente com interface interativa (./run_all.sh), resolva o desafio, ' +
-            'e use "node export_session.js" / "node import_session.js" para transferir a sessão autenticada.'
-        )
-      );
+      return reject(new TwoFactorRequiredNonInteractive());
     }
 
     process.stdout.write(promptText);
@@ -367,5 +382,6 @@ module.exports = {
   validateSessionPayload,
   validateSession,
   isCookieExpired,
-  readMasked2FACode
+  readMasked2FACode,
+  TwoFactorRequiredNonInteractive
 };

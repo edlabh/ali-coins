@@ -79,3 +79,25 @@ test('config.js - loadConfig lança ConfigValidationError com env inválido', ()
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('config.js - isNotify e parseCliOptions com Commander 15', () => {
+  const { isNotify, parseCliOptions, createCliProgram } = require('../config');
+
+  // Commander 15 options
+  const program = createCliProgram();
+  assert.ok(program, 'Program deve ser instanciado');
+
+  assert.strictEqual(isNotify(['node', 'all.js']), null);
+  assert.strictEqual(isNotify(['node', 'all.js', '--notify']), true);
+  assert.strictEqual(isNotify(['node', 'all.js', '--no-notify']), false);
+
+  const opts1 = parseCliOptions(['node', 'all.js', '-d', '--json']);
+  assert.strictEqual(opts1.dryRun, true);
+  assert.strictEqual(opts1.json, true);
+
+  const optsNotify = parseCliOptions(['node', 'all.js', '--notify']);
+  assert.strictEqual(optsNotify.notify, true);
+
+  const optsNoNotify = parseCliOptions(['node', 'all.js', '--no-notify']);
+  assert.strictEqual(optsNoNotify.notify, false);
+});

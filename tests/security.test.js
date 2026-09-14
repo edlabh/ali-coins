@@ -63,15 +63,15 @@ test('security.js - secret com menos de 32 caracteres deve falhar', () => {
     /SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres/
   );
 
-  assert.throws(
-    () => encryptSession('{}', null),
-    /SESSION_SECRET é obrigatório/
-  );
+  assert.throws(() => encryptSession('{}', null), /SESSION_SECRET é obrigatório/);
 });
 
 test('security.js - tokens inválidos ou corrompidos devem falhar', () => {
   assert.throws(() => decryptSession('', VALID_SECRET), /não fornecido ou inválido/);
-  assert.throws(() => decryptSession('invalid_token', VALID_SECRET), /deve iniciar com "v1:" ou "v2:"/);
+  assert.throws(
+    () => decryptSession('invalid_token', VALID_SECRET),
+    /deve iniciar com "v1:" ou "v2:"/
+  );
   assert.throws(() => decryptSession('v2:curto', VALID_SECRET), /Formato de token v2 inválido/);
   assert.throws(() => decryptSession('v1:curto', VALID_SECRET), /Formato de token v1 inválido/);
 
@@ -108,7 +108,11 @@ test('security.js - validateSession', () => {
   assert.match(resMismatch.reason, /não corresponde/);
 
   // Cookies sem auth cookie
-  const resNoAuth = validateSession({ cookies: [{ name: 'outroc', value: '1' }] }, meta, 'test@example.com');
+  const resNoAuth = validateSession(
+    { cookies: [{ name: 'outroc', value: '1' }] },
+    meta,
+    'test@example.com'
+  );
   assert.strictEqual(resNoAuth.valid, false);
   assert.match(resNoAuth.reason, /Nenhum cookie de autenticação/);
 
@@ -141,4 +145,116 @@ test('security.js - validateSessionPayload schema Zod', () => {
     () => validateSessionPayload({ session: { cookies: [] } }),
     /A sessão deve conter ao menos um cookie/
   );
+});
+
+test('security.js - permissões efetivas 0o600 em arquivos de segredos (session.json.enc, session.bak-*, dom-*.hash.txt, session_token.txt)', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { safeWriteFile, safeChmod600 } = require('../security');
+  const { saveSession, clearSession } = require('../libs/session');
+  const { exportSession } = require('../export_session');
+  const { captureDomHashAndArtifacts } = require('../libs/ui');
+  const {
+    createIsolatedTestDir,
+    cleanupIsolatedTestDir,
+    snapshotRealFiles,
+    assertRealFilesUntouched
+  } = require('./test_helper');
+
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('sec-perm-test-');
+
+  try {
+    const isWindows = process.platform === 'win32';
+
+    // 1. safeWriteFile diretamente
+    const testFile = path.join(tmpDir, 'test_secret.txt');
+    await safeWriteFile(testFile, 'secret-data', 'utf-8');
+    safeChmod600(testFile);
+    if (!isWindows) {
+      const mode = fs.statSync(testFile).mode & 0o777;
+      assert.strictEqual(mode, 0o600, 'safeWriteFile deve criar arquivo com 0o600');
+    }
+
+    // 2. session.json.enc e session_meta.json
+    const fakeState = {
+      cookies: [{ name: 'xman_us_t', value: 'tok', expires: Math.floor(Date.now() / 1000) + 3600 }]
+    };
+    await saveSession(fakeState, 'test@example.com', {
+      baseDir: tmpDir,
+      secret: VALID_SECRET
+    });
+    const encFile = path.join(tmpDir, 'session.json.enc');
+    const metaFile = path.join(tmpDir, 'session_meta.json');
+    if (!isWindows) {
+      assert.strictEqual(
+        fs.statSync(encFile).mode & 0o777,
+        0o600,
+        'session.json.enc deve ter modo 0o600'
+      );
+      assert.strictEqual(
+        fs.statSync(metaFile).mode & 0o777,
+        0o600,
+        'session_meta.json deve ter modo 0o600'
+      );
+    }
+
+    // 3. session.bak-* gerado por clearSession
+    await clearSession({ baseDir: tmpDir, secret: VALID_SECRET });
+    const scratchDir = path.join(tmpDir, 'scratch');
+    const backups = fs.readdirSync(scratchDir).filter((f) => f.startsWith('session.bak-'));
+    assert.ok(backups.length >= 1, 'Deve gerar backup em scratch/');
+    if (!isWindows) {
+      const bakPath = path.join(scratchDir, backups[0]);
+      assert.strictEqual(
+        fs.statSync(bakPath).mode & 0o777,
+        0o600,
+        'session.bak-* deve ter modo 0o600'
+      );
+    }
+
+    // 4. dom-*.hash.txt gerado por captureDomHashAndArtifacts
+    const prevOutDir = process.env.PW_OUTPUT_DIR;
+    process.env.PW_OUTPUT_DIR = tmpDir;
+    try {
+      const mockPage = {
+        evaluate: async () => '<html><body>test</body></html>',
+        screenshot: async () => {}
+      };
+      const res = await captureDomHashAndArtifacts(mockPage, 'perm_test');
+      if (!isWindows && res.hashFile) {
+        assert.strictEqual(
+          fs.statSync(res.hashFile).mode & 0o777,
+          0o600,
+          'dom-*.hash.txt deve ter modo 0o600'
+        );
+      }
+    } finally {
+      if (prevOutDir !== undefined) process.env.PW_OUTPUT_DIR = prevOutDir;
+      else delete process.env.PW_OUTPUT_DIR;
+    }
+
+    // 5. session_token.txt gerado por exportSession
+    await saveSession(fakeState, 'test@example.com', {
+      baseDir: tmpDir,
+      secret: VALID_SECRET
+    });
+    await exportSession({
+      baseDir: tmpDir,
+      secret: VALID_SECRET,
+      showToken: false
+    });
+    const tokenFile = path.join(tmpDir, 'session_token.txt');
+    assert.ok(fs.existsSync(tokenFile));
+    if (!isWindows) {
+      assert.strictEqual(
+        fs.statSync(tokenFile).mode & 0o777,
+        0o600,
+        'session_token.txt deve ter modo 0o600'
+      );
+    }
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
 });

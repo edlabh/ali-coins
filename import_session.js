@@ -124,7 +124,13 @@ async function importSession(options = {}) {
 
   const validated = validateSessionPayload(parsedPayload);
   const sessionData = validated.session;
-  const metaData = validated.meta || { user: 'importado', savedAt: new Date().toISOString() };
+  const metaData = {
+    ...(validated.meta || {}),
+    user: (validated.meta && validated.meta.user) || 'importado',
+    isImported: true,
+    importedAt: new Date().toISOString(),
+    savedAt: new Date().toISOString()
+  };
 
   if (metaData.exportedAt) {
     const exportedTime = new Date(metaData.exportedAt).getTime();
@@ -140,8 +146,7 @@ async function importSession(options = {}) {
   }
 
   const baseDir = options.baseDir;
-  const sPath =
-    options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
+  const sPath = options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
   const mPath =
     options.sessionMetaPath ||
     (baseDir ? path.join(baseDir, 'session_meta.json') : sessionMetaPath);

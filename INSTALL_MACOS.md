@@ -5,6 +5,7 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 ---
 
 ## Sumário
+
 1. [Requisitos Mínimos](#1-requisitos-m%C3%ADnimos)
 2. [Método A: Instalação Automática (setup_macos.sh)](#2-m%C3%A9todo-a-instala%C3%A7%C3%A3o-autom%C3%A1tica-setup_macossh)
 3. [Método B: Instalação Manual Passo a Passo](#3-m%C3%A9todo-b-instala%C3%A7%C3%A3o-manual-passo-a-passo)
@@ -52,13 +53,17 @@ Após a execução, configure seu e-mail/senha com `nano credentials.env` e inic
 O projeto necessita do **Node.js 18 ou superior**.
 
 #### Opção 1: Via Homebrew (Recomendado para macOS)
+
 O Homebrew é o gerenciador de pacotes padrão da comunidade para macOS.
 
 1. Se você ainda não possui o Homebrew instalado, instale com:
+
    ```bash
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
-   *(No Apple Silicon, siga a instrução exibida ao final da instalação para adicionar o Homebrew ao PATH no seu `~/.zprofile`)*:
+
+   _(No Apple Silicon, siga a instrução exibida ao final da instalação para adicionar o Homebrew ao PATH no seu `~/.zprofile`)_:
+
    ```bash
    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
    eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -70,11 +75,13 @@ O Homebrew é o gerenciador de pacotes padrão da comunidade para macOS.
    ```
 
 #### Opção 2: Pelo Site Oficial (Pacote .pkg)
+
 1. Acesse: [https://nodejs.org/](https://nodejs.org/).
 2. Baixe a versão recomendada **LTS** (instalador `.pkg` para macOS).
 3. Abra o arquivo `.pkg` e siga os passos do assistente de instalação da Apple.
 
 #### Opção 3: Via NVM (Node Version Manager)
+
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 source ~/.zshrc
@@ -83,18 +90,22 @@ nvm use 20
 ```
 
 #### Validar a instalação:
+
 Abra o **Terminal** e confirme as versões:
+
 ```bash
 node -v
 npm -v
 ```
-*(Deve exibir `v20.x.x` ou superior e npm versão 9 ou superior).*
+
+_(Deve exibir `v20.x.x` ou superior e npm versão 9 ou superior)._
 
 ---
 
 ### Passo 2: Baixar ou Clonar o Projeto e Permissões
 
 Abra o Terminal e clone o repositório:
+
 ```bash
 git clone https://github.com/edlabh/ali-coins.git
 cd ali-coins
@@ -106,6 +117,7 @@ chmod +x *.sh
 ### Passo 3: Instalar Dependências npm
 
 Na pasta do projeto, instale as dependências declaradas no `package.json`:
+
 ```bash
 npm install
 ```
@@ -139,6 +151,7 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
 ### Passo 6: Configurar Credenciais
 
 1. Crie o arquivo `credentials.env` a partir do modelo:
+
    ```bash
    cp credentials.env.example credentials.env
    chmod 600 credentials.env
@@ -191,12 +204,14 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
 O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segundo plano. Ele possui a grande vantagem de executar tarefas pendentes mesmo se o computador estiver em modo de repouso no momento exato do disparo.
 
 1. Crie o arquivo de definição do agente de inicialização:
+
    ```bash
    mkdir -p ~/Library/LaunchAgents
    nano ~/Library/LaunchAgents/com.alicoins.collector.plist
    ```
 
 2. Cole o conteúdo abaixo (substitua `/Users/SEU_USUARIO/ali-coins` pelo caminho real da pasta do projeto):
+
    ```xml
    <?xml version="1.0" encoding="UTF-8"?>
    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -235,17 +250,20 @@ O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segun
 ## 5. Resolução de Problemas Frequentes no macOS
 
 ### A. `zsh: command not found: node` ou `npm`
+
 - **Causa:** O Homebrew ou Node.js foi instalado mas seu diretório binário não está no `PATH` do shell `zsh`.
 - **Solução:** Adicione a linha apropriada no seu `~/.zshrc`:
   - **Apple Silicon:** `export PATH="/opt/homebrew/bin:$PATH"`
   - **Intel:** `export PATH="/usr/local/bin:$PATH"`
-  Em seguida, execute `source ~/.zshrc`.
+    Em seguida, execute `source ~/.zshrc`.
 
 ### B. `zsh: permission denied: ./run_all.sh`
+
 - **Causa:** O script não possui o bit de execução habilitado.
 - **Solução:** Execute `chmod +x *.sh` dentro da pasta do projeto.
 
 ### C. Alerta de Segurança do macOS (Gatekeeper / Desenvolvedor não identificado)
+
 - **Causa:** Em algumas versões do macOS, o binário do Chromium baixado pelo Playwright pode solicitar confirmação de segurança.
 - **Solução:** Vá em **Ajustes do Sistema > Privacidade e Segurança**, role até a seção "Segurança" e clique em **Permitir mesmo assim** caso haja algum aviso referente ao Chromium.
 

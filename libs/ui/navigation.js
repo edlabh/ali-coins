@@ -97,8 +97,7 @@ async function trySolveSlider(page) {
             })
             .catch(() => ({ width: 320 }));
 
-          const distance =
-            trackBox && trackBox.width > 150 ? trackBox.width - box.width + 10 : 300;
+          const distance = trackBox && trackBox.width > 150 ? trackBox.width - box.width + 10 : 300;
 
           await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
           await page.mouse.down();

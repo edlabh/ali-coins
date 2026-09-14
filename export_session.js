@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
@@ -62,20 +63,13 @@ async function exportSession(options = {}) {
   logger.info('===================================================================');
 
   const baseDir = options.baseDir;
-  const sPath =
-    options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
+  const sPath = options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
   const mPath =
     options.sessionMetaPath ||
     (baseDir ? path.join(baseDir, 'session_meta.json') : sessionMetaPath);
   const tPath =
     options.sessionTokenPath ||
     (baseDir ? path.join(baseDir, 'session_token.txt') : sessionTokenPath);
-
-  if (!fs.existsSync(sPath)) {
-    throw new ExportSessionError(
-      'Arquivo "session.json" não encontrado. Execute o fluxo primeiro (./run_all.sh) para autenticar.'
-    );
-  }
 
   const secret = options.secret || process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -84,22 +78,20 @@ async function exportSession(options = {}) {
     );
   }
 
-  let session;
-  try {
-    session = JSON.parse(await fs.promises.readFile(sPath, 'utf-8'));
-  } catch (e) {
-    throw new ExportSessionError(`Falha ao ler session.json: ${e.message}`);
+  const { loadSessionFiles } = require('./libs/session');
+  const { sessionData: session, metaData: loadedMeta } = await loadSessionFiles({
+    ...options,
+    secret,
+    autoMigrate: false
+  });
+
+  if (!session) {
+    throw new ExportSessionError(
+      'Arquivo de sessão não encontrado ou inválido. Execute o fluxo primeiro (./run_all.sh) para autenticar.'
+    );
   }
 
-  let meta = { user: 'desconhecido' };
-  if (fs.existsSync(mPath)) {
-    try {
-      meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
-    } catch {
-      // Ignorar e tentar fallback
-    }
-  }
-
+  let meta = loadedMeta || { user: 'desconhecido' };
   if (meta.user === 'desconhecido' && process.env.ALI_USER) {
     meta.user = process.env.ALI_USER;
   }
@@ -125,7 +117,8 @@ async function exportSession(options = {}) {
   const exportMeta = {
     user: meta.user,
     exportedAt: now.toISOString(),
-    expiresAt: expiresAt.toISOString()
+    expiresAt: expiresAt.toISOString(),
+    exportedFrom: os.hostname()
   };
 
   const payloadString = JSON.stringify({ session, meta: exportMeta });
@@ -158,7 +151,9 @@ async function exportSession(options = {}) {
   const showToken = options.showToken !== undefined ? options.showToken : isShowToken();
   if (showToken) {
     logger.warn('⚠️  [AVISO] Exibição de token em tela solicitada via --show-token.');
-    process.stdout.write(`\n--- TOKEN CRIPTOGRAFADO (v2) ---\n${encryptedBlob}\n--------------------------------\n`);
+    process.stdout.write(
+      `\n--- TOKEN CRIPTOGRAFADO (v2) ---\n${encryptedBlob}\n--------------------------------\n`
+    );
   } else {
     logger.info(
       '(Dica: O token não é exibido no stdout por padrão para segurança contra vazamento em logs. Use --show-token se necessário).'
@@ -174,14 +169,41 @@ if (require.main === module) {
   if (checkAndDisplayHelp()) {
     process.exit(0);
   }
-  exportSession()
-    .then(() => {
-      process.exit(0);
-    })
-    .catch((err) => {
-      logger.error({ err: err.message }, 'Falha na exportação da sessão.');
-      process.exit(1);
-    });
+
+  const args = process.argv.slice(2);
+  const isRotate = args.includes('--rotate');
+
+  if (isRotate) {
+    const { rotateSessionSecret } = require('./libs/session');
+    let newEnvVar = 'SESSION_SECRET_NEW';
+    const envArg = args.find((a) => a.startsWith('--new-secret-from-env='));
+    if (envArg) {
+      newEnvVar = envArg.split('=')[1].trim();
+    }
+    const newSecret =
+      process.env[newEnvVar] ||
+      (process.env.SESSION_SECRET_OLD ? process.env.SESSION_SECRET : null);
+    const oldSecret = process.env.SESSION_SECRET_OLD || process.env.SESSION_SECRET;
+
+    rotateSessionSecret({ oldSecret, newSecret })
+      .then((res) => {
+        logger.info(res, '[SUCESSO] Rotação de chave de sessão concluída com sucesso!');
+        process.exit(0);
+      })
+      .catch((err) => {
+        logger.error({ err: err.message }, 'Falha na rotação de chave de sessão.');
+        process.exit(1);
+      });
+  } else {
+    exportSession()
+      .then(() => {
+        process.exit(0);
+      })
+      .catch((err) => {
+        logger.error({ err: err.message }, 'Falha na exportação da sessão.');
+        process.exit(1);
+      });
+  }
 }
 
 module.exports = {

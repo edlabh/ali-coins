@@ -39,8 +39,10 @@ const SELECTORS = {
       'div:has-text("Coletar")'
     ],
     todayChecked: '[class*="today-checked"], [class*="aecoin-today-checked"]',
-    streakDayNumber: '[class*="dayNumber"], [class*="checkedDay"]',
-    streakTitleContainer: '[class*="titleContainer"], [class*="signTitle"]',
+    streakDayNumber:
+      '[class*="dayNumber"], [class*="checkedDay"], [class*="currentDay"], [class*="activeDay"]',
+    streakTitleContainer:
+      '[class*="titleContainer"], [class*="signTitle"], [class*="streak"], [class*="sign-title"], [class*="checkin-title"]',
     waterBtn:
       '.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"], button:has-text("regar"), button:has-text("Water")'
   },

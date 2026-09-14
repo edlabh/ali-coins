@@ -1,0 +1,10 @@
+node_modules/
+.husky/_/
+scratch/
+credentials.env*
+session*.json
+session_token.txt
+*.png
+*.zip
+*.lock
+package-lock.json

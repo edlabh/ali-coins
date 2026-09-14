@@ -15,10 +15,15 @@ const {
   gotoWithRetry,
   closeModals,
   getBalanceDesktop,
-  isInteractiveOrAppOnly,
   openTaskDrawer,
   extractTasksFromDrawer,
-  executeTaskAction
+  executeTaskAction,
+  findNextPendingTask,
+  recordTaskAttempt,
+  markSpecialOrAppOnly,
+  classifyTaskStatus,
+  findTaskElement,
+  captureDomHashAndArtifacts
 } = require('./libs/ui');
 const { renderTasksReport } = require('./libs/report');
 const logger = require('./logger');
@@ -33,23 +38,46 @@ const logger = require('./logger');
  */
 async function runTasks(options = {}) {
   const tasksStartTime = new Date();
-  const config = loadConfig(true);
-  const userEmail = config.ALI_USER;
+  const config = options.config || loadConfig(true);
+  const account = options.account || null;
+  const userEmail = (account && account.user) || options.userEmail || config.ALI_USER;
+  const currentSessionPath = (account && account.sessionPath) || options.sessionPath || sessionPath;
+  const currentSessionMetaPath =
+    (account && account.sessionMetaPath) || options.sessionMetaPath || null;
+  const sessionOpts = {
+    sessionPath: currentSessionPath,
+    sessionMetaPath: currentSessionMetaPath,
+    account
+  };
 
   logger.info('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
   logger.info(`[Dia e Hora]: ${formatDateTime(tasksStartTime)}`);
+  logger.info(`[Login] Usuário: ${userEmail}`);
 
   let sessionData = options.sessionData || null;
-  const sessionStatus = await validateAndRefresh(userEmail, sessionData);
+  const sessionStatus = await validateAndRefresh(userEmail, sessionData, sessionOpts);
+  const isImported = Boolean(sessionStatus.isImported);
 
   if (!sessionStatus.valid) {
+    if (isImported) {
+      logger.error(
+        '[Sessão Remota Expirada] A sessão importada expirou ou é inválida. É necessário gerar nova sessão executando "node export_session.js" no servidor de origem e importá-la com "node import_session.js".'
+      );
+    }
     if (options.skipAutoLogin) {
-      throw new Error(`Sessão inválida para tarefas: ${sessionStatus.reason}`);
+      const err = new Error(`Sessão inválida para tarefas: ${sessionStatus.reason}`);
+      if (isImported) err.isImportedSessionExpired = true;
+      throw err;
     }
 
     logger.warn(`Sessão inválida (${sessionStatus.reason}). Autenticando via check-in...`);
     const { runCheckin } = require('./collect');
-    const checkinRes = await runCheckin({ browser: options.browser });
+    const checkinRes = await runCheckin({
+      browser: options.browser,
+      account,
+      config,
+      sessionOpts
+    });
     sessionData = checkinRes.sessionData;
   } else {
     sessionData = sessionStatus.sessionData;
@@ -65,7 +93,7 @@ async function runTasks(options = {}) {
   }
 
   try {
-    const context = await newMobileContext(browser, sessionPath, {
+    const context = await newMobileContext(browser, sessionData || currentSessionPath, {
       allowMedia: config.ALLOW_MEDIA
     });
 
@@ -105,7 +133,14 @@ async function runTasks(options = {}) {
         bodyText.includes('Email or phone number') ||
         bodyText.includes('Sign in')
       ) {
-        throw new Error('Sessão expirou ou exige login.');
+        if (isImported) {
+          logger.error(
+            '[Sessão Remota Expirada] A sessão importada expirou ou foi invalidada pelo AliExpress. É necessário gerar nova sessão com "node export_session.js" no servidor de origem e importá-la com "node import_session.js".'
+          );
+        }
+        const err = new Error('Sessão expirou ou exige login.');
+        if (isImported) err.isImportedSessionExpired = true;
+        throw err;
       }
 
       // Check-in pendente se houver
@@ -130,6 +165,7 @@ async function runTasks(options = {}) {
 
       const drawerOpened = await openTaskDrawer(page);
       if (!drawerOpened) {
+        await captureDomHashAndArtifacts(page, 'tasks_drawer');
         throw new Error('Painel "Ganhe mais moedas" inacessível.');
       }
 
@@ -143,42 +179,20 @@ async function runTasks(options = {}) {
         const currentTasks = await extractTasksFromDrawer(page);
         if (!currentTasks || currentTasks.length === 0) break;
 
-        const pendingTask = currentTasks.find((t) => {
-          if (t.isDone) return false;
-          if (t.btnText !== 'GO') return false;
-          const attempts = taskAttempts[t.title] || 0;
-          return attempts < maxAttemptsPerTask;
-        });
+        const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask);
 
         if (!pendingTask) {
           logger.info('Todas as tarefas disponíveis foram concluídas ou verificadas.');
           break;
         }
 
-        taskAttempts[pendingTask.title] = (taskAttempts[pendingTask.title] || 0) + 1;
+        recordTaskAttempt(taskAttempts, pendingTask.title);
         totalActions++;
 
         const taskStartTime = new Date();
         logger.info(`\n--- Executando: "${pendingTask.title}" (${pendingTask.coins}) ---`);
 
-        const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
-        let currentTaskEl = currentTaskEls[pendingTask.index];
-        const actualTitle = await currentTaskEl
-          ?.$eval(SELECTORS.tasks.taskTitle, (el) => el.innerText.trim())
-          .catch(() => '');
-
-        if (actualTitle !== pendingTask.title) {
-          for (const el of currentTaskEls) {
-            const t = await el
-              ?.$eval(SELECTORS.tasks.taskTitle, (e) => e.innerText.trim())
-              .catch(() => '');
-            if (t === pendingTask.title) {
-              currentTaskEl = el;
-              break;
-            }
-          }
-        }
-
+        const currentTaskEl = await findTaskElement(page, pendingTask.title, pendingTask.index);
         if (!currentTaskEl) continue;
 
         const goBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
@@ -195,7 +209,7 @@ async function runTasks(options = {}) {
         try {
           const actionRes = await executeTaskAction(activePage, context, pendingTask, config);
           if (actionRes.isSpecialOrAppOnly) {
-            taskAttempts[pendingTask.title] = 999;
+            markSpecialOrAppOnly(taskAttempts, pendingTask.title);
           }
         } catch (taskErr) {
           logger.error({ err: taskErr.message }, `Erro ao executar "${pendingTask.title}".`);
@@ -216,30 +230,17 @@ async function runTasks(options = {}) {
 
       await openTaskDrawer(page);
       const finalTasks = await extractTasksFromDrawer(page);
-      const results = finalTasks.map((t) => {
-        let status = 'Pendente';
-        if (t.isDone) {
-          status = t.totalRounds
-            ? `Concluída (${t.totalRounds}/${t.totalRounds})`
-            : t.statusText
-              ? `Concluída (${t.statusText})`
-              : 'Concluída';
-        } else if (isInteractiveOrAppOnly(t)) {
-          status =
-            t.title.toLowerCase().includes('quiz') || t.title.toLowerCase().includes('merge boss')
-              ? 'Requer interação direta no App AliExpress (minigame/quiz)'
-              : 'Exclusiva do App AliExpress (requer rega no app móvel)';
-        } else if (t.statusText) {
-          status = `Executada parcialmente (${t.statusText})`;
-        }
-        return { title: t.title, status, coins: t.coins };
-      });
+      const results = finalTasks.map((t) => ({
+        title: t.title,
+        status: classifyTaskStatus(t),
+        coins: t.coins
+      }));
 
       await closeContextWithDiagnostics(context, { failed: false, name: 'tasks-mobile' });
 
       let finalCoins = 'N/D';
       try {
-        const desktopResult = await getBalanceDesktop(browser, sessionPath, {
+        const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
           allowMedia: config.ALLOW_MEDIA,
           timeout: config.NAV_TIMEOUT_SHORT
         });
@@ -254,6 +255,7 @@ async function runTasks(options = {}) {
       const tasksDuration = formatDuration(tasksEndTime - tasksStartTime);
 
       const result = {
+        userEmail,
         results,
         finalCoins,
         totalActions,
@@ -262,7 +264,9 @@ async function runTasks(options = {}) {
         duration: tasksDuration
       };
 
-      renderTasksReport(result, { json: isJson() });
+      if (!options.skipReport) {
+        renderTasksReport(result, { json: isJson() });
+      }
       return result;
     } catch (flowErr) {
       await closeContextWithDiagnostics(context, { failed: true, name: 'tasks-failed' });
@@ -279,32 +283,52 @@ if (require.main === module) {
   if (checkAndDisplayHelp()) {
     process.exit(0);
   }
-  if (handleDryRun()) {
-    process.exit(0);
-  }
 
   (async () => {
+    if (await handleDryRun()) {
+      process.exit(0);
+    }
+
+    const { sendTelegram } = require('./libs/notify');
     let releaseLock = null;
+    let cfg = null;
+    try {
+      cfg = loadConfig(true);
+    } catch {
+      // Ignorar se falhar antes do lock
+    }
+
     try {
       releaseLock = await acquireLock(isForce());
     } catch (err) {
       if (err instanceof LockActiveError) {
+        await sendTelegram({ config: cfg, event: 'lock_active', error: err }).catch(() => {});
         process.exit(3);
       }
       logger.error({ err: err.message }, 'Falha ao obter lock.');
+      await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
       process.exit(1);
     }
 
     try {
       const result = await runTasks();
       if (releaseLock) await releaseLock();
+      const report = { type: 'tasks', ...result };
+      const event = result && result.totalActions === 0 ? 'already_collected' : 'success';
+      await sendTelegram({ config: cfg, report, event }).catch(() => {});
       if (result && result.totalActions === 0) {
         process.exit(2);
       }
       process.exit(0);
     } catch (err) {
       if (releaseLock) await releaseLock();
+      if (err.isImportedSessionExpired) {
+        logger.error(
+          '[Sessão Remota Expirada] Falha na execução de tarefas: a sessão importada expirou. Sugestão: gere uma nova sessão com "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+        );
+      }
       logger.error({ err: err.message }, 'Falha na execução de tarefas.');
+      await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
       process.exit(1);
     }
   })();

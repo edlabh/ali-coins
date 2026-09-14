@@ -5,6 +5,7 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 ---
 
 ## Sumário
+
 1. [Requisitos Mínimos](#1-requisitos-m%C3%ADnimos)
 2. [Método A: Instalação Automática (setup_windows.bat)](#2-m%C3%A9todo-a-instala%C3%A7%C3%A3o-autom%C3%A1tica-setup_windowsbat)
 3. [Método B: Instalação Manual Passo a Passo](#3-m%C3%A9todo-b-instala%C3%A7%C3%A3o-manual-passo-a-passo)
@@ -50,17 +51,21 @@ Se você já baixou ou clonou o projeto no seu computador:
 O projeto necessita do **Node.js 18 ou superior**. A versão **Node.js 20 LTS** é a recomendada por sua estabilidade.
 
 #### Opção 1: Via Gerenciador de Pacotes do Windows (`winget`)
+
 Abra o Prompt de Comando ou PowerShell e digite:
+
 ```cmd
 winget install OpenJS.NodeJS.LTS
 ```
 
 #### Opção 2: Via Chocolatey
+
 ```cmd
 choco install nodejs-lts
 ```
 
 #### Opção 3: Pelo Site Oficial (Instalador .msi)
+
 1. Acesse o site oficial: [https://nodejs.org/](https://nodejs.org/).
 2. Baixe a versão recomendada **LTS** (instalador `.msi` para Windows x64).
 3. Execute o instalador baixado e avance mantendo as opções padrão (certifique-se de que a opção **"Add to PATH"** esteja marcada).
@@ -69,23 +74,27 @@ choco install nodejs-lts
 > ⚠️ **IMPORTANTE:** Feche e abra novamente a janela do seu terminal (CMD ou PowerShell) após instalar o Node.js para que as novas variáveis de ambiente sejam carregadas.
 
 #### Validar a instalação:
+
 ```cmd
 node -v
 npm -v
 ```
-*(O comando `node -v` deve exibir `v20.x.x` ou superior, e o `npm -v` deve exibir versão 9 ou superior).*
+
+_(O comando `node -v` deve exibir `v20.x.x` ou superior, e o `npm -v` deve exibir versão 9 ou superior)._
 
 ---
 
 ### Passo 2: Baixar ou Clonar o Projeto
 
 #### Via Git:
+
 ```cmd
 git clone https://github.com/edlabh/ali-coins.git
 cd ali-coins
 ```
 
 #### Ou via Download ZIP:
+
 1. No GitHub, clique em **Code** > **Download ZIP**.
 2. Extraia o arquivo ZIP em uma pasta de sua escolha (exemplo: `C:\Users\SeuUsuario\ali-coins`).
 3. Abra o terminal nessa pasta.
@@ -95,9 +104,11 @@ cd ali-coins
 ### Passo 3: Liberar Execução de Scripts no PowerShell (Se aplicável)
 
 Se você utiliza o **PowerShell** e ao tentar rodar um script receber o erro:
-> *`O arquivo ... não pode ser carregado porque a execução de scripts foi desabilitada neste sistema.`*
+
+> _`O arquivo ... não pode ser carregado porque a execução de scripts foi desabilitada neste sistema.`_
 
 Execute o comando abaixo no PowerShell para liberar a execução de scripts locais para o seu usuário:
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
@@ -107,9 +118,11 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### Passo 4: Instalar Dependências npm
 
 No Prompt de Comando ou PowerShell, dentro da pasta do projeto:
+
 ```cmd
 npm install
 ```
+
 Isso instalará a biblioteca do **Playwright** (`^1.48.0`) na pasta local `node_modules`.
 
 ---
@@ -119,11 +132,13 @@ Isso instalará a biblioteca do **Playwright** (`^1.48.0`) na pasta local `node_
 O Playwright gerencia o navegador em uma pasta isolada no seu perfil de usuário (`%USERPROFILE%\AppData\Local\ms-playwright`).
 
 Execute:
+
 ```cmd
 npx playwright install chromium
 ```
 
 > No Windows, todas as bibliotecas necessárias para o Chromium já acompanham o instalador do sistema ou o próprio binário do Playwright. Caso seu Windows seja uma instalação limpa ou corporativa muito recente e apresente erro de DLL ausente, instale o pacote de redistribuição da Microsoft:
+>
 > ```cmd
 > winget install Microsoft.VCRedist.2015+.x64
 > ```
@@ -135,6 +150,7 @@ npx playwright install chromium
 Para confirmar que o Chromium abre perfeitamente em segundo plano (headless):
 
 - **No Prompt de Comando (CMD):**
+
   ```cmd
   node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); console.log('Chromium OK!'); await b.close(); })();"
   ```
@@ -161,6 +177,7 @@ Se a saída exibir `Chromium OK!`, o ambiente está validado.
      ```
 
 2. Abra o arquivo no Bloco de Notas:
+
    ```cmd
    notepad credentials.env
    ```
@@ -170,7 +187,7 @@ Se a saída exibir `Chromium OK!`, o ambiente está validado.
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
    ```
-   *Salve o arquivo (`Ctrl + S`) e feche o Bloco de Notas.*
+   _Salve o arquivo (`Ctrl + S`) e feche o Bloco de Notas._
 
 ---
 
@@ -227,21 +244,25 @@ A tarefa será criada imediatamente no Agendador de Tarefas do Windows.
 ## 5. Resolução de Problemas Frequentes no Windows
 
 ### A. `'node' ou 'npm' não é reconhecido como um comando interno ou externo`
+
 - **Causa:** O instalador do Node.js não foi adicionado à variável de ambiente `PATH` ou o terminal foi aberto antes da instalação ser finalizada.
 - **Solução:** Feche todas as janelas do Prompt de Comando/PowerShell e abra uma nova. Se persistir, reinicie o computador.
 
 ### B. `O arquivo ... não pode ser carregado porque a execução de scripts foi desabilitada neste sistema`
-- **Causa:** Política de segurança padrão do PowerShell (*ExecutionPolicy Restricted*).
+
+- **Causa:** Política de segurança padrão do PowerShell (_ExecutionPolicy Restricted_).
 - **Solução:** Execute no PowerShell:
   ```powershell
   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
   ```
 
 ### C. Alerta do Windows Defender / SmartScreen
+
 - **Causa:** Como o Playwright executa uma versão headless do Chromium em segundo plano automatizando ações de teclado/mouse, softwares antivírus excessivamente rigorosos podem emitir um aviso na primeira inicialização.
 - **Solução:** Se o Windows exibir a tela de proteção SmartScreen, clique em **"Mais informações"** e depois em **"Executar assim mesmo"**.
 
 ### D. Erro de Caminhos Longos (`Filename too long` / MAX_PATH)
+
 - **Causa:** O Windows historicamente limita caminhos de arquivos a 260 caracteres.
 - **Solução:** Execute o comando abaixo no PowerShell (como Administrador) para habilitar suporte a caminhos longos:
   ```powershell

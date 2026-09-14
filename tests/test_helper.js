@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const REAL_PROJECT_ROOT = path.resolve(__dirname, '..');
 const CRITICAL_REAL_FILES = [
   'session.json',
+  'session.json.enc',
   'session_meta.json',
   'session_token.txt',
   'credentials.env',

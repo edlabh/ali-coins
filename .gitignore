@@ -1,9 +1,13 @@
 node_modules/
 libs/extracted/
 credentials.env*
-session.json
-session_meta.json
-session_token.txt
+session*.json
+session*.json.enc
+session*.enc
+*.enc
+session_meta*.json
+session_token*.txt
+accounts.json
 scratch/
 *.bak
 *.png

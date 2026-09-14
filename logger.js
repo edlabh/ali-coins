@@ -25,6 +25,8 @@ const redactKeys = [
   'SESSION_SECRET',
   'ALI_PASSWORD',
   'GITHUB_TOKEN',
+  'TELEGRAM_BOT_TOKEN',
+  '*.TELEGRAM_BOT_TOKEN',
   'secret',
   'auth',
   'authorization',
@@ -33,24 +35,28 @@ const redactKeys = [
 ];
 
 /**
- * Mascara parâmetros de consulta sensíveis em strings/URLs
+ * Mascara parâmetros de consulta sensíveis em strings/URLs e tokens de bot Telegram
  * @param {string} str
  * @returns {string}
  */
 function sanitizeSensitiveQueryParams(str) {
   if (typeof str !== 'string') return str;
-  return str.replace(
-    /([?&](?:token|code|ticket|password|passwd|secret)=)[^&#\s]+/gi,
-    '$1[REDACTED]'
-  );
+  return str
+    .replace(/([?&](?:token|code|ticket|password|passwd|secret)=)[^&#\s]+/gi, '$1[REDACTED]')
+    .replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]');
 }
 
-const isDev = !process.env.CI && process.env.NODE_ENV !== 'production';
+const isJsonMode = process.argv.includes('--json');
+const isDev = !process.env.CI && process.env.NODE_ENV !== 'production' && !isJsonMode;
 
-let transport;
-if (isDev) {
+let destination;
+if (isJsonMode) {
+  // Quando em modo --json, direcionar logs para stderr (fd 2),
+  // mantendo stdout 100% limpo para parse JSON por ferramentas como jq
+  destination = pino.destination(2);
+} else if (isDev) {
   try {
-    transport = pino.transport({
+    destination = pino.transport({
       target: 'pino-pretty',
       options: {
         colorize: true,
@@ -60,7 +66,7 @@ if (isDev) {
     });
   } catch {
     // Fallback gracioso para stdout padrão caso transporte falhe em algum ambiente
-    transport = undefined;
+    destination = undefined;
   }
 }
 
@@ -71,10 +77,28 @@ const logger = pino(
       paths: redactKeys,
       censor: '[REDACTED]'
     },
+    hooks: {
+      logMethod(inputArgs, method) {
+        for (let i = 0; i < inputArgs.length; i++) {
+          if (typeof inputArgs[i] === 'string') {
+            inputArgs[i] = sanitizeSensitiveQueryParams(inputArgs[i]);
+          }
+        }
+        return method.apply(this, inputArgs);
+      }
+    },
     formatters: {
       log(object) {
-        if (object && typeof object.msg === 'string') {
-          object.msg = sanitizeSensitiveQueryParams(object.msg);
+        if (object) {
+          if (typeof object.msg === 'string') {
+            object.msg = sanitizeSensitiveQueryParams(object.msg);
+          }
+          if (object.err && typeof object.err.message === 'string') {
+            object.err.message = sanitizeSensitiveQueryParams(object.err.message);
+          }
+          if (typeof object.err === 'string') {
+            object.err = sanitizeSensitiveQueryParams(object.err);
+          }
         }
         return object;
       }
@@ -82,7 +106,7 @@ const logger = pino(
     base: { pid: process.pid },
     timestamp: pino.stdTimeFunctions.isoTime
   },
-  transport
+  destination
 );
 
 /**

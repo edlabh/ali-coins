@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatDate, formatTime, formatDateTime, formatDuration } = require('../time_utils');
+const {
+  formatDate,
+  formatTime,
+  formatDateTime,
+  formatDuration,
+  calculateAccountBackoff
+} = require('../time_utils');
 
 test('time_utils.js - formatDate formata data no formato DD/MM/AAAA', () => {
   const date = new Date(2025, 0, 5, 9, 8, 7); // 05/01/2025
@@ -24,4 +30,10 @@ test('time_utils.js - formatDuration formata milissegundos legíveis', () => {
   assert.strictEqual(formatDuration(45000), '45s');
   assert.strictEqual(formatDuration(80000), '1m 20s');
   assert.strictEqual(formatDuration(3665000), '1h 01m 05s');
+});
+
+test('time_utils.js - calculateAccountBackoff respeita jitter e limites de teto', () => {
+  assert.strictEqual(calculateAccountBackoff(0, 1000, 10000, 0.5), 1000);
+  assert.strictEqual(calculateAccountBackoff(1, 1000, 10000, 0.5), 2000);
+  assert.strictEqual(calculateAccountBackoff(5, 1000, 10000, 0.5), 10000);
 });

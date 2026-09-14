@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../../logger');
-const { safeChmod600 } = require('../../security');
+const { safeChmod600, safeWriteFile } = require('../../security');
 
 /**
  * Retorna o diretório de saída para artefatos de diagnóstico (traces, prints, vídeos)
@@ -103,10 +103,56 @@ async function saveFailureScreenshot(page, name = 'failure') {
   }
 }
 
+const crypto = require('crypto');
+
+/**
+ * Captura hash SHA-256 do HTML normalizado e screenshot em caso de falha crítica de seletor / gaveta
+ * @param {import('playwright').Page} page
+ * @param {string} [name='tasks_drawer']
+ * @returns {Promise<{ hash: string|null, hashFile: string|null, screenshotFile: string|null }>}
+ */
+async function captureDomHashAndArtifacts(page, name = 'tasks_drawer') {
+  const outDir = getDiagnosticsDir();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  let hash = null;
+  let hashFile = null;
+  let screenshotFile = null;
+
+  if (page) {
+    try {
+      const rawHtml = await page.evaluate(() => document.documentElement.outerHTML).catch(() => '');
+      const normalizedHtml = rawHtml.replace(/\s+/g, ' ').trim();
+      hash = crypto.createHash('sha256').update(normalizedHtml).digest('hex');
+      hashFile = path.join(outDir, `dom-${timestamp}.hash.txt`);
+      const content = `SHA-256: ${hash}\nTimestamp: ${new Date().toISOString()}\nTarget: ${name}\n\nHTML:\n${normalizedHtml}`;
+      await safeWriteFile(hashFile, content, 'utf-8');
+      safeChmod600(hashFile);
+    } catch (err) {
+      logger.debug({ err: err.message }, 'Falha ao capturar hash do DOM normalizado.');
+    }
+
+    try {
+      screenshotFile = path.join(outDir, `${name}_failed.png`);
+      await page.screenshot({ path: screenshotFile, fullPage: true });
+      safeChmod600(screenshotFile);
+    } catch (err) {
+      logger.debug({ err: err.message }, 'Falha ao capturar screenshot de diagnóstico.');
+    }
+  }
+
+  logger.warn(
+    { domHash: hash, hashFile, screenshotFile },
+    `[OBSERVABLE-SELECTORS] Falha detectada em "${name}". Hash do DOM normalizado: ${hash}`
+  );
+
+  return { hash, hashFile, screenshotFile };
+}
+
 module.exports = {
   getDiagnosticsDir,
   applyDiagnosticOptions,
   startContextTracing,
   closeContextWithDiagnostics,
-  saveFailureScreenshot
+  saveFailureScreenshot,
+  captureDomHashAndArtifacts
 };
