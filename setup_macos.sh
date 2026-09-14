@@ -23,8 +23,8 @@ NEED_NODE_INSTALL=false
 
 if command -v node >/dev/null 2>&1; then
   NODE_MAJOR=$(node -v | sed 's/v//' | cut -d'.' -f1)
-  if [ "$NODE_MAJOR" -lt 18 ]; then
-    echo "Versão do Node.js detectada ($NODE_MAJOR) é inferior à versão 18 mínima necessária."
+  if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo "Versão do Node.js detectada ($NODE_MAJOR) é inferior à versão 22 mínima necessária."
     NEED_NODE_INSTALL=true
   else
     echo "Node.js já instalado na versão $(node -v) (compatível)."
@@ -39,7 +39,7 @@ if [ "$NEED_NODE_INSTALL" = true ]; then
     echo "Instalando Node.js via Homebrew..."
     brew install node
   else
-    echo "ERRO: Node.js >= 18 é obrigatório. Por favor, instale o Homebrew (https://brew.sh) ou baixe o instalador oficial do Node.js 20 LTS em https://nodejs.org/"
+    echo "ERRO: Node.js >= 22 é obrigatório. Por favor, instale o Homebrew (https://brew.sh) ou baixe o instalador oficial do Node.js 22 LTS em https://nodejs.org/"
     exit 1
   fi
 fi

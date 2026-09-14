@@ -1,34 +1,50 @@
-const { loadConfig, handleDryRun, isForce } = require('./config');
+const { loadConfig, handleDryRun, isForce, isJson, checkAndDisplayHelp } = require('./config');
 const { runCheckin } = require('./collect');
 const { runTasks } = require('./do_tasks');
-const { formatDate, formatTime, formatDateTime, formatDuration } = require('./time_utils');
+const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser } = require('./browser');
-const { acquireLock } = require('./lockfile');
+const { acquireLock, LockActiveError } = require('./lockfile');
+const { renderUnifiedReport } = require('./libs/report');
 const logger = require('./logger');
 
 async function main() {
+  if (checkAndDisplayHelp()) {
+    process.exit(0);
+  }
+
   // 1. Suporte a validação sem abrir navegador
-  handleDryRun();
+  if (handleDryRun()) {
+    process.exit(0);
+  }
 
   // 2. Lockfile para evitar concorrência no cron
-  const releaseLock = await acquireLock(isForce());
+  let releaseLock = null;
+  try {
+    releaseLock = await acquireLock(isForce());
+  } catch (err) {
+    if (err instanceof LockActiveError) {
+      process.exit(3);
+    }
+    logger.error({ err: err.message }, 'Falha ao adquirir lock exclusivo.');
+    process.exit(1);
+  }
 
   const mainStartTime = new Date();
-  console.log('===============================================================');
-  console.log('       ALIEXPRESS MOEDAS - MODO UNIFICADO (CHECK-IN + TAREFAS)');
-  console.log('===============================================================\n');
+  logger.info('===============================================================');
+  logger.info('       ALIEXPRESS MOEDAS - MODO UNIFICADO (CHECK-IN + TAREFAS)');
+  logger.info('===============================================================\n');
 
   const config = loadConfig(true);
   let browser = null;
 
   try {
-    // Inicializar 1 única instância compartilhada do Chromium para ambas as etapas
+    // 1 única instância compartilhada do Chromium para ambas as etapas
     browser = await launchBrowser({ headless: config.HEADLESS });
 
     // ETAPA 1: Check-in diário
     const step1StartTime = new Date();
-    console.log('>>> [ETAPA 1/2] Iniciando Check-in Diário...');
-    console.log(`    Dia e Hora de Início: ${formatDateTime(step1StartTime)}`);
+    logger.info('>>> [ETAPA 1/2] Iniciando Check-in Diário...');
+    logger.info(`    Dia e Hora de Início: ${formatDateTime(step1StartTime)}`);
 
     let checkinResult = null;
     try {
@@ -36,12 +52,10 @@ async function main() {
     } catch (err) {
       const step1EndTime = new Date();
       const step1Duration = formatDuration(step1EndTime - step1StartTime);
-      console.error('\n' + '='.repeat(68));
-      console.error(' [ERRO DE LOGIN DETECTADO]');
-      console.error(` ${err.message}`);
-      console.error(` Término: ${formatDateTime(step1EndTime)} (Duração: ${step1Duration})`);
-      console.error(' Interrompendo a execução: as tarefas NÃO serão executadas.');
-      console.error('='.repeat(68) + '\n');
+      logger.error(
+        { err: err.message, step1Duration },
+        'Falha crítica na etapa de check-in / login. Interrompendo execução.'
+      );
       process.exit(1);
     }
 
@@ -49,78 +63,72 @@ async function main() {
     const step1Duration = formatDuration(step1EndTime - step1StartTime);
 
     if (!checkinResult) {
-      console.error('\n[ERRO CRÍTICO] Falha na etapa de check-in / login.');
-      console.error(`Dia e Hora: ${formatDateTime(step1EndTime)} (Duração: ${step1Duration})`);
-      console.error('Interrompendo a execução: as tarefas NÃO serão executadas.\n');
+      logger.error(
+        { step1Duration },
+        'Check-in não retornou resultado. Interrompendo execução.'
+      );
       process.exit(1);
     }
 
-    console.log(`>>> [ETAPA 1/2] Concluída em ${formatDateTime(step1EndTime)} | Duração: ${step1Duration}`);
-
-    console.log('\n---------------------------------------------------------------');
-    console.log(`[Login] Conta: ${checkinResult.userEmail}`);
-    console.log(`[Check-in] Status: ${checkinResult.alreadyCollected ? 'Já realizado hoje' : 'Coletado agora'} (+${checkinResult.coinsGainedToday} moedas)`);
-    console.log(`[Sequência] ${checkinResult.streakDays} dias seguidos sem falha`);
-    console.log(`[Saldo Parcial] ${checkinResult.totalBalance} moedas`);
-    console.log(`[Execução Etapa 1] Início: ${formatDateTime(step1StartTime)} | Duração: ${step1Duration}`);
-    console.log('---------------------------------------------------------------\n');
+    logger.info(
+      `>>> [ETAPA 1/2] Concluída em ${formatDateTime(step1EndTime)} | Duração: ${step1Duration}`
+    );
 
     // ETAPA 2: Execução das tarefas diárias
     const step2StartTime = new Date();
-    console.log('>>> [ETAPA 2/2] Iniciando Execução Sequencial das Tarefas Diárias...');
-    console.log(`    Dia e Hora de Início: ${formatDateTime(step2StartTime)}`);
+    logger.info('>>> [ETAPA 2/2] Iniciando Execução Sequencial das Tarefas Diárias...');
+    logger.info(`    Dia e Hora de Início: ${formatDateTime(step2StartTime)}`);
 
     let tasksResult = null;
     try {
-      // Reutiliza o mesmo browser e passa a sessão em memória sem login duplicado
       tasksResult = await runTasks({
         browser,
         sessionData: checkinResult.sessionData,
         skipAutoLogin: true
       });
     } catch (err) {
-      console.error('Aviso na etapa de tarefas:', err.message);
+      logger.warn({ err: err.message }, 'Aviso na etapa de tarefas.');
     }
 
     const step2EndTime = new Date();
     const step2Duration = formatDuration(step2EndTime - step2StartTime);
-    console.log(`>>> [ETAPA 2/2] Concluída em ${formatDateTime(step2EndTime)} | Duração: ${step2Duration}`);
+    logger.info(
+      `>>> [ETAPA 2/2] Concluída em ${formatDateTime(step2EndTime)} | Duração: ${step2Duration}`
+    );
 
     // ETAPA 3: Relatório consolidado
     const mainEndTime = new Date();
     const totalDuration = formatDuration(mainEndTime - mainStartTime);
 
-    console.log('\n===============================================================');
-    console.log('                RELATÓRIO CONSOLIDADO FINAL');
-    console.log('===============================================================');
-    if (checkinResult) {
-      console.log(`Conta: ${checkinResult.userEmail}`);
-      console.log(`Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${checkinResult.coinsGainedToday} moedas/dia)`);
-      console.log(`Check-in Diário: ${checkinResult.alreadyCollected ? 'Já coletado hoje' : 'Coletado com sucesso'} (+${checkinResult.coinsGainedToday} moedas)`);
+    renderUnifiedReport(
+      checkinResult,
+      tasksResult,
+      {
+        mainStartTime,
+        mainEndTime,
+        totalDuration,
+        step1Duration,
+        step2Duration
+      },
+      { json: isJson() }
+    );
+
+    if (releaseLock) {
+      await releaseLock();
+      releaseLock = null;
     }
 
-    if (tasksResult && tasksResult.results) {
-      console.log('\nTarefas do Painel "Ganhe mais moedas":');
-      for (const r of tasksResult.results) {
-        console.log(`  • ${r.title}: ${r.status} (${r.coins || ''})`);
-      }
+    // Código 2 se já havia sido coletado e nenhuma tarefa nova foi executada; 0 se sucesso com novas ações
+    const hadNewCheckin = checkinResult && !checkinResult.alreadyCollected;
+    const hadTaskActions = tasksResult && tasksResult.totalActions > 0;
+
+    if (!hadNewCheckin && !hadTaskActions) {
+      process.exit(2);
     }
-
-    const finalBalance = (tasksResult && tasksResult.finalCoins && tasksResult.finalCoins !== 'N/D')
-      ? tasksResult.finalCoins
-      : (checkinResult ? `${checkinResult.totalBalance} moedas` : 'N/D');
-
-    console.log('---------------------------------------------------------------');
-    console.log(`Saldo Total Atualizado: ${finalBalance}`);
-    console.log('---------------------------------------------------------------');
-    console.log(`Data:                ${formatDate(mainStartTime)}`);
-    console.log(`Hora de Início:      ${formatTime(mainStartTime)}`);
-    console.log(`Hora de Finalização: ${formatTime(mainEndTime)}`);
-    console.log(`Duração Etapa 1:     ${step1Duration}`);
-    console.log(`Duração Etapa 2:     ${step2Duration}`);
-    console.log(`Duração Total:       ${totalDuration}`);
-    console.log('===============================================================\n');
-
+    process.exit(0);
+  } catch (fatalErr) {
+    logger.error({ err: fatalErr.message }, 'Erro fatal durante a execução unificada.');
+    process.exit(1);
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
@@ -131,7 +139,7 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  logger.error({ err: err.message }, 'Erro fatal na execução unificada.');
+main().catch((err) => {
+  logger.error({ err: err.message }, 'Erro não tratado no processo principal.');
   process.exit(1);
 });

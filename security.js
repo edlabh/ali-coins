@@ -1,9 +1,10 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const { z } = require('zod');
+const logger = require('./logger');
 
-// Salt fixo da aplicação para derivação determinística de chave via scrypt
-const APP_SCRYPT_SALT = Buffer.from('ali-coins-session-encryption-v1-scrypt-salt', 'utf-8');
+// Salt fixo legado para compatibilidade com tokens v1
+const APP_SCRYPT_SALT_V1 = Buffer.from('ali-coins-session-encryption-v1-scrypt-salt', 'utf-8');
 
 /**
  * Ajusta permissões do arquivo para 0o600 de forma segura entre plataformas
@@ -14,7 +15,7 @@ function safeChmod600(filePath) {
     if (fs.existsSync(filePath)) {
       fs.chmodSync(filePath, 0o600);
     }
-  } catch (_) {
+  } catch {
     // Windows e alguns sistemas de arquivos ignoram chmod sem erro fatal
   }
 }
@@ -29,22 +30,26 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8') {
   await fs.promises.writeFile(filePath, data, { encoding, mode: 0o600 });
   try {
     await fs.promises.chmod(filePath, 0o600);
-  } catch (_) {}
+  } catch {
+    // Ignorado em plataformas que não suportam chmod
+  }
 }
 
-
 /**
- * Criptografa o payload da sessão usando scrypt + aes-256-gcm
+ * Criptografa o payload da sessão usando scrypt + aes-256-gcm com salt aleatório (v2)
  * @param {string} payloadJson
  * @param {string} secret
- * @returns {string} Token no formato v1:iv:tag:ciphertext:base64
+ * @returns {string} Token no formato v2:salt:iv:tag:ciphertext:base64
  */
 function encryptSession(payloadJson, secret) {
   if (!secret || typeof secret !== 'string' || secret.length < 32) {
-    throw new Error('SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para criptografia segura.');
+    throw new Error(
+      'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para criptografia segura.'
+    );
   }
 
-  const key = crypto.scryptSync(secret, APP_SCRYPT_SALT, 32, { N: 16384, r: 8, p: 1 });
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 });
   const iv = crypto.randomBytes(12);
 
   let ciphertext;
@@ -59,36 +64,68 @@ function encryptSession(payloadJson, secret) {
     key.fill(0);
   }
 
+  const saltB64 = salt.toString('base64');
   const ivB64 = iv.toString('base64');
   const tagB64 = tag.toString('base64');
   const cipherB64 = ciphertext.toString('base64');
 
-  return `v1:${ivB64}:${tagB64}:${cipherB64}:base64`;
+  return `v2:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
 }
 
 /**
- * Descriptografa o token de sessão usando scrypt + aes-256-gcm
+ * Descriptografa o token de sessão usando scrypt + aes-256-gcm.
+ * Compatível com tokens legados v1 (salt fixo) e tokens modernos v2 (salt dinâmico).
  * @param {string} tokenString
  * @param {string} secret
  * @returns {string} Payload JSON descriptografado
  */
 function decryptSession(tokenString, secret) {
   if (!secret || typeof secret !== 'string' || secret.length < 32) {
-    throw new Error('SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para descriptografia.');
+    throw new Error(
+      'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para descriptografia.'
+    );
+  }
+
+  if (!tokenString || typeof tokenString !== 'string') {
+    throw new Error('Token de sessão não fornecido ou inválido.');
   }
 
   const trimmed = tokenString.trim();
   const parts = trimmed.split(':');
 
-  if (parts[0] !== 'v1' || parts.length < 4) {
-    throw new Error('Formato de token de sessão inválido. O token deve iniciar com "v1:" e possuir blocos iv:tag:ciphertext.');
+  const version = parts[0];
+  let salt;
+  let iv;
+  let tag;
+  let ciphertext;
+
+  if (version === 'v2') {
+    if (parts.length < 5) {
+      throw new Error(
+        'Formato de token v2 inválido. O token deve possuir blocos v2:salt:iv:tag:ciphertext:base64.'
+      );
+    }
+    salt = Buffer.from(parts[1], 'base64');
+    iv = Buffer.from(parts[2], 'base64');
+    tag = Buffer.from(parts[3], 'base64');
+    ciphertext = Buffer.from(parts[4], 'base64');
+  } else if (version === 'v1') {
+    if (parts.length < 4) {
+      throw new Error(
+        'Formato de token v1 inválido. O token deve possuir blocos v1:iv:tag:ciphertext:base64.'
+      );
+    }
+    salt = APP_SCRYPT_SALT_V1;
+    iv = Buffer.from(parts[1], 'base64');
+    tag = Buffer.from(parts[2], 'base64');
+    ciphertext = Buffer.from(parts[3], 'base64');
+  } else {
+    throw new Error(
+      'Formato de token de sessão inválido. O token deve iniciar com "v1:" ou "v2:".'
+    );
   }
 
-  const iv = Buffer.from(parts[1], 'base64');
-  const tag = Buffer.from(parts[2], 'base64');
-  const ciphertext = Buffer.from(parts[3], 'base64');
-
-  const key = crypto.scryptSync(secret, APP_SCRYPT_SALT, 32, { N: 16384, r: 8, p: 1 });
+  const key = crypto.scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 });
   let decryptedStr = null;
 
   try {
@@ -98,10 +135,15 @@ function decryptSession(tokenString, secret) {
     decryptedStr = decryptedBuf.toString('utf-8');
     decryptedBuf.fill(0);
   } catch (err) {
-    throw new Error(`Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto. Detalhes: ${err.message}`);
+    throw new Error(
+      `Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto. Detalhes: ${err.message}`
+    );
   } finally {
     // Zerar buffers da memória imediatamente após o uso
     key.fill(0);
+    if (salt !== APP_SCRYPT_SALT_V1) {
+      salt.fill(0);
+    }
     iv.fill(0);
     tag.fill(0);
     ciphertext.fill(0);
@@ -127,12 +169,14 @@ const sessionPayloadSchema = z.object({
     cookies: z.array(cookieSchema).min(1, 'A sessão deve conter ao menos um cookie.'),
     origins: z.array(z.any()).optional()
   }),
-  meta: z.object({
-    user: z.string().min(1, 'O usuário no metadado da sessão não pode ser vazio.'),
-    exportedAt: z.string().optional(),
-    expiresAt: z.string().optional(),
-    savedAt: z.string().optional()
-  }).optional()
+  meta: z
+    .object({
+      user: z.string().min(1, 'O usuário no metadado da sessão não pode ser vazio.'),
+      exportedAt: z.string().optional(),
+      expiresAt: z.string().optional(),
+      savedAt: z.string().optional()
+    })
+    .optional()
 });
 
 /**
@@ -143,7 +187,7 @@ const sessionPayloadSchema = z.object({
 function validateSessionPayload(rawPayload) {
   const result = sessionPayloadSchema.safeParse(rawPayload);
   if (!result.success) {
-    const issues = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ');
+    const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
     throw new Error(`Estrutura de sessão inválida: ${issues}`);
   }
   return result.data;
@@ -157,7 +201,7 @@ function validateSessionPayload(rawPayload) {
 function isCookieExpired(cookie) {
   if (typeof cookie.expires === 'number' && cookie.expires > 0) {
     // Playwright armazena expires em segundos Unix
-    return (cookie.expires * 1000) <= Date.now();
+    return cookie.expires * 1000 <= Date.now();
   }
   return false;
 }
@@ -174,10 +218,13 @@ function validateSession(sessionData, metaData, expectedUser) {
     return { valid: false, reason: 'Dados da sessão ausentes ou sem lista de cookies.' };
   }
 
-  // 1. Verificação exata da conta (sem includes solto)
+  // 1. Verificação exata da conta
   if (expectedUser) {
     if (!metaData || !metaData.user) {
-      return { valid: false, reason: 'Metadados de sessão ausentes ou sem identificação da conta vinculada.' };
+      return {
+        valid: false,
+        reason: 'Metadados de sessão ausentes ou sem identificação da conta vinculada.'
+      };
     }
     if (metaData.user !== expectedUser) {
       return {
@@ -189,27 +236,35 @@ function validateSession(sessionData, metaData, expectedUser) {
 
   // 2. Verificação da presença dos cookies de autenticação
   const authCookies = sessionData.cookies.filter(
-    c => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value
+    (c) => (c.name === 'xman_us_t' || c.name === 'login_aliyunid_ticket') && c.value
   );
 
   if (authCookies.length === 0) {
-    return { valid: false, reason: 'Nenhum cookie de autenticação válido (xman_us_t / login_aliyunid_ticket) encontrado.' };
+    return {
+      valid: false,
+      reason: 'Nenhum cookie de autenticação válido (xman_us_t / login_aliyunid_ticket) encontrado.'
+    };
   }
 
   // 3. Verificação de expiração dos cookies de autenticação
-  const validUnexpiredAuthCookies = authCookies.filter(c => !isCookieExpired(c));
+  const validUnexpiredAuthCookies = authCookies.filter((c) => !isCookieExpired(c));
   if (validUnexpiredAuthCookies.length === 0) {
-    return { valid: false, reason: 'Todos os cookies de autenticação do AliExpress estão expirados.' };
+    return {
+      valid: false,
+      reason: 'Todos os cookies de autenticação do AliExpress estão expirados.'
+    };
   }
 
-  // 4. Verificação de idade da sessão exportada (aviso se > 90 dias ou se expiresAt ultrapassado)
+  // 4. Verificação de idade da sessão exportada
   if (metaData && metaData.exportedAt) {
     const exportedTime = new Date(metaData.exportedAt).getTime();
     if (!isNaN(exportedTime)) {
       const ageDays = (Date.now() - exportedTime) / (1000 * 60 * 60 * 24);
       if (ageDays > 90) {
-        console.warn(`\n[AVISO DE SESSÃO] A sessão exportada foi gerada há mais de 90 dias (${Math.floor(ageDays)} dias).`);
-        console.warn('[AVISO DE SESSÃO] Os cookies do AliExpress podem ter expirado ou estar prestes a expirar. Recomendado renovar com export_session.js.\n');
+        logger.warn(
+          { ageDays: Math.floor(ageDays) },
+          'A sessão exportada foi gerada há mais de 90 dias. Recomendado renovar com export_session.js.'
+        );
       }
     }
   }
@@ -217,7 +272,10 @@ function validateSession(sessionData, metaData, expectedUser) {
   if (metaData && metaData.expiresAt) {
     const expiryTime = new Date(metaData.expiresAt).getTime();
     if (!isNaN(expiryTime) && Date.now() > expiryTime) {
-      console.warn(`\n[AVISO DE SESSÃO] A sessão ultrapassou a data estimada de expiração (${metaData.expiresAt}).\n`);
+      logger.warn(
+        { expiresAt: metaData.expiresAt },
+        'A sessão ultrapassou a data estimada de expiração.'
+      );
     }
   }
 
@@ -225,20 +283,25 @@ function validateSession(sessionData, metaData, expectedUser) {
 }
 
 /**
- * Solicita código 2FA mascarado no terminal com timeout de 120s
- * Falha graciosamente se não for TTY
+ * Solicita código 2FA mascarado no terminal com timeout configurável
+ * Falha se não for TTY
  * @param {string} promptText
  * @param {number} [timeoutMs=120000]
  * @returns {Promise<string>}
  */
-function readMasked2FACode(promptText = '>> Digite o código de 6 dígitos enviado para seu e-mail/SMS: ', timeoutMs = 120000) {
+function readMasked2FACode(
+  promptText = '>> Digite o código de 6 dígitos enviado para seu e-mail/SMS: ',
+  timeoutMs = 120000
+) {
   return new Promise((resolve, reject) => {
     if (!process.stdin.isTTY) {
-      return reject(new Error(
-        'Execução não-interativa detectada (sem TTY). O AliExpress solicitou verificação 2FA.\n' +
-        'Solução: Execute localmente com interface interativa (./run_all.sh), resolva o desafio, ' +
-        'e use "node export_session.js" / "node import_session.js" para transferir a sessão autenticada.'
-      ));
+      return reject(
+        new Error(
+          'Execução não-interativa detectada (sem TTY). O AliExpress solicitou verificação 2FA.\n' +
+            'Solução: Execute localmente com interface interativa (./run_all.sh), resolva o desafio, ' +
+            'e use "node export_session.js" / "node import_session.js" para transferir a sessão autenticada.'
+        )
+      );
     }
 
     process.stdout.write(promptText);
@@ -264,7 +327,7 @@ function readMasked2FACode(promptText = '>> Digite o código de 6 dígitos envia
     timer = setTimeout(() => {
       cleanup();
       process.stdout.write('\n');
-      reject(new Error('Tempo esgotado (120s) aguardando o código 2FA.'));
+      reject(new Error(`Tempo esgotado (${timeoutMs / 1000}s) aguardando o código 2FA.`));
     }, timeoutMs);
 
     const onData = (chunk) => {
@@ -273,11 +336,13 @@ function readMasked2FACode(promptText = '>> Digite o código de 6 dígitos envia
           cleanup();
           process.stdout.write('\n');
           return resolve(input.trim());
-        } else if (char === '\u0003') { // Ctrl+C
+        } else if (char === '\u0003') {
+          // Ctrl+C
           cleanup();
           process.stdout.write('\n');
-          process.exit(130);
-        } else if (char === '\u0008' || char === '\x7f') { // Backspace
+          return reject(new Error('Entrada de 2FA cancelada pelo usuário (SIGINT).'));
+        } else if (char === '\u0008' || char === '\x7f') {
+          // Backspace
           if (input.length > 0) {
             input = input.slice(0, -1);
             process.stdout.write('\b \b');
@@ -294,6 +359,7 @@ function readMasked2FACode(promptText = '>> Digite o código de 6 dígitos envia
 }
 
 module.exports = {
+  APP_SCRYPT_SALT_V1,
   safeChmod600,
   safeWriteFile,
   encryptSession,

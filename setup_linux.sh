@@ -39,8 +39,8 @@ NEED_NODE_INSTALL=false
 
 if command -v node >/dev/null 2>&1; then
   NODE_MAJOR=$(node -v | sed 's/v//' | cut -d'.' -f1)
-  if [ "$NODE_MAJOR" -lt 18 ]; then
-    echo "Versão do Node.js detectada ($NODE_MAJOR) é inferior à versão 18 mínima necessária."
+  if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo "Versão do Node.js detectada ($NODE_MAJOR) é inferior à versão 22 mínima necessária."
     NEED_NODE_INSTALL=true
   else
     echo "Node.js já instalado na versão $(node -v) (compatível)."
@@ -51,10 +51,10 @@ else
 fi
 
 if [ "$NEED_NODE_INSTALL" = true ]; then
-  echo "Instalando Node.js 20 LTS via repositório oficial NodeSource..."
+  echo "Instalando Node.js 22 LTS via repositório oficial NodeSource..."
   $SUDO apt-get update -qq
   $SUDO apt-get install -y -qq ca-certificates curl gnupg
-  curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO -E bash -
+  curl -fsSL https://deb.nodesource.com/setup_22.x | $SUDO -E bash -
   $SUDO apt-get install -y -qq nodejs
   echo "Node.js instalado com sucesso: $(node -v)"
 fi

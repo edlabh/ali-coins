@@ -13,7 +13,7 @@ if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERRO] Node.js nao foi encontrado no sistema!
     echo.
-    echo Voce pode instalar o Node.js 20 LTS de duas formas:
+    echo Voce pode instalar o Node.js 22 LTS de duas formas:
     echo 1. Pelo terminal com winget:
     echo    winget install OpenJS.NodeJS.LTS
     echo 2. Pelo site oficial: https://nodejs.org/
@@ -26,10 +26,10 @@ if %ERRORLEVEL% NEQ 0 (
 for /f "tokens=1 delims=." %%a in ('node -v') do set NODE_VERSION_RAW=%%a
 set NODE_MAJOR=%NODE_VERSION_RAW:~1%
 
-if %NODE_MAJOR% LSS 18 (
+if %NODE_MAJOR% LSS 22 (
     echo.
-    echo [ERRO] Sua versao do Node.js (%NODE_MAJOR%) e inferior a versao 18 minima necessaria!
-    echo Atualize para o Node.js 20 LTS via https://nodejs.org/ ou: winget install OpenJS.NodeJS.LTS
+    echo [ERRO] Sua versao do Node.js (%NODE_MAJOR%) e inferior a versao 22 minima necessaria!
+    echo Atualize para o Node.js 22 LTS via https://nodejs.org/ ou: winget install OpenJS.NodeJS.LTS
     pause
     exit /b 1
 )

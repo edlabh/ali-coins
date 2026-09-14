@@ -2,7 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
-const { sessionPath, sessionMetaPath, sessionTokenPath, credentialsEnvPath } = require('./config');
+const {
+  sessionPath,
+  sessionMetaPath,
+  sessionTokenPath,
+  credentialsEnvPath,
+  isShowToken
+} = require('./config');
 const { encryptSession, safeWriteFile, safeChmod600, validateSession } = require('./security');
 const logger = require('./logger');
 
@@ -11,45 +17,87 @@ if (fs.existsSync(credentialsEnvPath)) {
   dotenv.config({ path: credentialsEnvPath, quiet: true });
 }
 
-async function exportSession() {
-  console.log('===================================================================');
-  console.log('         EXPORTAÇÃO SEGURA DE SESSÃO ALIEXPRESS (AES-256-GCM)');
-  console.log('===================================================================\n');
+/**
+ * Allowlist de chaves do localStorage essenciais para persistência de sessão.
+ * Motivo da substituição da denylist:
+ * O AliExpress injeta scripts de telemetria, telemetrias analíticas pesadas (APLUS_S_CORE,
+ * Batman, Goldlog, Aegis) que poluem o localStorage com mais de 200KB de cache temporário.
+ * A allowlist garante que apenas tokens de autenticação, CSRF tokens, identificadores
+ * de conta e preferências essenciais de navegação sejam transferidos no token criptografado.
+ */
+const ALLOWED_STORAGE_KEY_PATTERNS = [
+  /login/i,
+  /user/i,
+  /account/i,
+  /token/i,
+  /session/i,
+  /auth/i,
+  /_m_h5_tk/i,
+  /currency/i,
+  /locale/i,
+  /lang/i
+];
 
-  if (!fs.existsSync(sessionPath)) {
-    console.error('[ERRO] Arquivo "session.json" não encontrado.');
-    console.error('Execute o fluxo na máquina local primeiro (./run_all.sh) para autenticar e gerar uma sessão.');
-    process.exit(1);
+function isAllowedStorageKey(keyName) {
+  if (!keyName || typeof keyName !== 'string') return false;
+  return ALLOWED_STORAGE_KEY_PATTERNS.some((pattern) => pattern.test(keyName));
+}
+
+class ExportSessionError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ExportSessionError';
+  }
+}
+
+/**
+ * Exporta a sessão atual criptografada com AES-256-GCM (formato v2)
+ * @param {object} [options={}]
+ * @param {string} [options.secret]
+ * @returns {Promise<{ token: string, fingerprint: string, user: string }>}
+ */
+async function exportSession(options = {}) {
+  logger.info('===================================================================');
+  logger.info('         EXPORTAÇÃO SEGURA DE SESSÃO ALIEXPRESS (AES-256-GCM v2)');
+  logger.info('===================================================================');
+
+  const baseDir = options.baseDir;
+  const sPath =
+    options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
+  const mPath =
+    options.sessionMetaPath ||
+    (baseDir ? path.join(baseDir, 'session_meta.json') : sessionMetaPath);
+  const tPath =
+    options.sessionTokenPath ||
+    (baseDir ? path.join(baseDir, 'session_token.txt') : sessionTokenPath);
+
+  if (!fs.existsSync(sPath)) {
+    throw new ExportSessionError(
+      'Arquivo "session.json" não encontrado. Execute o fluxo primeiro (./run_all.sh) para autenticar.'
+    );
   }
 
-  const secret = process.env.SESSION_SECRET;
+  const secret = options.secret || process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
-    console.error('\n' + '='.repeat(68));
-    console.error(' [ERRO DE SEGURANÇA - SESSION_SECRET OBRIGATÓRIA]');
-    console.error(' A exportação de sessão exige uma chave de criptografia de no mínimo 32 caracteres.');
-    console.error('');
-    console.error(' Como configurar:');
-    console.error(' 1. Defina a variável de ambiente antes de executar:');
-    console.error('    export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"');
-    console.error(' 2. Ou declare diretamente no credentials.env:');
-    console.error('    SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"');
-    console.error('='.repeat(68) + '\n');
-    process.exit(1);
+    throw new ExportSessionError(
+      'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para exportação segura.'
+    );
   }
 
   let session;
   try {
-    session = JSON.parse(await fs.promises.readFile(sessionPath, 'utf-8'));
+    session = JSON.parse(await fs.promises.readFile(sPath, 'utf-8'));
   } catch (e) {
-    console.error('[ERRO] Falha ao ler session.json:', e.message);
-    process.exit(1);
+    throw new ExportSessionError(`Falha ao ler session.json: ${e.message}`);
   }
 
   let meta = { user: 'desconhecido' };
-  if (fs.existsSync(sessionMetaPath)) {
+  if (fs.existsSync(mPath)) {
     try {
-      meta = JSON.parse(await fs.promises.readFile(sessionMetaPath, 'utf-8'));
-    } catch (_) {}
+      meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
+    } catch {
+      // Ignorar e tentar fallback
+    }
   }
 
   if (meta.user === 'desconhecido' && process.env.ALI_USER) {
@@ -58,15 +106,14 @@ async function exportSession() {
 
   const validation = validateSession(session, meta, meta.user);
   if (!validation.valid) {
-    console.error(`[ERRO] Sessão inválida para exportação: ${validation.reason}`);
-    process.exit(1);
+    throw new ExportSessionError(`Sessão inválida para exportação: ${validation.reason}`);
   }
 
-  // Otimizar payload removendo caches volumosos de scripts do localStorage (>200KB)
+  // Filtragem estrita de localStorage via allowlist
   if (session.origins && Array.isArray(session.origins)) {
-    session.origins.forEach(o => {
+    session.origins.forEach((o) => {
       if (o.localStorage && Array.isArray(o.localStorage)) {
-        o.localStorage = o.localStorage.filter(i => !i.name.includes('APLUS_S_CORE') && !i.name.includes('batman'));
+        o.localStorage = o.localStorage.filter((i) => isAllowedStorageKey(i.name));
       }
     });
   }
@@ -85,47 +132,61 @@ async function exportSession() {
   const encryptedBlob = encryptSession(payloadString, secret);
 
   // Salvar token criptografado com permissões restritas 0o600
-  await safeWriteFile(sessionTokenPath, encryptedBlob, 'utf-8');
-  safeChmod600(sessionPath);
-  safeChmod600(sessionMetaPath);
-  safeChmod600(sessionTokenPath);
+  await safeWriteFile(tPath, encryptedBlob, 'utf-8');
+  safeChmod600(sPath);
+  if (fs.existsSync(mPath)) safeChmod600(mPath);
+  safeChmod600(tPath);
 
   const fingerprint = crypto.createHash('sha256').update(encryptedBlob).digest('hex').slice(0, 16);
   const blobSize = Buffer.byteLength(encryptedBlob, 'utf-8');
 
-  console.log(`[OK] Sessão autenticada encontrada para a conta: ${meta.user}`);
-  console.log(`[OK] Cookies de autenticação: VÁLIDOS (${session.cookies.length} cookies)`);
-  console.log(`[OK] Data de exportação: ${exportMeta.exportedAt}`);
-  console.log(`[OK] Expiração estimada: até ${exportMeta.expiresAt} (~90 dias)`);
-  console.log(`[OK] Fingerprint do token (SHA-256): ${fingerprint}`);
-  console.log(`[OK] Tamanho do payload: ${blobSize} bytes`);
-  console.log(`[OK] Permissões 0o600 aplicadas em session.json, session_meta.json e session_token.txt`);
-  console.log(`[OK] Token criptografado salvo com segurança em: session_token.txt\n`);
+  logger.info(`[OK] Sessão autenticada encontrada para a conta: ${meta.user}`);
+  logger.info(`[OK] Cookies de autenticação: VÁLIDOS (${session.cookies.length} cookies)`);
+  logger.info(`[OK] Data de exportação: ${exportMeta.exportedAt}`);
+  logger.info(`[OK] Expiração estimada: até ${exportMeta.expiresAt} (~90 dias)`);
+  logger.info(`[OK] Fingerprint do token (SHA-256): ${fingerprint}`);
+  logger.info(`[OK] Tamanho do payload criptografado: ${blobSize} bytes`);
+  logger.info('[OK] Permissões 0o600 aplicadas em todos os arquivos de sessão');
+  logger.info(`[OK] Token criptografado (v2) salvo em: ${path.basename(tPath)}\n`);
 
-  console.log('--- COMO IMPORTAR NO SEU SERVIDOR NA NUVEM DE FORMA SEGURA ---');
-  console.log('Opção A (Recomendada via STDIN):');
-  console.log('  node import_session.js < session_token.txt\n');
-  console.log('Opção B (Via arquivo):');
-  console.log('  node import_session.js --from-file=session_token.txt\n');
+  logger.info('--- COMO IMPORTAR NO SEU SERVIDOR NA NUVEM DE FORMA SEGURA ---');
+  logger.info('Opção A (Recomendada via STDIN):');
+  logger.info('  node import_session.js < session_token.txt\n');
+  logger.info('Opção B (Via arquivo):');
+  logger.info('  node import_session.js --from-file=session_token.txt\n');
 
-  const showToken = process.argv.includes('--show-token');
+  const showToken = options.showToken !== undefined ? options.showToken : isShowToken();
   if (showToken) {
-    console.warn('⚠️  [AVISO] Exibição de token em tela solicitada via --show-token.');
-    console.log('Blob criptografado (v1):');
-    console.log(encryptedBlob);
+    logger.warn('⚠️  [AVISO] Exibição de token em tela solicitada via --show-token.');
+    process.stdout.write(`\n--- TOKEN CRIPTOGRAFADO (v2) ---\n${encryptedBlob}\n--------------------------------\n`);
   } else {
-    console.log('(Dica: Por segurança contra vazamento em logs/telas, o token não é exibido no stdout por padrão.');
-    console.log(' Caso realmente precise visualizá-lo no terminal, adicione a flag: --show-token)');
+    logger.info(
+      '(Dica: O token não é exibido no stdout por padrão para segurança contra vazamento em logs. Use --show-token se necessário).'
+    );
   }
 
-  console.log('\n===================================================================');
+  logger.info('===================================================================');
+  return { token: encryptedBlob, fingerprint, user: meta.user };
 }
 
 if (require.main === module) {
-  exportSession().catch(err => {
-    logger.error({ err: err.message }, 'Falha na exportação da sessão.');
-    process.exit(1);
-  });
+  const { checkAndDisplayHelp } = require('./config');
+  if (checkAndDisplayHelp()) {
+    process.exit(0);
+  }
+  exportSession()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((err) => {
+      logger.error({ err: err.message }, 'Falha na exportação da sessão.');
+      process.exit(1);
+    });
 }
 
-module.exports = { exportSession };
+module.exports = {
+  exportSession,
+  ExportSessionError,
+  isAllowedStorageKey,
+  ALLOWED_STORAGE_KEY_PATTERNS
+};

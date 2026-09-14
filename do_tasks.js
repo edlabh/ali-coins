@@ -1,95 +1,27 @@
-const fs = require('fs');
-const path = require('path');
-const { loadConfig, sessionPath, sessionMetaPath, handleDryRun, isForce } = require('./config');
-const { formatDate, formatTime, formatDateTime, formatDuration } = require('./time_utils');
-const { launchBrowser, newMobileContext, newDesktopContext, waitWithScroll } = require('./browser');
-const { safeChmod600, validateSession } = require('./security');
-const { acquireLock } = require('./lockfile');
+const {
+  loadConfig,
+  sessionPath,
+  handleDryRun,
+  isForce,
+  isJson,
+  checkAndDisplayHelp
+} = require('./config');
+const { formatDateTime, formatDuration } = require('./time_utils');
+const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
+const { acquireLock, LockActiveError } = require('./lockfile');
+const { validateAndRefresh } = require('./libs/session');
+const { SELECTORS } = require('./libs/selectors');
+const {
+  gotoWithRetry,
+  closeModals,
+  getBalanceDesktop,
+  isInteractiveOrAppOnly,
+  openTaskDrawer,
+  extractTasksFromDrawer,
+  executeTaskAction
+} = require('./libs/ui');
+const { renderTasksReport } = require('./libs/report');
 const logger = require('./logger');
-
-// Cache de seletores recorrentes do DOM
-const SELECTORS = {
-  drawerContainer: '.e2e_task',
-  taskItem: '.e2e_normal_task',
-  taskTitle: '.e2e_normal_task_content_title',
-  taskSecondTitle: '.e2e_normal_task_content_secondTitle',
-  taskBtn: '.e2e_normal_task_right_btn',
-  taskStatus: '.statusText',
-  taskRight: '.e2e_normal_task_right',
-  openDrawerBtn: 'button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas")',
-  popupCloseBtn: '[class*="close"], [class*="dialog-close"], [class*="aecoin-close"], .ui-dialog-close, button:has-text("OK"), button:has-text("Confirm")',
-  checkinBtn: '#signButton, [class*="aecoin-today"]',
-  productCard: '.feeds-discount-card',
-  waterBtn: '.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"], button:has-text("regar"), button:has-text("Water")',
-  mycoinCheckin: 'text=App daily check-in'
-};
-
-/**
- * Identifica se a tarefa exige interação direta no App nativo AliExpress
- * @param {object} task
- * @returns {boolean}
- */
-function isInteractiveOrAppOnly(task) {
-  const text = (task.title + ' ' + task.desc).toLowerCase();
-  return text.includes('prize land') || text.includes('0.1') || text.includes('water') || text.includes('regar') ||
-         text.includes('merge boss') || text.includes('game') || text.includes('jogo') ||
-         text.includes('quiz');
-}
-
-/**
- * Toca em 3 produtos na página de anúncios
- * @param {import('playwright').Page} targetPage
- * @param {import('playwright').BrowserContext} context
- * @param {number} startIndex
- * @returns {Promise<number>}
- */
-async function executeSurpriseItems(targetPage, context, startIndex = 0) {
-  console.log(`Executando tarefa: tocar em 3 itens (a partir do card #${startIndex + 1})...`);
-  await targetPage.waitForSelector(SELECTORS.productCard, { timeout: 4000 }).catch(() => {});
-  let cards = await targetPage.$$(SELECTORS.productCard);
-  console.log(`Encontrados ${cards.length} cards de produtos.`);
-
-  if (startIndex + 3 > cards.length) {
-    await targetPage.evaluate(() => window.scrollBy(0, 800)).catch(() => {});
-    await targetPage.waitForTimeout(1000);
-    cards = await targetPage.$$(SELECTORS.productCard);
-  }
-
-  const start = (startIndex < cards.length) ? startIndex : 0;
-  const countToClick = Math.min(3, Math.max(0, cards.length - start));
-  let clickedCount = 0;
-
-  for (let c = start; c < start + (countToClick || 3); c++) {
-    if (c >= cards.length) break;
-    console.log(`Tocando item ${clickedCount + 1}/3 (card #${c + 1})...`);
-    const card = cards[c];
-    await card.scrollIntoViewIfNeeded().catch(() => {});
-    await targetPage.waitForTimeout(400);
-
-    const tabPromise = context.waitForEvent('page', { timeout: 3500 }).catch(() => null);
-    await card.click({ delay: 50, timeout: 4000 }).catch(async () => {
-      await targetPage.evaluate(el => el.click(), card).catch(() => {});
-    });
-
-    const itemTab = await tabPromise;
-    if (itemTab) {
-      console.log('Aba do produto aberta. Consolidando tracking...');
-      await itemTab.waitForLoadState('domcontentloaded').catch(() => {});
-      // Aguarda registro de telemetria de visualização do produto (1500ms)
-      await itemTab.waitForTimeout(1500);
-      await itemTab.close().catch(() => {});
-    } else if (!targetPage.url().includes('adclick.html')) {
-      // Aguarda consolidação do clique antes de retroceder (1500ms)
-      await targetPage.waitForTimeout(1500);
-      await targetPage.goBack().catch(() => {});
-      await targetPage.waitForLoadState('domcontentloaded').catch(() => {});
-    }
-    clickedCount++;
-    await targetPage.waitForTimeout(500);
-  }
-  await targetPage.waitForTimeout(1000);
-  return clickedCount;
-}
 
 /**
  * Executa as tarefas diárias do painel "Ganhe mais moedas"
@@ -104,61 +36,26 @@ async function runTasks(options = {}) {
   const config = loadConfig(true);
   const userEmail = config.ALI_USER;
 
-  console.log('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
-  console.log(`[Dia e Hora]: ${formatDateTime(tasksStartTime)}`);
+  logger.info('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
+  logger.info(`[Dia e Hora]: ${formatDateTime(tasksStartTime)}`);
 
   let sessionData = options.sessionData || null;
-  let metaData = null;
+  const sessionStatus = await validateAndRefresh(userEmail, sessionData);
 
-  // 1. Carregar e validar sessão
-  if (!sessionData && fs.existsSync(sessionPath)) {
-    try {
-      sessionData = JSON.parse(await fs.promises.readFile(sessionPath, 'utf-8'));
-    } catch (_) {
-      await fs.promises.unlink(sessionPath).catch(() => {});
-    }
-  }
-
-  if (fs.existsSync(sessionMetaPath)) {
-    try {
-      metaData = JSON.parse(await fs.promises.readFile(sessionMetaPath, 'utf-8'));
-    } catch (_) {
-      await fs.promises.unlink(sessionMetaPath).catch(() => {});
-    }
-  }
-
-  const validation = validateSession(sessionData, metaData, userEmail);
-
-  if (!validation.valid) {
+  if (!sessionStatus.valid) {
     if (options.skipAutoLogin) {
-      console.error('\n' + '='.repeat(68));
-      console.error(' [ERRO DE LOGIN - SESSÃO INVÁLIDA]');
-      console.error(` ${validation.reason}`);
-      console.error(' Interrompendo tarefas (skipAutoLogin ativo).');
-      console.error('='.repeat(68) + '\n');
-      throw new Error(`Sessão inválida para execução de tarefas: ${validation.reason}`);
+      throw new Error(`Sessão inválida para tarefas: ${sessionStatus.reason}`);
     }
 
-    console.log(`[Aviso] ${validation.reason}. Inicializando autenticação via check-in...`);
-    await fs.promises.unlink(sessionPath).catch(() => {});
-    await fs.promises.unlink(sessionMetaPath).catch(() => {});
-
+    logger.warn(`Sessão inválida (${sessionStatus.reason}). Autenticando via check-in...`);
     const { runCheckin } = require('./collect');
-    try {
-      const checkinRes = await runCheckin({ browser: options.browser });
-      sessionData = checkinRes.sessionData;
-    } catch (authErr) {
-      console.error('\n' + '='.repeat(68));
-      console.error(' [ERRO DE LOGIN - TAREFAS INTERROMPIDAS]');
-      console.error(` O login da conta "${userEmail}" falhou durante o check-in.`);
-      console.error(` Motivo: ${authErr.message}`);
-      console.error(' A execução das tarefas foi interrompida.');
-      console.error('='.repeat(68) + '\n');
-      throw authErr;
-    }
+    const checkinRes = await runCheckin({ browser: options.browser });
+    sessionData = checkinRes.sessionData;
+  } else {
+    sessionData = sessionStatus.sessionData;
   }
 
-  console.log(`[Login] Sessão autenticada para: ${userEmail}`);
+  logger.info(`[Login] Sessão validada para: ${userEmail}`);
 
   let browser = options.browser;
   const isInternalBrowser = !browser;
@@ -168,350 +65,209 @@ async function runTasks(options = {}) {
   }
 
   try {
-    const context = await newMobileContext(
-      browser,
-      sessionPath,
-      { allowMedia: config.ALLOW_MEDIA }
-    );
+    const context = await newMobileContext(browser, sessionPath, {
+      allowMedia: config.ALLOW_MEDIA
+    });
 
     let newPageOpened = null;
-    context.on('page', p => {
+    context.on('page', (p) => {
       newPageOpened = p;
     });
 
     const page = await context.newPage();
 
-    // Sincronizar cookies e handshake de sessão com domínio principal
-    console.log('Validando sessão e sincronizando cookies...');
-    await page.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', {
-      waitUntil: 'domcontentloaded',
-      timeout: 15000
-    }).catch(() => {});
-    await page.waitForLoadState('domcontentloaded');
-
-    console.log('Acessando https://m.aliexpress.com/p/coin-index/index.html ...');
-    await page.goto('https://m.aliexpress.com/p/coin-index/index.html', {
-      waitUntil: 'domcontentloaded',
-      timeout: 35000
-    });
-    await page.waitForLoadState('domcontentloaded');
-
-    if (page.url().includes('coin-pc-index')) {
-      await page.setViewportSize({ width: 412, height: 915 });
-      await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded', timeout: 25000 });
-      await page.waitForLoadState('domcontentloaded');
-    }
-
-    // Verificar se a página solicitou login
-    const loginInput = await page.$('input.cosmos-input, input[type="text"], input[type="email"], #fm-login-id');
-    const bodyText = await page.innerText('body').catch(() => '');
-    if (loginInput !== null || bodyText.includes('Email or phone number') || bodyText.includes('Sign in')) {
-      console.error('\n' + '='.repeat(68));
-      console.error(' [ERRO DE LOGIN - TAREFAS INTERROMPIDAS]');
-      console.error(' A página de moedas exigiu login. A sessão expirou ou é inválida.');
-      console.error(' A execução das tarefas diárias foi interrompida imediatamente.');
-      console.error('='.repeat(68) + '\n');
-      await context.close();
-      if (isInternalBrowser) await browser.close();
-      throw new Error('Execução de tarefas interrompida: sessão não autenticada no AliExpress.');
-    }
-
-    // 1. Check-in diário se ainda não tiver sido feito
-    const signBtn = await page.$(SELECTORS.checkinBtn);
-    if (signBtn) {
-      const text = (await signBtn.innerText().catch(() => '')).trim();
-      if (text.toLowerCase() === 'collect' || text.toLowerCase() === 'coletar') {
-        console.log('Check-in pendente encontrado. Coletando...');
-        await page.evaluate(el => el.click(), signBtn);
-        await page.waitForTimeout(1500);
-      }
-    }
-
-    // Fechar modais de boas-vindas
     try {
-      const modalBtn = await page.$(SELECTORS.popupCloseBtn);
-      if (modalBtn) {
-        await page.evaluate(el => el.click(), modalBtn).catch(() => {});
-        await page.waitForTimeout(500);
+      logger.info('Acessando central de moedas...');
+      await gotoWithRetry(page, SELECTORS.desktop.mycoinUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: config.NAV_TIMEOUT_SHORT
+      }).catch(() => {});
+      await page.waitForLoadState('domcontentloaded');
+
+      await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+        waitUntil: 'domcontentloaded',
+        timeout: config.NAV_TIMEOUT
+      });
+      await page.waitForLoadState('domcontentloaded');
+
+      if (page.url().includes('coin-pc-index')) {
+        await page.setViewportSize({ width: 412, height: 915 });
+        await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+          waitUntil: 'domcontentloaded',
+          timeout: config.NAV_TIMEOUT_SHORT
+        });
       }
-    } catch (_) {}
 
-    // 2. Abrir o drawer de tarefas com retry resiliente
-    async function openDrawer() {
-      let isDrawerOpen = await page.$eval(SELECTORS.drawerContainer, el => {
-        const box = el.getBoundingClientRect();
-        return box.height > 100;
-      }).catch(() => false);
+      const loginInput = await page.$(SELECTORS.login.usernameInput);
+      const bodyText = await page.innerText('body').catch(() => '');
+      if (
+        loginInput !== null ||
+        bodyText.includes('Email or phone number') ||
+        bodyText.includes('Sign in')
+      ) {
+        throw new Error('Sessão expirou ou exige login.');
+      }
 
-      if (isDrawerOpen) return true;
+      // Check-in pendente se houver
+      for (const sel of SELECTORS.checkin.collectButtonList) {
+        try {
+          const btn = await page.$(sel);
+          if (btn) {
+            const text = (await btn.innerText().catch(() => '')).trim().toLowerCase();
+            if (text === 'collect' || text === 'coletar') {
+              logger.info('Check-in pendente encontrado. Coletando...');
+              await page.evaluate((el) => el.click(), btn);
+              await page.waitForTimeout(1500);
+              break;
+            }
+          }
+        } catch {
+          // Ignorar
+        }
+      }
 
-      await page.waitForFunction(() => !document.querySelector('.login-pending-container'), { timeout: 8000 }).catch(() => {});
+      await closeModals(page);
 
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        const closePopupBtn = await page.$(SELECTORS.popupCloseBtn);
-        if (closePopupBtn) {
-          await page.evaluate(el => el.click(), closePopupBtn).catch(() => {});
-          await page.waitForTimeout(500);
+      const drawerOpened = await openTaskDrawer(page);
+      if (!drawerOpened) {
+        throw new Error('Painel "Ganhe mais moedas" inacessível.');
+      }
+
+      const taskAttempts = {};
+      const maxAttemptsPerTask = config.TASK_MAX_ATTEMPTS;
+      let totalActions = 0;
+      const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
+
+      while (totalActions < MAX_TOTAL_ACTIONS) {
+        await openTaskDrawer(page);
+        const currentTasks = await extractTasksFromDrawer(page);
+        if (!currentTasks || currentTasks.length === 0) break;
+
+        const pendingTask = currentTasks.find((t) => {
+          if (t.isDone) return false;
+          if (t.btnText !== 'GO') return false;
+          const attempts = taskAttempts[t.title] || 0;
+          return attempts < maxAttemptsPerTask;
+        });
+
+        if (!pendingTask) {
+          logger.info('Todas as tarefas disponíveis foram concluídas ou verificadas.');
+          break;
         }
 
-        console.log(`Tentativa ${attempt}/5 de abrir o painel "Ganhe mais moedas"...`);
-        const taskBtn = await page.$(SELECTORS.openDrawerBtn);
-        if (taskBtn) {
-          await page.evaluate(el => el.click(), taskBtn);
-        } else {
-          await page.evaluate(() => window.scrollBy(0, 150)).catch(() => {});
+        taskAttempts[pendingTask.title] = (taskAttempts[pendingTask.title] || 0) + 1;
+        totalActions++;
+
+        const taskStartTime = new Date();
+        logger.info(`\n--- Executando: "${pendingTask.title}" (${pendingTask.coins}) ---`);
+
+        const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
+        let currentTaskEl = currentTaskEls[pendingTask.index];
+        const actualTitle = await currentTaskEl
+          ?.$eval(SELECTORS.tasks.taskTitle, (el) => el.innerText.trim())
+          .catch(() => '');
+
+        if (actualTitle !== pendingTask.title) {
+          for (const el of currentTaskEls) {
+            const t = await el
+              ?.$eval(SELECTORS.tasks.taskTitle, (e) => e.innerText.trim())
+              .catch(() => '');
+            if (t === pendingTask.title) {
+              currentTaskEl = el;
+              break;
+            }
+          }
         }
+
+        if (!currentTaskEl) continue;
+
+        const goBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
+        if (!goBtn) continue;
+
+        newPageOpened = null;
+        await page.evaluate((el) => el.click(), goBtn);
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForTimeout(1000);
+
+        const activePage = newPageOpened || page;
+        const isNewTab = newPageOpened !== null;
 
         try {
-          await page.waitForSelector(SELECTORS.taskItem, { timeout: 4000 });
-          isDrawerOpen = true;
-          break;
-        } catch (_) {}
+          const actionRes = await executeTaskAction(activePage, context, pendingTask, config);
+          if (actionRes.isSpecialOrAppOnly) {
+            taskAttempts[pendingTask.title] = 999;
+          }
+        } catch (taskErr) {
+          logger.error({ err: taskErr.message }, `Erro ao executar "${pendingTask.title}".`);
+        }
 
+        if (isNewTab) {
+          await activePage.close().catch(() => {});
+        } else if (!page.url().includes('coin-index/index.html')) {
+          await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+            waitUntil: 'domcontentloaded'
+          });
+        }
         await page.waitForTimeout(1000);
+
+        const taskEndTime = new Date();
+        logger.info(`Concluída tarefa em: ${formatDuration(taskEndTime - taskStartTime)}`);
       }
-      return isDrawerOpen;
-    }
 
-    const drawerOpened = await openDrawer();
-    if (!drawerOpened) {
-      console.error('\n' + '='.repeat(68));
-      console.error(' [ERRO - TAREFAS INTERROMPIDAS]');
-      console.error(' Não foi possível abrir o painel "Ganhe mais moedas" após 5 tentativas.');
-      console.error(' A execução das tarefas foi cancelada (possível bloqueio temporário).');
-      console.error('='.repeat(68) + '\n');
-      const errShot = path.join(__dirname, 'tasks_drawer_failed.png');
-      await page.screenshot({ path: errShot, fullPage: true }).catch(() => {});
-      safeChmod600(errShot);
-      await context.close();
-      if (isInternalBrowser) await browser.close();
-      throw new Error('Execução de tarefas interrompida: painel "Ganhe mais moedas" inacessível.');
-    }
-
-    // Ler tarefas da gaveta
-    async function getTasks() {
-      return await page.$$eval(SELECTORS.taskItem, els => els.map((e, idx) => {
-        const title = e.querySelector('.e2e_normal_task_content_title')?.innerText?.trim() || '';
-        const desc = e.querySelector('.e2e_normal_task_content_secondTitle')?.innerText?.trim() || '';
-        const btn = e.querySelector('.e2e_normal_task_right_btn');
-        const btnText = btn?.innerText?.trim() || '';
-        const btnStyle = btn?.getAttribute('style') || '';
-        const statusText = e.querySelector('.statusText')?.innerText?.trim() || '';
-
-        let completedRounds = null;
-        let currentRound = null;
-        let totalRounds = null;
-        if (statusText) {
-          const sm = statusText.match(/^([0-9]+)\/([0-9]+)$/);
-          if (sm) {
-            completedRounds = parseInt(sm[1], 10);
-            totalRounds = parseInt(sm[2], 10);
-            currentRound = Math.min(completedRounds + 1, totalRounds);
-          }
+      await openTaskDrawer(page);
+      const finalTasks = await extractTasksFromDrawer(page);
+      const results = finalTasks.map((t) => {
+        let status = 'Pendente';
+        if (t.isDone) {
+          status = t.totalRounds
+            ? `Concluída (${t.totalRounds}/${t.totalRounds})`
+            : t.statusText
+              ? `Concluída (${t.statusText})`
+              : 'Concluída';
+        } else if (isInteractiveOrAppOnly(t)) {
+          status =
+            t.title.toLowerCase().includes('quiz') || t.title.toLowerCase().includes('merge boss')
+              ? 'Requer interação direta no App AliExpress (minigame/quiz)'
+              : 'Exclusiva do App AliExpress (requer rega no app móvel)';
+        } else if (t.statusText) {
+          status = `Executada parcialmente (${t.statusText})`;
         }
-
-        const isDone = btnStyle.includes('opacity: 0.5') ||
-                       btnStyle.includes('cover') ||
-                       btnText !== 'GO' ||
-                       (totalRounds !== null && completedRounds !== null && completedRounds >= totalRounds);
-
-        const groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
-        const allText = e.innerText?.replace(/\n+/g, ' ') || '';
-        const coinMatch = allText.match(/\+([0-9]+(?:～[0-9]+)?)/);
-        const coins = coinMatch ? `+${coinMatch[1]} moedas` : '+5 moedas';
-        return { index: idx, title, desc, btnText, btnStyle, statusText, completedRounds, currentRound, totalRounds, isDone, groupId, coins, allText };
-      }));
-    }
-
-    // Loop de processamento de tarefas
-    const taskAttempts = {};
-    const maxAttemptsPerTask = 4;
-    let totalActions = 0;
-    const MAX_TOTAL_ACTIONS = 25;
-
-    while (totalActions < MAX_TOTAL_ACTIONS) {
-      await openDrawer();
-      const currentTasks = await getTasks();
-      if (!currentTasks || currentTasks.length === 0) break;
-
-      const pendingTask = currentTasks.find(t => {
-        if (t.isDone) return false;
-        if (t.btnText !== 'GO') return false;
-        const attempts = taskAttempts[t.title] || 0;
-        return attempts < maxAttemptsPerTask;
+        return { title: t.title, status, coins: t.coins };
       });
 
-      if (!pendingTask) {
-        console.log('\nTodas as tarefas disponíveis foram concluídas ou verificadas.');
-        break;
-      }
+      await closeContextWithDiagnostics(context, { failed: false, name: 'tasks-mobile' });
 
-      const currentAttempt = (taskAttempts[pendingTask.title] || 0) + 1;
-      taskAttempts[pendingTask.title] = currentAttempt;
-      totalActions++;
-
-      const taskStartTime = new Date();
-      const roundInfo = (pendingTask.currentRound && pendingTask.totalRounds)
-        ? ` [Rodada: ${pendingTask.currentRound}/${pendingTask.totalRounds}]`
-        : (pendingTask.statusText ? ` [Rodada: ${pendingTask.statusText}]` : '');
-      console.log(`\n--- Executando: "${pendingTask.title}"${roundInfo} (${pendingTask.coins}) ---`);
-      console.log(`    Dia e Hora de Início: ${formatDateTime(taskStartTime)}`);
-
-      const titleLower = pendingTask.title.toLowerCase();
-      const descLower = pendingTask.desc.toLowerCase();
-
-      const currentTaskEls = await page.$$(SELECTORS.taskItem);
-      let currentTaskEl = currentTaskEls[pendingTask.index];
-      const actualTitle = await currentTaskEl?.$eval(SELECTORS.taskTitle, el => el.innerText.trim()).catch(() => '');
-      if (actualTitle !== pendingTask.title) {
-        for (const el of currentTaskEls) {
-          const t = await el.$eval(SELECTORS.taskTitle, e => e.innerText.trim()).catch(() => '');
-          if (t === pendingTask.title) {
-            currentTaskEl = el;
-            break;
-          }
-        }
-      }
-
-      if (!currentTaskEl) {
-        console.log(`Tarefa "${pendingTask.title}" não encontrada no DOM.`);
-        continue;
-      }
-
-      const goBtn = await currentTaskEl.$(SELECTORS.taskBtn);
-      if (!goBtn) {
-        console.log(`Botão GO não encontrado para "${pendingTask.title}".`);
-        continue;
-      }
-
-      newPageOpened = null;
-      console.log('Clicando em GO...');
-      await page.evaluate(el => el.click(), goBtn);
-      // Aguarda abertura de nova aba ou carregamento da URL da tarefa
-      await page.waitForLoadState('domcontentloaded').catch(() => {});
-      await page.waitForTimeout(1000);
-
-      const activePage = newPageOpened || page;
-      const isNewTab = newPageOpened !== null;
-      console.log(`Página ativa da tarefa: ${activePage.url()}`);
-
+      let finalCoins = 'N/D';
       try {
-        if (titleLower.includes('surprise') || titleLower.includes('surpresa') || descLower.includes('tap 3') || descLower.includes('toque em 3')) {
-          const startCardIdx = (pendingTask.completedRounds && pendingTask.completedRounds > 0) ? (pendingTask.completedRounds * 3) : 0;
-          const clicked = await executeSurpriseItems(activePage, context, startCardIdx);
-          console.log(`Rodada ${pendingTask.currentRound || 1} concluída: ${clicked} itens tocados.`);
-
-        } else if (titleLower.includes('search') || titleLower.includes('pesquisa') || titleLower.includes('buscar') || descLower.includes('keywords') || descLower.includes('palavra')) {
-          console.log('Executando tarefa: pesquisa com palavra-chave...');
-          const searchInput = await activePage.$('input');
-          if (searchInput) {
-            await searchInput.fill('fone bluetooth');
-            await searchInput.press('Enter');
-            await waitWithScroll(activePage, 10);
-          } else {
-            await waitWithScroll(activePage, 10);
-          }
-          if (pendingTask.totalRounds) {
-            console.log(`Rodada ${pendingTask.currentRound || 1} concluída com sucesso.`);
-          }
-
-        } else if (titleLower.includes('prize land') || descLower.includes('prize land') || descLower.includes('water') || descLower.includes('regar') || titleLower.includes('0.1') || descLower.includes('0.1')) {
-          console.log('Executando tarefa: Prize Land...');
-          await activePage.waitForTimeout(1500);
-          const waterBtn = await activePage.$(SELECTORS.waterBtn);
-          if (waterBtn) {
-            await activePage.evaluate(el => el.click(), waterBtn);
-            await activePage.waitForTimeout(1500);
-          } else {
-            console.log('Prize Land requer app AliExpress nativo.');
-          }
-          taskAttempts[pendingTask.title] = 999;
-
-        } else if (titleLower.includes('merge boss') || titleLower.includes('game') || titleLower.includes('jogo') || titleLower.includes('quiz')) {
-          console.log(`Tarefa interativa: ${pendingTask.title}`);
-          await activePage.waitForTimeout(1500);
-          taskAttempts[pendingTask.title] = 999;
-
-        } else {
-          console.log(`Executando tarefa: navegação com scroll ("${pendingTask.title}")...`);
-          await waitWithScroll(activePage, 10);
-          if (pendingTask.totalRounds) {
-            console.log(`Rodada ${pendingTask.currentRound || 1} concluída com sucesso.`);
-          }
+        const desktopResult = await getBalanceDesktop(browser, sessionPath, {
+          allowMedia: config.ALLOW_MEDIA,
+          timeout: config.NAV_TIMEOUT_SHORT
+        });
+        if (desktopResult.totalBalance && desktopResult.totalBalance !== 'N/D') {
+          finalCoins = `${desktopResult.totalBalance} moedas`;
         }
-
-      } catch (taskErr) {
-        console.error(`Erro ao executar "${pendingTask.title}":`, taskErr.message);
+      } catch {
+        // Ignorar
       }
 
-      if (isNewTab) {
-        await activePage.close().catch(() => {});
-      } else if (!page.url().includes('coin-index/index.html')) {
-        await page.goto('https://m.aliexpress.com/p/coin-index/index.html', { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('domcontentloaded');
-      }
-      await page.waitForTimeout(1000);
+      const tasksEndTime = new Date();
+      const tasksDuration = formatDuration(tasksEndTime - tasksStartTime);
 
-      const taskEndTime = new Date();
-      const taskDuration = formatDuration(taskEndTime - taskStartTime);
-      console.log(`    Concluída em: ${formatTime(taskEndTime)} | Duração: ${taskDuration}`);
+      const result = {
+        results,
+        finalCoins,
+        totalActions,
+        startTime: tasksStartTime,
+        endTime: tasksEndTime,
+        duration: tasksDuration
+      };
+
+      renderTasksReport(result, { json: isJson() });
+      return result;
+    } catch (flowErr) {
+      await closeContextWithDiagnostics(context, { failed: true, name: 'tasks-failed' });
+      throw flowErr;
     }
-
-    // Obter status consolidado de todas as tarefas
-    await openDrawer();
-    const finalTasks = await getTasks();
-    const results = [];
-    for (const t of finalTasks) {
-      let status = 'Pendente';
-      if (t.isDone) {
-        status = t.totalRounds ? `Concluída (${t.totalRounds}/${t.totalRounds})` : (t.statusText ? `Concluída (${t.statusText})` : 'Concluída');
-      } else if (isInteractiveOrAppOnly(t)) {
-        status = (t.title.toLowerCase().includes('quiz') || t.title.toLowerCase().includes('merge boss'))
-          ? 'Requer interação direta no App AliExpress (minigame/quiz)'
-          : 'Exclusiva do App AliExpress (requer rega no app móvel)';
-      } else if (t.statusText) {
-        status = `Executada parcialmente (${t.statusText})`;
-      }
-      results.push({ title: t.title, status, coins: t.coins });
-    }
-
-    await context.close();
-
-    // 3. Confirmar saldo final de moedas via contexto desktop
-    console.log('\nConsultando saldo final atualizado...');
-    let finalCoins = 'N/D';
-    try {
-      const desktopCtx = await newDesktopContext(browser, sessionPath, { allowMedia: config.ALLOW_MEDIA });
-      const desktopPage = await desktopCtx.newPage();
-      await desktopPage.goto('https://www.aliexpress.com/p/coin-pc-index/mycoin.html', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000
-      });
-      await desktopPage.waitForSelector(SELECTORS.mycoinCheckin, { timeout: 6000 }).catch(() => {});
-      const mycoinBody = await desktopPage.innerText('body').catch(() => '');
-      const mycoinMatch = mycoinBody.match(/My coins\s*\n\s*([0-9]+)/i) || mycoinBody.match(/([0-9]+)\s*\n\s*saves/i);
-      if (mycoinMatch) {
-        finalCoins = `${mycoinMatch[1]} moedas`;
-      }
-      await desktopCtx.close();
-    } catch (_) {}
-
-    const tasksEndTime = new Date();
-    const tasksDuration = formatDuration(tasksEndTime - tasksStartTime);
-
-    console.log('\n================ RESUMO DAS TAREFAS ================');
-    for (const r of results) {
-      console.log(`- ${r.title}: ${r.status} (${r.coins || ''})`);
-    }
-    console.log(`\nSaldo total final: ${finalCoins}`);
-    console.log('----------------------------------------------------');
-    console.log(`Data:                ${formatDate(tasksStartTime)}`);
-    console.log(`Hora de Início:      ${formatTime(tasksStartTime)}`);
-    console.log(`Hora de Finalização: ${formatTime(tasksEndTime)}`);
-    console.log(`Duração Total:       ${tasksDuration}`);
-    console.log('====================================================\n');
-
-    return { results, finalCoins, startTime: tasksStartTime, endTime: tasksEndTime, duration: tasksDuration };
   } finally {
     if (isInternalBrowser && browser) {
       await browser.close().catch(() => {});
@@ -520,16 +276,36 @@ async function runTasks(options = {}) {
 }
 
 if (require.main === module) {
-  handleDryRun();
+  if (checkAndDisplayHelp()) {
+    process.exit(0);
+  }
+  if (handleDryRun()) {
+    process.exit(0);
+  }
+
   (async () => {
-    const releaseLock = await acquireLock(isForce());
+    let releaseLock = null;
     try {
-      await runTasks();
+      releaseLock = await acquireLock(isForce());
     } catch (err) {
-      console.error('Erro fatal:', err);
+      if (err instanceof LockActiveError) {
+        process.exit(3);
+      }
+      logger.error({ err: err.message }, 'Falha ao obter lock.');
       process.exit(1);
-    } finally {
+    }
+
+    try {
+      const result = await runTasks();
       if (releaseLock) await releaseLock();
+      if (result && result.totalActions === 0) {
+        process.exit(2);
+      }
+      process.exit(0);
+    } catch (err) {
+      if (releaseLock) await releaseLock();
+      logger.error({ err: err.message }, 'Falha na execução de tarefas.');
+      process.exit(1);
     }
   })();
 }

@@ -3,15 +3,13 @@ const path = require('path');
 const fs = require('fs');
 const { chromium, devices } = require('playwright');
 const logger = require('./logger');
+const {
+  getDiagnosticsDir,
+  applyDiagnosticOptions,
+  startContextTracing,
+  closeContextWithDiagnostics
+} = require('./libs/ui/diagnostics');
 
-/**
- * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança.
- * AVISO DE SEGURANÇA:
- * A flag --no-sandbox desativa a camada de isolamento do Chromium e NUNCA deve ser usada
- * irrestritamente por usuários comuns, pois aumenta a vulnerabilidade do sistema contra
- * ataques remotos via conteúdo web malicioso. Ela só é aplicada caso o processo esteja
- * rodando como ROOT (UID 0) ou em ambiente de Integração Contínua (CI).
- */
 /**
  * Verifica se a sandbox deve ser desativada (--no-sandbox).
  * Condições: execução como root (UID 0), ambiente CI, ou configuração explícita NO_SANDBOX=true.
@@ -21,7 +19,7 @@ function isNoSandboxRequired() {
   const isCI = Boolean(process.env.CI);
   const isExplicitNoSandbox = Boolean(
     process.env.NO_SANDBOX &&
-    (process.env.NO_SANDBOX.toLowerCase() === 'true' || process.env.NO_SANDBOX === '1')
+      (process.env.NO_SANDBOX.toLowerCase() === 'true' || process.env.NO_SANDBOX === '1')
   );
   return {
     isRoot,
@@ -33,16 +31,10 @@ function isNoSandboxRequired() {
 
 /**
  * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança.
- * AVISO DE SEGURANÇA:
- * A flag --no-sandbox desativa a camada de isolamento do Chromium e só deve ser usada
- * caso necessário (ex: execução como ROOT, CI, ou Ubuntu 23.10/24.04 com AppArmor userns restrito).
  */
 function getChromiumArgs() {
   const { isRoot, isCI, isExplicitNoSandbox, shouldDisable } = isNoSandboxRequired();
-  const args = [
-    '--disable-dev-shm-usage',
-    '--disable-blink-features=AutomationControlled'
-  ];
+  const args = ['--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
 
   if (shouldDisable) {
     logger.warn(
@@ -56,8 +48,7 @@ function getChromiumArgs() {
 }
 
 /**
- * Configura as variáveis de ambiente necessárias para o Chromium encontrar as bibliotecas
- * do sistema no Linux
+ * Configura as variáveis de ambiente necessárias para o Chromium encontrar as bibliotecas do sistema
  */
 function getChromiumEnv() {
   const envVars = { ...process.env };
@@ -80,7 +71,8 @@ async function launchBrowser(options = {}) {
 
   const launchOptions = {
     headless: options.headless !== undefined ? options.headless : true,
-    chromiumSandbox: options.chromiumSandbox !== undefined ? options.chromiumSandbox : !shouldDisable,
+    chromiumSandbox:
+      options.chromiumSandbox !== undefined ? options.chromiumSandbox : !shouldDisable,
     args: [...defaultArgs, ...(options.args || [])],
     env: { ...defaultEnv, ...(options.env || {}) },
     ...options
@@ -91,7 +83,6 @@ async function launchBrowser(options = {}) {
 
 /**
  * Configura interceptação de requisições para bloquear mídias e telemetrias pesadas
- * Reduz em até 60% o tráfego e acelera significativamente o carregamento da página
  * @param {import('playwright').BrowserContext} context
  * @param {boolean} [allowMedia=false]
  */
@@ -126,6 +117,8 @@ async function setupResourceBlocking(context, allowMedia = false) {
   });
 }
 
+
+
 /**
  * Cria um contexto mobile emulando o Pixel 7 com idioma pt-BR
  * @param {import('playwright').Browser} browser
@@ -135,12 +128,14 @@ async function setupResourceBlocking(context, allowMedia = false) {
  */
 async function newMobileContext(browser, storageState = null, options = {}) {
   const pixel7 = devices['Pixel 7'];
-  const contextOptions = {
+  let contextOptions = {
     ...pixel7,
     locale: 'pt-BR',
     ...(storageState ? { storageState } : {}),
     ...options
   };
+
+  contextOptions = applyDiagnosticOptions(contextOptions);
 
   const context = await browser.newContext(contextOptions);
 
@@ -150,6 +145,7 @@ async function newMobileContext(browser, storageState = null, options = {}) {
   });
 
   await setupResourceBlocking(context, options.allowMedia);
+  await startContextTracing(context);
   return context;
 }
 
@@ -161,14 +157,17 @@ async function newMobileContext(browser, storageState = null, options = {}) {
  * @returns {Promise<import('playwright').BrowserContext>}
  */
 async function newDesktopContext(browser, storageState = null, options = {}) {
-  const contextOptions = {
+  let contextOptions = {
     locale: 'pt-BR',
     ...(storageState ? { storageState } : {}),
     ...options
   };
 
+  contextOptions = applyDiagnosticOptions(contextOptions);
+
   const context = await browser.newContext(contextOptions);
   await setupResourceBlocking(context, options.allowMedia);
+  await startContextTracing(context);
   return context;
 }
 
@@ -182,7 +181,10 @@ async function newDesktopContext(browser, storageState = null, options = {}) {
  * @param {number} [options.factor=2]
  * @param {boolean} [options.jitter=true]
  */
-async function retry(fn, { retries = 3, minTimeout = 1000, maxTimeout = 8000, factor = 2, jitter = true } = {}) {
+async function retry(
+  fn,
+  { retries = 3, minTimeout = 1000, maxTimeout = 8000, factor = 2, jitter = true } = {}
+) {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -194,15 +196,14 @@ async function retry(fn, { retries = 3, minTimeout = 1000, maxTimeout = 8000, fa
       if (jitter) {
         delay += Math.floor(Math.random() * 400);
       }
-      await new Promise(r => setTimeout(r, delay));
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
   throw lastError;
 }
 
 /**
- * Otimizado: executa scroll gradual na página e monitora requisições de tracking
- * Reduz tempo de espera para máximo 10s ou termina antecipadamente ao detectar confirmação
+ * Executa scroll gradual na página e monitora requisições de tracking
  * @param {import('playwright').Page} page
  * @param {number} [maxSeconds=10]
  */
@@ -213,7 +214,12 @@ async function waitWithScroll(page, maxSeconds = 10) {
 
   const responseHandler = (res) => {
     const url = res.url();
-    if (url.includes('/track') || url.includes('/trace') || url.includes('adclick') || url.includes('ae-')) {
+    if (
+      url.includes('/track') ||
+      url.includes('/trace') ||
+      url.includes('adclick') ||
+      url.includes('ae-')
+    ) {
       trackingDetected = true;
     }
   };
@@ -221,12 +227,11 @@ async function waitWithScroll(page, maxSeconds = 10) {
   page.on('response', responseHandler);
 
   try {
-    while ((Date.now() - startTime) < maxMs) {
+    while (Date.now() - startTime < maxMs) {
       await page.evaluate(() => window.scrollBy(0, 300)).catch(() => {});
       await page.waitForTimeout(1500);
 
-      // Se já detectou requisição de tracking e decorreram pelo menos 5 segundos de scroll
-      if (trackingDetected && (Date.now() - startTime) >= 5000) {
+      if (trackingDetected && Date.now() - startTime >= 5000) {
         break;
       }
     }
@@ -241,5 +246,7 @@ module.exports = {
   newDesktopContext,
   setupResourceBlocking,
   retry,
-  waitWithScroll
+  waitWithScroll,
+  closeContextWithDiagnostics,
+  getDiagnosticsDir
 };

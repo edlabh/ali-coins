@@ -1,4 +1,4 @@
-FROM node:18-slim
+FROM node:22-slim
 
 # Instalar dependências essenciais de runtime do Chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +26,6 @@ WORKDIR /app
 
 # Cache compartilhado de binários do navegador Playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV CI=true
 
 # Instalar dependências de produção
 COPY package*.json ./

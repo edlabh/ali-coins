@@ -1,53 +1,107 @@
 const fs = require('fs');
 const os = require('os');
-const { lockFilePath } = require('./config');
+const { lockFilePath: defaultLockFilePath } = require('./config');
 const { safeChmod600 } = require('./security');
 const logger = require('./logger');
+
+const DEFAULT_STALE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos
+
+class LockActiveError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'LockActiveError';
+    this.code = 'LOCK_ACTIVE';
+    this.details = details;
+  }
+}
 
 /**
  * Adquire lock exclusivo de forma assíncrona para evitar execuções simultâneas ou sobrepostas
  * @param {boolean} [force=false] Se true, remove lock existente mesmo que ativo
+ * @param {number} [customStaleTimeoutMs] Tempo limite de inatividade para considerar lock órfão
+ * @param {string} [customLockFilePath] Caminho customizado para o arquivo de lock
  * @returns {Promise<() => Promise<void>>} Função assíncrona para liberar o lock
  */
-async function acquireLock(force = false) {
+async function acquireLock(force = false, customStaleTimeoutMs = null, customLockFilePath = null) {
+  const targetLockPath = customLockFilePath || defaultLockFilePath;
+  const staleTimeoutMs =
+    customStaleTimeoutMs ||
+    (process.env.LOCK_STALE_TIMEOUT_MS
+      ? parseInt(process.env.LOCK_STALE_TIMEOUT_MS, 10)
+      : DEFAULT_STALE_TIMEOUT_MS);
+
   let lockFileExists = false;
   try {
-    await fs.promises.access(lockFilePath);
+    await fs.promises.access(targetLockPath);
     lockFileExists = true;
-  } catch (_) {
+  } catch {
     lockFileExists = false;
   }
 
   if (lockFileExists) {
     let existingLock = null;
     try {
-      const content = await fs.promises.readFile(lockFilePath, 'utf-8');
+      const content = await fs.promises.readFile(targetLockPath, 'utf-8');
       existingLock = JSON.parse(content);
-    } catch (_) {}
+    } catch {
+      existingLock = null;
+    }
 
     if (existingLock && existingLock.pid) {
-      let isProcessAlive = false;
-      try {
-        // process.kill com sinal 0 apenas verifica se o processo com o PID existe
-        process.kill(existingLock.pid, 0);
-        isProcessAlive = true;
-      } catch (err) {
-        isProcessAlive = false;
-      }
+      const lockCreatedAt = existingLock.createdAt ? new Date(existingLock.createdAt).getTime() : 0;
+      const lockAge = Date.now() - lockCreatedAt;
+      const isStale = !isNaN(lockAge) && lockAge > staleTimeoutMs;
+      const isSameHost = existingLock.host === os.hostname();
 
-      if (isProcessAlive && !force) {
-        console.warn(`\n[LOCK] O script já está em execução (PID ativo: ${existingLock.pid}, iniciado em: ${existingLock.createdAt}).`);
-        console.warn('[LOCK] Para destravar e forçar uma nova execução, utilize a flag: --force\n');
-        process.exit(0);
-      } else if (!isProcessAlive) {
-        logger.info({ pid: existingLock.pid }, 'Removendo lockfile órfão de processo anterior finalizado.');
-        await fs.promises.unlink(lockFilePath).catch(() => {});
-      } else if (force) {
-        logger.warn({ pid: existingLock.pid }, 'Flag --force detectada: sobrescrevendo lockfile ativo.');
-        await fs.promises.unlink(lockFilePath).catch(() => {});
+      if (isStale) {
+        logger.warn(
+          { pid: existingLock.pid, host: existingLock.host, lockAgeMs: lockAge, staleTimeoutMs },
+          'Lockfile expirado (staleTimeout atingido). Removendo lock antigo.'
+        );
+        await fs.promises.unlink(targetLockPath).catch(() => {});
+      } else if (isSameHost) {
+        let isProcessAlive = false;
+        try {
+          // process.kill com sinal 0 apenas verifica se o processo existe
+          process.kill(existingLock.pid, 0);
+          isProcessAlive = true;
+        } catch {
+          isProcessAlive = false;
+        }
+
+        if (isProcessAlive && !force) {
+          const msg = `O processo já está em execução no host local (PID ativo: ${existingLock.pid}, iniciado em: ${existingLock.createdAt}).`;
+          logger.warn({ existingLock }, msg);
+          throw new LockActiveError(msg, { existingLock });
+        } else if (!isProcessAlive) {
+          logger.info(
+            { pid: existingLock.pid },
+            'Removendo lockfile órfão de processo anterior finalizado.'
+          );
+          await fs.promises.unlink(targetLockPath).catch(() => {});
+        } else if (force) {
+          logger.warn(
+            { pid: existingLock.pid },
+            'Flag --force detectada: sobrescrevendo lockfile ativo.'
+          );
+          await fs.promises.unlink(targetLockPath).catch(() => {});
+        }
+      } else {
+        // Outro host na mesma rede/diretório compartilhado
+        if (!force) {
+          const msg = `O processo está ativo em outro host (${existingLock.host}, PID: ${existingLock.pid}, iniciado em: ${existingLock.createdAt}).`;
+          logger.warn({ existingLock }, msg);
+          throw new LockActiveError(msg, { existingLock });
+        } else {
+          logger.warn(
+            { existingLock },
+            'Flag --force detectada: sobrescrevendo lockfile de outro host.'
+          );
+          await fs.promises.unlink(targetLockPath).catch(() => {});
+        }
       }
     } else {
-      await fs.promises.unlink(lockFilePath).catch(() => {});
+      await fs.promises.unlink(targetLockPath).catch(() => {});
     }
   }
 
@@ -59,13 +113,14 @@ async function acquireLock(force = false) {
   };
 
   try {
-    await fs.promises.writeFile(lockFilePath, JSON.stringify(lockData, null, 2), {
+    await fs.promises.writeFile(targetLockPath, JSON.stringify(lockData, null, 2), {
       encoding: 'utf-8',
       mode: 0o600
     });
-    safeChmod600(lockFilePath);
+    safeChmod600(targetLockPath);
   } catch (err) {
     logger.error({ err: err.message }, 'Falha ao criar arquivo de lock.');
+    throw err;
   }
 
   let released = false;
@@ -73,27 +128,29 @@ async function acquireLock(force = false) {
     if (released) return;
     released = true;
     try {
-      const content = await fs.promises.readFile(lockFilePath, 'utf-8');
+      const content = await fs.promises.readFile(targetLockPath, 'utf-8');
       const currentLock = JSON.parse(content);
       if (currentLock.pid === process.pid) {
-        await fs.promises.unlink(lockFilePath).catch(() => {});
+        await fs.promises.unlink(targetLockPath).catch(() => {});
       }
-    } catch (_) {}
+    } catch {
+      // Ignorar erros na remoção
+    }
   };
 
-  process.once('SIGINT', async () => {
+  const onExit = async () => {
     await release();
-    process.exit(130);
-  });
-  process.once('SIGTERM', async () => {
-    await release();
-    process.exit(143);
-  });
+  };
+
+  process.once('SIGINT', onExit);
+  process.once('SIGTERM', onExit);
 
   return release;
 }
 
 module.exports = {
   acquireLock,
-  lockFilePath
+  LockActiveError,
+  lockFilePath: defaultLockFilePath,
+  DEFAULT_STALE_TIMEOUT_MS
 };

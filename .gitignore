@@ -1,5 +1,5 @@
 node_modules/
-libs/
+libs/extracted/
 credentials.env*
 session.json
 session_meta.json
