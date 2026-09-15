@@ -219,12 +219,94 @@ test('libs/report.js - buildMultiAccountReportPayload e validação com multiAcc
     const parsed = multiAccountReportSchema.parse(payload);
     assert.strictEqual(parsed.type, 'multi_account_report');
     assert.strictEqual(parsed.accounts.length, 2);
+    assert.strictEqual(parsed.accounts[0].meta.totalCoinsGained, 10);
 
     renderMultiAccountReport(accountResults, meta, { json: true });
     assert.ok(capturedOutput.includes('"type": "multi_account_report"'));
     assert.ok(capturedOutput.includes('us***@example.com'));
   } finally {
     process.stdout.write = originalWrite;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - cálculo de totalCoinsGained, checkinCoinsGained e tasksCoinsGained no buildUnifiedReportPayload', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const checkin = {
+      userEmail: 'user@example.com',
+      alreadyCollected: false,
+      coinsGainedToday: '70',
+      streakDays: 33,
+      totalBalance: '3135',
+      duration: '45s'
+    };
+
+    const tasks = {
+      results: [
+        { title: 'Explore sponsored items', status: 'Concluída', estimatedCoins: '+5 moedas' }
+      ],
+      initialBalance: 3135,
+      finalBalance: 3176,
+      coinsGained: 41,
+      finalCoins: '3176 moedas',
+      duration: '2m'
+    };
+
+    const meta = {
+      mainStartTime: new Date('2026-09-15T08:20:30Z'),
+      mainEndTime: new Date('2026-09-15T08:23:15Z'),
+      totalDuration: '2m 45s',
+      step1Duration: '45s',
+      step2Duration: '2m'
+    };
+
+    const payload = buildUnifiedReportPayload(checkin, tasks, meta);
+    assert.strictEqual(payload.meta.checkinCoinsGained, 70);
+    assert.strictEqual(payload.meta.tasksCoinsGained, 41);
+    assert.strictEqual(payload.meta.totalCoinsGained, 111);
+    assert.strictEqual(payload.meta.finalBalance, '3176 moedas');
+    assert.strictEqual(payload.tasks.initialBalance, 3135);
+    assert.strictEqual(payload.tasks.finalBalance, 3176);
+    assert.strictEqual(payload.tasks.coinsGained, 41);
+
+    // Validação com Zod
+    const validated = unifiedReportSchema.parse(payload);
+    assert.strictEqual(validated.meta.totalCoinsGained, 111);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - sendWebhookNotification com formatação de moedas ganhas para Discord', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalFetch = global.fetch;
+
+  try {
+    let capturedBody = null;
+    global.fetch = async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return { ok: true, status: 200 };
+    };
+
+    const payload = {
+      type: 'unified_report',
+      user: 'test@example.com',
+      meta: {
+        totalCoinsGained: 111,
+        checkinCoinsGained: 70,
+        tasksCoinsGained: 41,
+        finalBalance: '3176 moedas',
+        totalDuration: '2m 45s'
+      }
+    };
+
+    const res = await sendWebhookNotification(payload, 'https://discord.com/api/webhooks/123/abc');
+    assert.strictEqual(res, true);
+    assert.ok(capturedBody.content.includes('+111 moedas (check-in +70 / tarefas +41)'));
+    assert.ok(capturedBody.content.includes('3176 moedas'));
+  } finally {
+    global.fetch = originalFetch;
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });

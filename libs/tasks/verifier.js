@@ -165,7 +165,10 @@ async function extractTasksFromDrawer(optionsOrPage) {
       const groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
       const allText = e.innerText?.replace(/\n+/g, ' ') || '';
       const coinMatch = allText.match(/\+([0-9]+(?:～[0-9]+)?)/);
-      const coins = coinMatch ? `+${coinMatch[1]} moedas` : '+5 moedas';
+      // Nota: o rótulo de vitrine exibido no card (+X moedas) é meramente informativo/estimado.
+      // O cálculo contábil real de moedas ganhas é feito determinísticamente via saldo no desktop (getBalanceDesktop).
+      const estimatedCoins = coinMatch ? `+${coinMatch[1]} moedas` : '+5 moedas';
+      const coins = estimatedCoins;
       return {
         index: idx,
         title,
@@ -181,6 +184,7 @@ async function extractTasksFromDrawer(optionsOrPage) {
         isClaimable,
         groupId,
         coins,
+        estimatedCoins,
         allText
       };
     })

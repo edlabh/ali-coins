@@ -93,6 +93,22 @@ async function runTasks(options = {}) {
     browser = await launchBrowser({ headless: config.HEADLESS });
   }
 
+  // Captura do saldo inicial antes das tarefas (se não recebido por parâmetro do check-in)
+  let initialBalance = options.initialBalance !== undefined ? options.initialBalance : null;
+  if (initialBalance === null && browser) {
+    try {
+      const earlyDesktop = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
+        allowMedia: config.ALLOW_MEDIA,
+        timeout: config.NAV_TIMEOUT_SHORT
+      });
+      if (earlyDesktop.totalBalance && earlyDesktop.totalBalance !== 'N/D') {
+        initialBalance = earlyDesktop.totalBalance;
+      }
+    } catch {
+      // Ignorar falha na checagem inicial
+    }
+  }
+
   try {
     const context = await newMobileContext(browser, sessionData || currentSessionPath, {
       allowMedia: config.ALLOW_MEDIA
@@ -275,11 +291,13 @@ async function runTasks(options = {}) {
       const results = finalTasks.map((t) => ({
         title: t.title,
         status: classifyTaskStatus(t),
-        coins: t.coins
+        coins: t.coins,
+        estimatedCoins: t.estimatedCoins || t.coins
       }));
 
       await closeContextWithDiagnostics(context, { failed: false, name: 'tasks-mobile' });
 
+      let finalBalance = 'N/D';
       let finalCoins = 'N/D';
       try {
         const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
@@ -287,10 +305,24 @@ async function runTasks(options = {}) {
           timeout: config.NAV_TIMEOUT_SHORT
         });
         if (desktopResult.totalBalance && desktopResult.totalBalance !== 'N/D') {
+          finalBalance = desktopResult.totalBalance;
           finalCoins = `${desktopResult.totalBalance} moedas`;
         }
       } catch {
         // Ignorar
+      }
+
+      // Cálculo determinístico do ganho real pelas tarefas por diferença de saldo
+      const initNum =
+        initialBalance !== null && initialBalance !== 'N/D'
+          ? parseInt(String(initialBalance).replace(/[^0-9]/g, ''), 10)
+          : NaN;
+      const finalNum =
+        finalBalance !== 'N/D' ? parseInt(String(finalBalance).replace(/[^0-9]/g, ''), 10) : NaN;
+
+      let coinsGained = 0;
+      if (!isNaN(initNum) && !isNaN(finalNum)) {
+        coinsGained = Math.max(0, finalNum - initNum);
       }
 
       const tasksEndTime = new Date();
@@ -299,7 +331,10 @@ async function runTasks(options = {}) {
       const result = {
         userEmail,
         results,
+        initialBalance: !isNaN(initNum) ? initNum : initialBalance || 'N/D',
+        finalBalance: !isNaN(finalNum) ? finalNum : finalBalance,
         finalCoins,
+        coinsGained,
         totalActions,
         startTime: tasksStartTime,
         endTime: tasksEndTime,

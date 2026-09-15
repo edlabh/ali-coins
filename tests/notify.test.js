@@ -63,46 +63,87 @@ test('libs/notify.js - buildMessage gera mensagens formatadas em PT-BR para todo
   assert.ok(failMsg.includes('Timeout ao autenticar'));
   assert.ok(failMsg.includes('us***@example.com'));
 
-  // 5. Unified Report (Sucesso e Já Coletado)
+  // 5. Unified Report (Sucesso)
   const unifiedReport = {
     type: 'unified_report',
     user: 'ag***@gmail.com',
     checkin: {
       alreadyCollected: false,
-      coinsGainedToday: '40',
-      streakDays: 200,
-      totalBalance: '1550',
-      duration: '5s'
+      coinsGainedToday: '70',
+      streakDays: 33,
+      totalBalance: '3135',
+      duration: '45s'
     },
     tasks: {
       results: [{ title: 'Explore sponsored items', status: 'Concluída', coins: '+5 moedas' }],
-      finalCoins: '1555 moedas',
-      duration: '10s'
+      coinsGained: 41,
+      finalCoins: '3176 moedas',
+      duration: '2m'
     },
     meta: {
-      finalBalance: '1555 moedas',
-      totalDuration: '15s',
-      step1Duration: '5s',
-      step2Duration: '10s'
+      finalBalance: '3176 moedas',
+      totalCoinsGained: 111,
+      checkinCoinsGained: 70,
+      tasksCoinsGained: 41,
+      totalDuration: '2m 45s',
+      step1Duration: '45s',
+      step2Duration: '2m'
     }
   };
 
   const successMsg = buildMessage({ report: unifiedReport, event: 'success', hostname });
-  assert.ok(successMsg.includes('ali-coins —'));
-  assert.ok(successMsg.includes('ag***@gmail.com'));
-  assert.ok(successMsg.includes('1555 moedas'));
-  assert.ok(successMsg.includes('200 dias'));
-  assert.ok(successMsg.includes('Tarefas: 1/1 concluídas'));
+  assert.ok(successMsg.includes('✅ ali-coins —'));
+  assert.ok(successMsg.includes('🪙 Ganhas hoje: +111 moedas (check-in +70 / tarefas +41)'));
+  assert.ok(successMsg.includes('📅 Sequência: 33 dias'));
+  assert.ok(successMsg.includes('💰 Saldo: 3176 moedas'));
+  assert.ok(successMsg.includes('⏱️ Duração: 2m 45s'));
 
-  // 6. Multi-Account Report
+  // 6. Check-in Report
+  const checkinReport = {
+    type: 'checkin',
+    userEmail: 'ag***@gmail.com',
+    alreadyCollected: false,
+    coinsGainedToday: '70',
+    streakDays: 33,
+    totalBalance: '3135',
+    duration: '45s'
+  };
+  const checkinMsg = buildMessage({ report: checkinReport, event: 'success', hostname });
+  assert.ok(checkinMsg.includes('✅ ali-coins —'));
+  assert.ok(checkinMsg.includes('🪙 Ganhas hoje: +70 moedas (check-in +70 / tarefas +0)'));
+  assert.ok(checkinMsg.includes('📅 Sequência: 33 dias'));
+  assert.ok(checkinMsg.includes('💰 Saldo: 3135 moedas'));
+  assert.ok(checkinMsg.includes('⏱️ Duração: 45s'));
+
+  // 7. Tasks Report
+  const tasksReport = {
+    type: 'tasks',
+    userEmail: 'ag***@gmail.com',
+    results: [{ title: 'Explore items', status: 'Concluída' }],
+    coinsGained: 41,
+    finalCoins: '3176 moedas',
+    duration: '2m'
+  };
+  const tasksMsg = buildMessage({ report: tasksReport, event: 'success', hostname });
+  assert.ok(tasksMsg.includes('✅ ali-coins —'));
+  assert.ok(tasksMsg.includes('🪙 Ganhas hoje: +41 moedas (check-in +0 / tarefas +41)'));
+  assert.ok(tasksMsg.includes('💰 Saldo: 3176 moedas'));
+  assert.ok(tasksMsg.includes('⏱️ Duração: 2m'));
+
+  // 8. Multi-Account Report
   const multiReport = {
     type: 'multi_account_report',
     accounts: [
       {
         user: 'acc1***@gmail.com',
         checkin: { streakDays: 10, coinsGainedToday: '10', totalBalance: '100' },
-        tasks: { results: [] },
-        meta: { finalBalance: '100 moedas' }
+        tasks: { results: [], coinsGained: 5 },
+        meta: {
+          finalBalance: '105 moedas',
+          totalCoinsGained: 15,
+          checkinCoinsGained: 10,
+          tasksCoinsGained: 5
+        }
       },
       {
         user: 'acc2***@gmail.com',

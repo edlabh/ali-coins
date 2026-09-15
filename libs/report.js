@@ -25,10 +25,14 @@ const unifiedReportSchema = z.object({
           z.object({
             title: z.string(),
             status: z.string(),
-            coins: z.string().optional()
+            coins: z.string().optional(),
+            estimatedCoins: z.string().optional()
           })
         )
         .optional(),
+      initialBalance: z.union([z.number(), z.string()]).optional(),
+      finalBalance: z.union([z.number(), z.string()]).optional(),
+      coinsGained: z.union([z.number(), z.string()]).optional(),
       finalCoins: z.string(),
       duration: z.string()
     })
@@ -39,7 +43,10 @@ const unifiedReportSchema = z.object({
     totalDuration: z.string().optional(),
     step1Duration: z.string().optional(),
     step2Duration: z.string().optional(),
-    finalBalance: z.string()
+    finalBalance: z.string(),
+    totalCoinsGained: z.union([z.number(), z.string()]).optional(),
+    checkinCoinsGained: z.union([z.number(), z.string()]).optional(),
+    tasksCoinsGained: z.union([z.number(), z.string()]).optional()
   })
 });
 
@@ -68,17 +75,24 @@ const multiAccountReportSchema = z.object({
               z.object({
                 title: z.string(),
                 status: z.string(),
-                coins: z.string().optional()
+                coins: z.string().optional(),
+                estimatedCoins: z.string().optional()
               })
             )
             .optional(),
+          initialBalance: z.union([z.number(), z.string()]).optional(),
+          finalBalance: z.union([z.number(), z.string()]).optional(),
+          coinsGained: z.union([z.number(), z.string()]).optional(),
           finalCoins: z.string(),
           duration: z.string()
         })
         .nullable(),
       error: z.string().optional(),
       meta: z.object({
-        finalBalance: z.string()
+        finalBalance: z.string(),
+        totalCoinsGained: z.union([z.number(), z.string()]).optional(),
+        checkinCoinsGained: z.union([z.number(), z.string()]).optional(),
+        tasksCoinsGained: z.union([z.number(), z.string()]).optional()
       })
     })
   ),
@@ -134,9 +148,22 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
         ? `${checkinResult.totalBalance} moedas`
         : 'N/D';
 
+  let checkinCoinsGained = 0;
+  if (checkinResult?.coinsGainedToday && checkinResult.coinsGainedToday !== 'N/D') {
+    const parsed = parseInt(String(checkinResult.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(parsed)) checkinCoinsGained = parsed;
+  }
+
+  let tasksCoinsGained = 0;
+  if (tasksResult && typeof tasksResult.coinsGained === 'number') {
+    tasksCoinsGained = tasksResult.coinsGained;
+  }
+
+  const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
+
   return {
     type: 'unified_report',
-    user: checkinResult ? checkinResult.userEmail : undefined,
+    user: checkinResult ? checkinResult.userEmail : tasksResult ? tasksResult.userEmail : undefined,
     checkin: checkinResult
       ? {
           alreadyCollected: checkinResult.alreadyCollected,
@@ -150,6 +177,9 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
     tasks: tasksResult
       ? {
           results: tasksResult.results,
+          initialBalance: tasksResult.initialBalance,
+          finalBalance: tasksResult.finalBalance,
+          coinsGained: tasksResult.coinsGained,
           finalCoins: tasksResult.finalCoins,
           duration: tasksResult.duration
         }
@@ -160,7 +190,10 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
       totalDuration: meta.totalDuration,
       step1Duration: meta.step1Duration,
       step2Duration: meta.step2Duration,
-      finalBalance
+      finalBalance,
+      totalCoinsGained,
+      checkinCoinsGained,
+      tasksCoinsGained
     }
   };
 }
@@ -195,9 +228,19 @@ async function sendWebhookNotification(payload, customUrl = null) {
       (payload.meta?.totalAccounts ? `${payload.meta.successfulAccounts} contas OK` : 'N/D');
 
     if (isDiscord) {
+      let coinsText = 'N/D';
+      if (typeof payload.meta?.totalCoinsGained === 'number') {
+        coinsText = `+${payload.meta.totalCoinsGained} moedas (check-in +${payload.meta.checkinCoinsGained || 0} / tarefas +${payload.meta.tasksCoinsGained || 0})`;
+      } else if (payload.coinsGainedToday) {
+        coinsText = `+${payload.coinsGainedToday} moedas`;
+      } else if (typeof payload.coinsGained === 'number') {
+        coinsText = `+${payload.coinsGained} moedas`;
+      }
+
       const summaryText =
         `**AliExpress Coins Report** (${payload.type || 'relatório'})\n` +
         `Conta: ${targetUser}\n` +
+        `Ganhas hoje: ${coinsText}\n` +
         `Saldo: ${targetBalance}`;
       bodyData = JSON.stringify({
         content: summaryText,
@@ -208,6 +251,8 @@ async function sendWebhookNotification(payload, customUrl = null) {
             fields: [
               { name: 'Tipo', value: String(payload.type || 'N/D'), inline: true },
               { name: 'Conta', value: String(targetUser), inline: true },
+              { name: 'Ganhas hoje', value: String(coinsText), inline: true },
+              { name: 'Saldo', value: String(targetBalance), inline: true },
               {
                 name: 'Duração',
                 value: String(payload.meta?.totalDuration || payload.duration || 'N/D'),
@@ -218,7 +263,11 @@ async function sendWebhookNotification(payload, customUrl = null) {
         ]
       });
     } else if (isTelegram) {
-      const text = `AliExpress Coins (${payload.type})\nConta: ${targetUser}\nSaldo: ${targetBalance}`;
+      let coinsText = '';
+      if (typeof payload.meta?.totalCoinsGained === 'number') {
+        coinsText = `\nGanhas hoje: +${payload.meta.totalCoinsGained} (check-in +${payload.meta.checkinCoinsGained || 0} / tarefas +${payload.meta.tasksCoinsGained || 0})`;
+      }
+      const text = `AliExpress Coins (${payload.type})\nConta: ${targetUser}${coinsText}\nSaldo: ${targetBalance}`;
       bodyData = JSON.stringify({ text });
     }
 
@@ -358,11 +407,15 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   if (tasksResult && tasksResult.results) {
     logger.info('\nTarefas do Painel "Ganhe mais moedas":');
     for (const r of tasksResult.results) {
-      logger.info(`  • ${r.title}: ${r.status} (${r.coins || ''})`);
+      logger.info(`  • ${r.title}: ${r.status} (${r.coins || r.estimatedCoins || ''})`);
     }
+    logger.info(`Ganho Real pelas Tarefas: +${tasksResult.coinsGained || 0} moedas`);
   }
 
   logger.info('---------------------------------------------------------------');
+  logger.info(
+    `Moedas Ganhas Hoje:     +${jsonOutput.meta.totalCoinsGained || 0} moedas (check-in +${jsonOutput.meta.checkinCoinsGained || 0} / tarefas +${jsonOutput.meta.tasksCoinsGained || 0})`
+  );
   logger.info(`Saldo Total Atualizado: ${jsonOutput.meta.finalBalance}`);
   logger.info('---------------------------------------------------------------');
   if (meta.mainStartTime && meta.mainEndTime) {
@@ -395,6 +448,19 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
           ? `${checkin.totalBalance} moedas`
           : 'N/D';
 
+    let checkinCoinsGained = 0;
+    if (checkin?.coinsGainedToday && checkin.coinsGainedToday !== 'N/D') {
+      const parsed = parseInt(String(checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(parsed)) checkinCoinsGained = parsed;
+    }
+
+    let tasksCoinsGained = 0;
+    if (tasks && typeof tasks.coinsGained === 'number') {
+      tasksCoinsGained = tasks.coinsGained;
+    }
+
+    const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
+
     return {
       user: item.account ? item.account.maskedUser : item.user || 'Desconhecido',
       checkin: checkin
@@ -402,6 +468,7 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
             alreadyCollected: checkin.alreadyCollected,
             coinsGainedToday: checkin.coinsGainedToday,
             streakDays: checkin.streakDays,
+            previousStreakDays: checkin.previousStreakDays,
             totalBalance: checkin.totalBalance,
             duration: checkin.duration
           }
@@ -409,13 +476,19 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
       tasks: tasks
         ? {
             results: tasks.results,
+            initialBalance: tasks.initialBalance,
+            finalBalance: tasks.finalBalance,
+            coinsGained: tasks.coinsGained,
             finalCoins: tasks.finalCoins,
             duration: tasks.duration
           }
         : null,
       error: item.error || undefined,
       meta: {
-        finalBalance
+        finalBalance,
+        totalCoinsGained,
+        checkinCoinsGained,
+        tasksCoinsGained
       }
     };
   });

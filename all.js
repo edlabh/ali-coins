@@ -189,6 +189,7 @@ async function main() {
           browser,
           account,
           sessionData: checkinResult.sessionData,
+          initialBalance: checkinResult.totalBalance,
           skipAutoLogin: true,
           skipReport: true
         });
@@ -409,6 +410,7 @@ async function main() {
               browser,
               account,
               sessionData: accCheckin?.sessionData,
+              initialBalance: accCheckin?.totalBalance,
               skipAutoLogin: true,
               skipReport: true
             });

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const os = require('os');
-const { formatDateTime } = require('../time_utils');
+const { formatDate, formatDateTime } = require('../time_utils');
 const logger = require('../logger');
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -218,9 +218,10 @@ function buildMessage({
     const isAlready = event === 'already_collected';
     const titleEmoji = isAlready ? 'ℹ️' : '✅';
     const statusDesc = isAlready ? 'Já Coletado' : 'Sucesso';
+    const reportDate = formatDate(new Date());
 
     const lines = [
-      `${titleEmoji} <b>AliExpress Moedas - Multi-Conta (${statusDesc})</b>`,
+      `${titleEmoji} <b>AliExpress Moedas - Multi-Conta (${statusDesc}) — ${reportDate}</b>`,
       `📊 <b>Resumo:</b> ${report.meta?.successfulAccounts || 0}/${report.meta?.totalAccounts || 0} contas processadas com sucesso`,
       ''
     ];
@@ -235,15 +236,20 @@ function buildMessage({
           return;
         }
 
-        const streak = acc.checkin?.streakDays ? `${acc.checkin.streakDays}d` : 'N/D';
-        const checkinCoins = acc.checkin?.coinsGainedToday
-          ? `+${acc.checkin.coinsGainedToday}`
-          : '0';
-        const balance = acc.meta?.finalBalance || acc.checkin?.totalBalance || 'N/D';
-        const tasksCount = acc.tasks?.results ? acc.tasks.results.length : 0;
+        const streak = acc.checkin?.streakDays ? `${acc.checkin.streakDays} dias` : 'N/D';
+        const checkinCoins =
+          acc.meta?.checkinCoinsGained ??
+          (acc.checkin?.coinsGainedToday
+            ? parseInt(String(acc.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10) || 0
+            : 0);
+        const tasksCoins = acc.meta?.tasksCoinsGained ?? acc.tasks?.coinsGained ?? 0;
+        const totalCoins = acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins;
+        const balance =
+          acc.meta?.finalBalance ||
+          (acc.checkin?.totalBalance ? `${acc.checkin.totalBalance} moedas` : 'N/D');
 
         lines.push(
-          `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | Streak: ${streak} (${checkinCoins}) | Tarefas: ${tasksCount}`
+          `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${streak}`
         );
       });
     }
@@ -272,44 +278,55 @@ function buildMessage({
   if (report && report.type === 'unified_report') {
     const isAlready =
       event === 'already_collected' ||
-      (report.checkin?.alreadyCollected && (!report.tasks || report.tasks.results?.length === 0));
+      (report.checkin?.alreadyCollected && (!report.tasks || !report.tasks.coinsGained));
 
     const titleEmoji = isAlready ? 'ℹ️' : '✅';
-    const coinsGainedToday = report.checkin?.coinsGainedToday || '0';
+    const reportDate = formatDate(new Date());
+
+    let checkinCoins = 0;
+    if (report.meta?.checkinCoinsGained !== undefined) {
+      checkinCoins = Number(report.meta.checkinCoinsGained) || 0;
+    } else if (report.checkin?.coinsGainedToday && report.checkin.coinsGainedToday !== 'N/D') {
+      const parsed = parseInt(String(report.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(parsed)) checkinCoins = parsed;
+    }
+
+    let tasksCoins = 0;
+    if (report.meta?.tasksCoinsGained !== undefined) {
+      tasksCoins = Number(report.meta.tasksCoinsGained) || 0;
+    } else if (report.tasks && typeof report.tasks.coinsGained === 'number') {
+      tasksCoins = report.tasks.coinsGained;
+    }
+
+    let totalCoins = 0;
+    if (report.meta?.totalCoinsGained !== undefined) {
+      totalCoins = Number(report.meta.totalCoinsGained) || 0;
+    } else {
+      totalCoins = checkinCoins + tasksCoins;
+    }
+
     const streakDays =
       report.checkin?.streakDays !== undefined && report.checkin?.streakDays !== null
         ? String(report.checkin.streakDays)
         : 'N/D';
-    const finalBalance =
+
+    let saldoDisplay = 'N/D';
+    const rawBalance =
       report.meta?.finalBalance ||
       (report.checkin?.totalBalance ? `${report.checkin.totalBalance} moedas` : 'N/D');
+    if (rawBalance && rawBalance !== 'N/D') {
+      saldoDisplay = String(rawBalance).includes('moedas') ? rawBalance : `${rawBalance} moedas`;
+    }
+
     const totalDuration = report.meta?.totalDuration || '0s';
 
-    let taskRatio = '0/0';
-    if (report.tasks && Array.isArray(report.tasks.results)) {
-      const totalTasks = report.tasks.results.length;
-      const completedTasks = report.tasks.results.filter(
-        (t) =>
-          t.status &&
-          (t.status.toLowerCase().includes('conclu') ||
-            t.status.toLowerCase().includes('sucesso') ||
-            t.status.toLowerCase().includes('done'))
-      ).length;
-      taskRatio = `${completedTasks}/${totalTasks}`;
-    }
-
     const lines = [
-      `${titleEmoji} ali-coins — ${now}`,
-      `🪙 Ganhas hoje: +${coinsGainedToday} moedas`,
+      `${titleEmoji} ali-coins — ${reportDate}`,
+      `🪙 Ganhas hoje: +${totalCoins} moedas (check-in +${checkinCoins} / tarefas +${tasksCoins})`,
       `📅 Sequência: ${streakDays} dias`,
-      `💰 Saldo: ${finalBalance}`,
-      `📋 Tarefas: ${taskRatio} concluídas`,
+      `💰 Saldo: ${saldoDisplay}`,
       `⏱️ Duração: ${totalDuration}`
     ];
-
-    if (report.user) {
-      lines.push(`👤 Conta: <code>${escapeHtml(report.user)}</code>`);
-    }
 
     return lines.join('\n');
   }
@@ -318,51 +335,66 @@ function buildMessage({
   if (report && report.type === 'checkin') {
     const isAlready = event === 'already_collected' || report.alreadyCollected;
     const titleEmoji = isAlready ? 'ℹ️' : '✅';
-    const coinsGainedToday = report.coinsGainedToday || '0';
+    const reportDate = formatDate(new Date());
+
+    let checkinCoins = 0;
+    if (report.coinsGainedToday && report.coinsGainedToday !== 'N/D') {
+      const parsed = parseInt(String(report.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(parsed)) checkinCoins = parsed;
+    }
+
     const streakDays =
       report.streakDays !== undefined && report.streakDays !== null
         ? String(report.streakDays)
         : 'N/D';
-    const finalBalance = report.totalBalance ? `${report.totalBalance} moedas` : 'N/D';
+
+    let saldoDisplay = 'N/D';
+    if (report.totalBalance && report.totalBalance !== 'N/D') {
+      saldoDisplay = String(report.totalBalance).includes('moedas')
+        ? report.totalBalance
+        : `${report.totalBalance} moedas`;
+    }
+
     const duration = report.duration || '0s';
 
     const lines = [
-      `${titleEmoji} ali-coins — ${now}`,
-      `🪙 Ganhas hoje: +${coinsGainedToday} moedas`,
+      `${titleEmoji} ali-coins — ${reportDate}`,
+      `🪙 Ganhas hoje: +${checkinCoins} moedas (check-in +${checkinCoins} / tarefas +0)`,
       `📅 Sequência: ${streakDays} dias`,
-      `💰 Saldo: ${finalBalance}`,
-      `📋 Tarefas: 0/0 concluídas`,
+      `💰 Saldo: ${saldoDisplay}`,
       `⏱️ Duração: ${duration}`
     ];
-
-    if (report.userEmail) {
-      lines.push(`👤 Conta: <code>${escapeHtml(report.userEmail)}</code>`);
-    }
 
     return lines.join('\n');
   }
 
   // 8. Relatório Apenas Tarefas
   if (report && report.type === 'tasks') {
-    const lines = [
-      '✅ <b>AliExpress Moedas - Tarefas Diárias</b>',
-      '',
-      `👤 <b>Conta:</b> <code>${escapeHtml(report.userEmail || 'N/D')}</code>`,
-      `💰 <b>Saldo Final:</b> <b>${escapeHtml(report.finalCoins || 'N/D')}</b>`
-    ];
+    const titleEmoji = '✅';
+    const reportDate = formatDate(new Date());
+    const tasksCoins = typeof report.coinsGained === 'number' ? report.coinsGained : 0;
 
-    if (Array.isArray(report.results) && report.results.length > 0) {
-      lines.push('');
-      lines.push('📋 <b>Tarefas:</b>');
-      report.results.forEach((t) => {
-        lines.push(` • ${escapeHtml(t.title)}: <i>${escapeHtml(t.status)}</i>`);
-      });
+    let saldoDisplay = 'N/D';
+    if (report.finalCoins && report.finalCoins !== 'N/D') {
+      saldoDisplay = String(report.finalCoins).includes('moedas')
+        ? report.finalCoins
+        : `${report.finalCoins} moedas`;
+    } else if (report.finalBalance && report.finalBalance !== 'N/D') {
+      saldoDisplay = String(report.finalBalance).includes('moedas')
+        ? report.finalBalance
+        : `${report.finalBalance} moedas`;
     }
 
-    lines.push('');
-    lines.push(`⏱️ <b>Duração:</b> ${escapeHtml(report.duration || 'N/D')}`);
-    lines.push(`📅 <b>Data:</b> ${now} | 🖥️ <b>Host:</b> <code>${safeHost}</code>`);
-    return truncateMessageIfNeeded(lines.join('\n'));
+    const duration = report.duration || '0s';
+
+    const lines = [
+      `${titleEmoji} ali-coins — ${reportDate}`,
+      `🪙 Ganhas hoje: +${tasksCoins} moedas (check-in +0 / tarefas +${tasksCoins})`,
+      `💰 Saldo: ${saldoDisplay}`,
+      `⏱️ Duração: ${duration}`
+    ];
+
+    return lines.join('\n');
   }
 
   // Fallback padrão genérico
