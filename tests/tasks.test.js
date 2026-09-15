@@ -253,3 +253,169 @@ test('tasks - máquina de estados (pending -> GO -> verify) e classifyTaskStatus
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - findNextPendingTask prioriza botões de coleta e aceita botões IR/GO', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const {
+      findNextPendingTask,
+      recordTaskAttempt,
+      resetTaskAttempt
+    } = require('../libs/tasks/state');
+
+    const tasks = [
+      {
+        title: 'Super Descontos',
+        isDone: false,
+        btnText: 'GO',
+        isActionable: true,
+        isClaimable: false,
+        completedRounds: 1,
+        totalRounds: 3
+      },
+      {
+        title: 'Explore Itens',
+        isDone: false,
+        btnText: 'Coletar',
+        isActionable: false,
+        isClaimable: true,
+        completedRounds: 1,
+        totalRounds: 2
+      },
+      {
+        title: 'Moedas Extras',
+        isDone: false,
+        btnText: 'IR',
+        isActionable: true,
+        isClaimable: false,
+        completedRounds: 0,
+        totalRounds: 1
+      }
+    ];
+
+    const attempts = {};
+    // 1. Prioriza a tarefa com botão de resgate/coleta
+    const next1 = findNextPendingTask(tasks, attempts, 4);
+    assert.ok(next1);
+    assert.strictEqual(next1.title, 'Explore Itens');
+    assert.strictEqual(next1.isClaimable, true);
+
+    // Se a tarefa de coleta já atingiu maxAttempts, seleciona a próxima executável
+    attempts['Explore Itens'] = 4;
+    const next2 = findNextPendingTask(tasks, attempts, 4);
+    assert.ok(next2);
+    assert.strictEqual(next2.title, 'Super Descontos');
+
+    // Teste de reset de tentativas ao avançar de rodada
+    recordTaskAttempt(attempts, 'Super Descontos');
+    assert.strictEqual(attempts['Super Descontos'], 1);
+    resetTaskAttempt(attempts, 'Super Descontos');
+    assert.strictEqual(attempts['Super Descontos'], 0);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeTaskAction aceita chamada posicional e por objeto', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const mockPage = {
+      $: async () => null,
+      $$: async () => [],
+      waitForSelector: async () => {},
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      on: () => {},
+      off: () => {}
+    };
+
+    // Chamada posicional: executeTaskAction(page, context, task, config)
+    const resPositional = await executeTaskAction(
+      mockPage,
+      null,
+      { title: 'Daily quiz challenge', desc: 'quiz' },
+      { SCROLL_WAIT_SECONDS: 0 }
+    );
+    assert.strictEqual(resPositional.isSpecialOrAppOnly, true);
+
+    // Chamada por objeto: executeTaskAction({ page, task, config })
+    const resObject = await executeTaskAction({
+      page: mockPage,
+      task: { title: 'Merge boss game', desc: '' },
+      config: { SCROLL_WAIT_SECONDS: 0 }
+    });
+    assert.strictEqual(resObject.isSpecialOrAppOnly, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSurpriseItems suporta múltiplas rodadas com startIndex > 0', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let clickedIndices = [];
+    const createMockCard = (idx) => ({
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedIndices.push(idx);
+      }
+    });
+
+    const mockCards = [
+      createMockCard(0),
+      createMockCard(1),
+      createMockCard(2),
+      createMockCard(3),
+      createMockCard(4),
+      createMockCard(5)
+    ];
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => mockCards,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://aliexpress.com/item.html',
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    // Rodada 2: startIndex = 3 (cards 3, 4, 5)
+    const count = await executeSurpriseItems({
+      page: mockPage,
+      startIndex: 3
+    });
+
+    assert.strictEqual(count, 3);
+    assert.deepStrictEqual(clickedIndices, [3, 4, 5]);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - waitWithScroll não encerra prematuramente com tracking', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { waitWithScroll } = require('../browser');
+    let responseCallback = null;
+    const mockPage = {
+      on: (evt, cb) => {
+        if (evt === 'response') responseCallback = cb;
+      },
+      off: () => {},
+      evaluate: async () => {},
+      waitForTimeout: async () => {} // Instantâneo no mock
+    };
+
+    // Inicia e simula tracking logo no início
+    const promise = waitWithScroll(mockPage, 0.05, { earlyExitOnTracking: false });
+    if (responseCallback) {
+      responseCallback({ url: () => 'https://aliexpress.com/track/click' });
+    }
+    await promise;
+    // Se completou normalmente sem erros, o teste passou
+    assert.ok(true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

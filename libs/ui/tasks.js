@@ -38,6 +38,7 @@ module.exports = {
   executeTaskAction,
   findNextPendingTask: dispatcher.findNextPendingTask,
   recordTaskAttempt: dispatcher.recordTaskAttempt,
+  resetTaskAttempt: dispatcher.resetTaskAttempt,
   markSpecialOrAppOnly: dispatcher.markSpecialOrAppOnly,
   classifyTaskStatus: dispatcher.classifyTaskStatus,
   findTaskElement: dispatcher.findTaskElement

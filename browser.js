@@ -242,40 +242,60 @@ async function retry(
 }
 
 /**
- * Executa scroll gradual na página e monitora requisições de tracking
+ * Executa scroll gradual na página garantindo permanência pelo tempo solicitado
  * @param {import('playwright').Page} page
- * @param {number} [maxSeconds=10]
+ * @param {number} [maxSeconds=15] Tempo total de permanência/scroll em segundos
+ * @param {object} [options={}] Opções adicionais de scroll e monitoramento
+ * @param {boolean} [options.earlyExitOnTracking=false] Se true, permite saída antecipada se tracking for detectado após minSeconds
+ * @param {number} [options.minSeconds=15] Tempo mínimo de permanência antes de permitir saída antecipada
  */
-async function waitWithScroll(page, maxSeconds = 10) {
+async function waitWithScroll(page, maxSeconds = 15, options = {}) {
+  const earlyExit = options.earlyExitOnTracking === true;
+  const minMs = (typeof options.minSeconds === 'number' ? options.minSeconds : 15) * 1000;
   const startTime = Date.now();
-  const maxMs = maxSeconds * 1000;
+  const maxMs = Math.max(0, maxSeconds) * 1000;
   let trackingDetected = false;
 
   const responseHandler = (res) => {
-    const url = res.url();
-    if (
-      url.includes('/track') ||
-      url.includes('/trace') ||
-      url.includes('adclick') ||
-      url.includes('ae-')
-    ) {
-      trackingDetected = true;
+    try {
+      const url = typeof res.url === 'function' ? res.url() : '';
+      if (
+        url.includes('/track') ||
+        url.includes('/trace') ||
+        url.includes('adclick') ||
+        url.includes('ae-')
+      ) {
+        trackingDetected = true;
+      }
+    } catch {
+      // Ignorar erros em response listener
     }
   };
 
-  page.on('response', responseHandler);
+  if (page && typeof page.on === 'function') {
+    page.on('response', responseHandler);
+  }
 
   try {
     while (Date.now() - startTime < maxMs) {
-      await page.evaluate(() => window.scrollBy(0, 300)).catch(() => {});
-      await page.waitForTimeout(1500);
+      if (page && typeof page.evaluate === 'function') {
+        await page.evaluate(() => window.scrollBy(0, 300)).catch(() => {});
+      }
+      if (page && typeof page.waitForTimeout === 'function') {
+        await page.waitForTimeout(1500).catch(() => {});
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
 
-      if (trackingDetected && Date.now() - startTime >= 5000) {
+      const elapsed = Date.now() - startTime;
+      if (earlyExit && trackingDetected && elapsed >= minMs) {
         break;
       }
     }
   } finally {
-    page.off('response', responseHandler);
+    if (page && typeof page.off === 'function') {
+      page.off('response', responseHandler);
+    }
   }
 }
 

@@ -25,18 +25,38 @@ function isInteractiveOrAppOnly(task) {
 }
 
 /**
- * Encontra a próxima tarefa pendente elegível para execução (pending -> GO)
+ * Encontra a próxima tarefa pendente elegível para execução ou resgate de moedas
+ * Prioriza tarefas prontas para coleta (claimable) e aceita botões de ação (GO / IR)
  * @param {Array<object>} tasks Lista de tarefas extraídas da gaveta
  * @param {object} attemptsMap Mapa de tentativas por título
- * @param {number} maxAttempts Limite máximo de tentativas por tarefa
+ * @param {number} maxAttempts Limite máximo de tentativas consecutivas por tarefa
  * @returns {object|null}
  */
 function findNextPendingTask(tasks, attemptsMap = {}, maxAttempts = 4) {
   if (!Array.isArray(tasks)) return null;
+
+  // Prioridade 1: Tarefas com botão de resgate/coleta pendente (intermediária ou final)
+  const claimableTask = tasks.find((t) => {
+    if (t.isDone) return false;
+    if (!t.isClaimable) return false;
+    const attempts = attemptsMap[t.title] || 0;
+    return attempts < maxAttempts;
+  });
+  if (claimableTask) return claimableTask;
+
+  // Prioridade 2: Tarefas executáveis (GO, IR ou rodadas pendentes)
   return (
     tasks.find((t) => {
       if (t.isDone) return false;
-      if (t.btnText !== 'GO') return false;
+      const isAction =
+        t.isActionable ||
+        t.btnText === 'GO' ||
+        t.btnText === 'IR' ||
+        (t.completedRounds !== null &&
+          t.totalRounds !== null &&
+          t.completedRounds < t.totalRounds &&
+          !t.btnStyle?.includes('opacity: 0.5'));
+      if (!isAction) return false;
       const attempts = attemptsMap[t.title] || 0;
       return attempts < maxAttempts;
     }) || null
@@ -53,6 +73,16 @@ function recordTaskAttempt(attemptsMap, title) {
   if (!title) return 0;
   attemptsMap[title] = (attemptsMap[title] || 0) + 1;
   return attemptsMap[title];
+}
+
+/**
+ * Reseta o contador de tentativas de uma tarefa quando há progresso de rodada
+ * @param {object} attemptsMap
+ * @param {string} title
+ */
+function resetTaskAttempt(attemptsMap, title) {
+  if (!title || !attemptsMap) return;
+  attemptsMap[title] = 0;
 }
 
 /**
@@ -111,6 +141,7 @@ module.exports = {
   isInteractiveOrAppOnly,
   findNextPendingTask,
   recordTaskAttempt,
+  resetTaskAttempt,
   markSpecialOrAppOnly,
   classifyTaskStatus
 };

@@ -9,6 +9,7 @@ const {
   isInteractiveOrAppOnly,
   findNextPendingTask,
   recordTaskAttempt,
+  resetTaskAttempt,
   markSpecialOrAppOnly,
   classifyTaskStatus
 } = require('./state');
@@ -16,22 +17,33 @@ const { openTaskDrawer, extractTasksFromDrawer, findTaskElement } = require('./v
 const defaultLogger = require('../../logger');
 
 /**
- * Executa uma ação de tarefa individual com base no título e descrição
- * @param {object} params
- * @param {import('playwright').Page} params.page
- * @param {import('playwright').BrowserContext} [params.context]
- * @param {object} params.task
- * @param {object} [params.config]
- * @param {object} [params.logger]
+ * Executa uma ação de tarefa individual com base no título e descrição.
+ * Suporta assinatura híbrida: tanto via objeto desestruturado quanto posicional.
+ * @param {object|import('playwright').Page} pageOrParams
+ * @param {import('playwright').BrowserContext} [contextArg]
+ * @param {object} [taskArg]
+ * @param {object} [configArg]
+ * @param {object} [loggerArg]
  * @returns {Promise<{ isSpecialOrAppOnly?: boolean }>}
  */
-async function executeTaskAction({
-  page,
-  context = null,
-  task,
-  config = {},
-  logger = defaultLogger
-} = {}) {
+async function executeTaskAction(
+  pageOrParams,
+  contextArg = null,
+  taskArg = null,
+  configArg = {},
+  loggerArg = defaultLogger
+) {
+  let page, context, task, config, logger;
+  if (pageOrParams && (pageOrParams.page !== undefined || pageOrParams.task !== undefined)) {
+    ({ page, context = null, task, config = {}, logger = defaultLogger } = pageOrParams);
+  } else {
+    page = pageOrParams;
+    context = contextArg || null;
+    task = taskArg;
+    config = configArg || {};
+    logger = loggerArg || defaultLogger;
+  }
+
   const titleLower = (task?.title || '').toLowerCase();
   const descLower = (task?.desc || '').toLowerCase();
 
@@ -48,8 +60,21 @@ async function executeTaskAction({
     return {};
   }
 
-  const scrollSeconds =
-    typeof config.SCROLL_WAIT_SECONDS === 'number' ? config.SCROLL_WAIT_SECONDS : 10;
+  let scrollSeconds =
+    typeof config.SCROLL_WAIT_SECONDS === 'number' ? config.SCROLL_WAIT_SECONDS : 15;
+
+  // Garante permanência mínima de 16 segundos para tarefas de super descontos / 15s
+  if (
+    titleLower.includes('desconto') ||
+    titleLower.includes('discount') ||
+    titleLower.includes('superdeal') ||
+    titleLower.includes('super deal') ||
+    titleLower.includes('15s') ||
+    descLower.includes('15s') ||
+    descLower.includes('15 s')
+  ) {
+    scrollSeconds = Math.max(16, scrollSeconds);
+  }
 
   // 2. Tarefa de busca de palavras-chave
   if (
@@ -105,7 +130,7 @@ async function executeTaskAction({
   }
 
   // 6. Tarefas normais de navegação e scroll
-  logger.info(`Executando navegação com scroll: "${task?.title || ''}"...`);
+  logger.info(`Executando navegação com scroll (${scrollSeconds}s): "${task?.title || ''}"...`);
   if (typeof waitWithScroll === 'function') {
     await waitWithScroll(page, scrollSeconds);
   }
@@ -125,6 +150,7 @@ module.exports = {
   isInteractiveOrAppOnly,
   findNextPendingTask,
   recordTaskAttempt,
+  resetTaskAttempt,
   markSpecialOrAppOnly,
   classifyTaskStatus
 };

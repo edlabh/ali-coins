@@ -94,11 +94,22 @@ async function extractTasksFromDrawer({ page } = {}) {
         }
       }
 
-      const isDone =
-        btnStyle.includes('opacity: 0.5') ||
-        btnStyle.includes('cover') ||
-        btnText !== 'GO' ||
-        (totalRounds !== null && completedRounds !== null && completedRounds >= totalRounds);
+      const isActionable = Boolean(btnText.match(/^(GO|IR)$/i));
+      const isClaimable = Boolean(
+        btnText.match(/^(COLLECT|COLETAR|GET|RECEBER|CLAIM|RESGATAR|\+[0-9]+)/i)
+      );
+
+      // Uma tarefa é considerada totalmente concluída quando:
+      // 1. O número de rodadas concluídas atinge o total (ex: 2/2, 3/3) e não há botão de resgate pendente
+      // 2. Ou quando não há contagem de rodadas, mas o botão está desabilitado/concluído e não é nem executável nem resgatável
+      let isDone = false;
+      if (totalRounds !== null && completedRounds !== null) {
+        isDone = completedRounds >= totalRounds && !isClaimable;
+      } else {
+        const isDisabledStyle = btnStyle.includes('opacity: 0.5') || btnStyle.includes('cover');
+        const isDoneText = Boolean(btnText.match(/^(DONE|CONCLU[IÍ]DO|COMPLETED)$/i));
+        isDone = (isDisabledStyle || isDoneText || (!isActionable && !isClaimable)) && !isClaimable;
+      }
 
       const groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
       const allText = e.innerText?.replace(/\n+/g, ' ') || '';
@@ -115,6 +126,8 @@ async function extractTasksFromDrawer({ page } = {}) {
         currentRound,
         totalRounds,
         isDone,
+        isActionable,
+        isClaimable,
         groupId,
         coins,
         allText

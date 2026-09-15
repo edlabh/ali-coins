@@ -3,70 +3,141 @@ const defaultLogger = require('../../logger');
 
 /**
  * Toca em 3 produtos na página de anúncios de ofertas/tarefas
- * @param {object} params
- * @param {import('playwright').Page} params.page
- * @param {import('playwright').BrowserContext} params.context
- * @param {number} [params.startIndex=0]
- * @param {object} [params.logger]
+ * Re-consulta elementos dinamicamente a cada toque para evitar stale element reference
+ * pós goBack() e suporta paginação por scroll em múltiplas rodadas.
+ * @param {object|import('playwright').Page} pageOrParams
+ * @param {import('playwright').BrowserContext} [contextArg]
+ * @param {number} [startIndexArg=0]
+ * @param {object} [loggerArg]
  * @returns {Promise<number>} Quantidade de itens clicados
  */
-async function executeSurpriseItems({
-  page,
-  context,
-  startIndex = 0,
-  logger = defaultLogger
-} = {}) {
-  logger.info(`Executando tarefa: tocar em 3 itens (a partir do card #${startIndex + 1})...`);
-  await page.waitForSelector(SELECTORS.tasks.productCard, { timeout: 4000 }).catch(() => {});
-  let cards = await page.$$(SELECTORS.tasks.productCard);
-
-  if (startIndex + 3 > cards.length) {
-    await page.evaluate(() => window.scrollBy(0, 800)).catch(() => {});
-    await page.waitForTimeout(1000).catch(() => {});
-    cards = await page.$$(SELECTORS.tasks.productCard);
+async function executeSurpriseItems(
+  pageOrParams,
+  contextArg = null,
+  startIndexArg = 0,
+  loggerArg = defaultLogger
+) {
+  let page, context, startIndex, logger;
+  if (pageOrParams && pageOrParams.page) {
+    ({ page, context = null, startIndex = 0, logger = defaultLogger } = pageOrParams);
+  } else {
+    page = pageOrParams;
+    context = contextArg || null;
+    startIndex = typeof startIndexArg === 'number' ? startIndexArg : 0;
+    logger = loggerArg || defaultLogger;
   }
 
-  const start = startIndex < cards.length ? startIndex : 0;
-  const countToClick = Math.min(3, Math.max(0, cards.length - start));
-  let clickedCount = 0;
+  if (!page) {
+    logger.warn('executeSurpriseItems chamado sem instância válida de page.');
+    return 0;
+  }
 
-  for (let c = start; c < start + (countToClick || 3); c++) {
-    if (c >= cards.length) break;
-    logger.info(`Tocando item ${clickedCount + 1}/3 (card #${c + 1})...`);
-    const card = cards[c];
-    if (card.scrollIntoViewIfNeeded) {
+  logger.info(`Executando tarefa: tocar em 3 itens (a partir do card #${startIndex + 1})...`);
+  if (typeof page.waitForSelector === 'function') {
+    await page.waitForSelector(SELECTORS.tasks.productCard, { timeout: 4000 }).catch(() => {});
+  }
+
+  let clickedCount = 0;
+  const targetClicks = 3;
+
+  for (let i = 0; i < targetClicks; i++) {
+    const targetIdx = startIndex + i;
+
+    // Garante que o DOM tenha cards suficientes antes de tentar obter o elemento
+    let currentCards =
+      typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+
+    if (targetIdx >= currentCards.length && typeof page.evaluate === 'function') {
+      await page.evaluate(() => window.scrollBy(0, 800)).catch(() => {});
+      if (typeof page.waitForTimeout === 'function') {
+        await page.waitForTimeout(1000).catch(() => {});
+      }
+      currentCards =
+        typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+    }
+
+    if (currentCards.length === 0) {
+      if (typeof page.waitForSelector === 'function') {
+        await page.waitForSelector(SELECTORS.tasks.productCard, { timeout: 3000 }).catch(() => {});
+      }
+      currentCards =
+        typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+      if (currentCards.length === 0) {
+        logger.warn(
+          `Nenhum card de produto encontrado no DOM para o clique ${i + 1}/${targetClicks}.`
+        );
+        break;
+      }
+    }
+
+    // Seleciona card no índice desejado ou faz fallback circular
+    const cardIndex = targetIdx < currentCards.length ? targetIdx : targetIdx % currentCards.length;
+    const card = currentCards[cardIndex];
+
+    logger.info(`Tocando item ${i + 1}/3 (card #${cardIndex + 1})...`);
+
+    if (card && card.scrollIntoViewIfNeeded) {
       await card.scrollIntoViewIfNeeded().catch(() => {});
     }
-    await page.waitForTimeout(400).catch(() => {});
+    if (typeof page.waitForTimeout === 'function') {
+      await page.waitForTimeout(400).catch(() => {});
+    }
 
     let itemTab = null;
     if (context && typeof context.waitForEvent === 'function') {
       const tabPromise = context.waitForEvent('page', { timeout: 3500 }).catch(() => null);
-      await card.click({ delay: 50, timeout: 4000 }).catch(async () => {
-        await page.evaluate((el) => el.click(), card).catch(() => {});
-      });
+      if (card && card.click) {
+        await card.click({ delay: 50, timeout: 4000 }).catch(async () => {
+          if (typeof page.evaluate === 'function') {
+            await page.evaluate((el) => el.click(), card).catch(() => {});
+          }
+        });
+      }
       itemTab = await tabPromise;
-    } else {
+    } else if (card && card.click) {
       await card.click({ delay: 50, timeout: 4000 }).catch(async () => {
-        await page.evaluate((el) => el.click(), card).catch(() => {});
+        if (typeof page.evaluate === 'function') {
+          await page.evaluate((el) => el.click(), card).catch(() => {});
+        }
       });
     }
 
     if (itemTab) {
-      await itemTab.waitForLoadState('domcontentloaded').catch(() => {});
-      await itemTab.waitForTimeout(1500).catch(() => {});
-      await itemTab.close().catch(() => {});
+      if (typeof itemTab.waitForLoadState === 'function') {
+        await itemTab.waitForLoadState('domcontentloaded').catch(() => {});
+      }
+      if (typeof itemTab.waitForTimeout === 'function') {
+        await itemTab.waitForTimeout(1500).catch(() => {});
+      }
+      if (typeof itemTab.close === 'function') {
+        await itemTab.close().catch(() => {});
+      }
     } else if (typeof page.url === 'function' && !page.url().includes('adclick.html')) {
-      await page.waitForTimeout(1500).catch(() => {});
+      if (typeof page.waitForTimeout === 'function') {
+        await page.waitForTimeout(1500).catch(() => {});
+      }
       if (typeof page.goBack === 'function') {
         await page.goBack().catch(() => {});
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        if (typeof page.waitForLoadState === 'function') {
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+        }
+        if (typeof page.waitForSelector === 'function') {
+          await page
+            .waitForSelector(SELECTORS.tasks.productCard, { timeout: 5000 })
+            .catch(() => {});
+        }
       }
     }
+
     clickedCount++;
-    await page.waitForTimeout(500).catch(() => {});
+    if (typeof page.waitForTimeout === 'function') {
+      await page.waitForTimeout(600).catch(() => {});
+    }
   }
-  await page.waitForTimeout(1000).catch(() => {});
+
+  if (typeof page.waitForTimeout === 'function') {
+    await page.waitForTimeout(1000).catch(() => {});
+  }
   return clickedCount;
 }
 

@@ -20,6 +20,7 @@ const {
   executeTaskAction,
   findNextPendingTask,
   recordTaskAttempt,
+  resetTaskAttempt,
   markSpecialOrAppOnly,
   classifyTaskStatus,
   findTaskElement,
@@ -170,6 +171,7 @@ async function runTasks(options = {}) {
       }
 
       const taskAttempts = {};
+      const taskProgressMap = {};
       const maxAttemptsPerTask = config.TASK_MAX_ATTEMPTS;
       let totalActions = 0;
       const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
@@ -178,6 +180,23 @@ async function runTasks(options = {}) {
         await openTaskDrawer(page);
         const currentTasks = await extractTasksFromDrawer(page);
         if (!currentTasks || currentTasks.length === 0) break;
+
+        // Se uma tarefa progrediu de rodada, reseta suas tentativas consecutivas
+        for (const t of currentTasks) {
+          if (t.completedRounds !== null && t.completedRounds !== undefined) {
+            const prevRounds =
+              taskProgressMap[t.title] !== undefined ? taskProgressMap[t.title] : -1;
+            if (t.completedRounds > prevRounds) {
+              if (prevRounds >= 0) {
+                logger.info(
+                  `Tarefa "${t.title}" avançou de rodada (${t.completedRounds}/${t.totalRounds}). Resetando tentativas.`
+                );
+                resetTaskAttempt(taskAttempts, t.title);
+              }
+              taskProgressMap[t.title] = t.completedRounds;
+            }
+          }
+        }
 
         const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask);
 
@@ -190,25 +209,43 @@ async function runTasks(options = {}) {
         totalActions++;
 
         const taskStartTime = new Date();
-        logger.info(`\n--- Executando: "${pendingTask.title}" (${pendingTask.coins}) ---`);
+        const roundInfo = pendingTask.totalRounds
+          ? ` [Rodada ${(pendingTask.completedRounds || 0) + 1}/${pendingTask.totalRounds}]`
+          : '';
+        logger.info(
+          `\n--- Executando: "${pendingTask.title}" (${pendingTask.coins})${roundInfo} ---`
+        );
 
         const currentTaskEl = await findTaskElement(page, pendingTask.title, pendingTask.index);
         if (!currentTaskEl) continue;
 
-        const goBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
-        if (!goBtn) continue;
+        const actionBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
+        if (!actionBtn) continue;
 
+        // Caso 1: Botão é de Resgate / Coleta (Claim / Collect / +moedas)
+        if (pendingTask.isClaimable) {
+          logger.info(
+            `Resgatando recompensa da tarefa "${pendingTask.title}" (botão "${pendingTask.btnText}")...`
+          );
+          await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
+          await page.waitForTimeout(2000).catch(() => {});
+          await closeModals(page).catch(() => {});
+          resetTaskAttempt(taskAttempts, pendingTask.title);
+          continue;
+        }
+
+        // Caso 2: Ação executável (GO / IR)
         newPageOpened = null;
-        await page.evaluate((el) => el.click(), goBtn);
+        await page.evaluate((el) => el.click(), actionBtn);
         await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
 
         const activePage = newPageOpened || page;
         const isNewTab = newPageOpened !== null;
 
         try {
           const actionRes = await executeTaskAction(activePage, context, pendingTask, config);
-          if (actionRes.isSpecialOrAppOnly) {
+          if (actionRes && actionRes.isSpecialOrAppOnly) {
             markSpecialOrAppOnly(taskAttempts, pendingTask.title);
           }
         } catch (taskErr) {
@@ -222,10 +259,11 @@ async function runTasks(options = {}) {
             waitUntil: 'domcontentloaded'
           });
         }
-        await page.waitForTimeout(1000);
+        // Aguarda sincronização do AliExpress e atualização do status da tarefa
+        await page.waitForTimeout(2500);
 
         const taskEndTime = new Date();
-        logger.info(`Concluída tarefa em: ${formatDuration(taskEndTime - taskStartTime)}`);
+        logger.info(`Concluída ação em: ${formatDuration(taskEndTime - taskStartTime)}`);
       }
 
       await openTaskDrawer(page);
