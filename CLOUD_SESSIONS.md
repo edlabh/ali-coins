@@ -19,6 +19,7 @@ Este guia explica detalhadamente o funcionamento dos mecanismos de segurança do
 8. [Agendamento no Cron com Notificações no Telegram](#8-agendamento-no-cron-com-notificações-no-telegram)
 9. [Rotação Periódica de Segredos e Pruning de Backups](#9-rotação-periódica-de-segredos-e-pruning-de-backups)
 10. [Monitorar se o Cron Morreu (Dead Man's Switch / Heartbeat)](#10-monitorar-se-o-cron-morreu-dead-mans-switch--heartbeat)
+11. [Higiene e Rotação de Logs do Cron (logrotate)](#11-higiene-e-rotação-de-logs-do-cron-logrotate)
 
 ---
 
@@ -276,6 +277,64 @@ Para prevenir a perda irreversível de sequência (_streak_) por inatividade sil
   - Verifique se as portas de saída `443` (HTTPS) estão liberadas na política de firewall da nuvem (Security Lists / Security Groups).
   - Confirme se o serviço `cron` do Linux está rodando com `systemctl status cron` (ou `crond`).
 - **Uso de HTTP:** Sempre utilize `https://` para garantir que o UUID do seu monitor trafegue criptografado.
+
+---
+
+## 11. Higiene e Rotação de Logs do Cron (logrotate)
+
+Ao agendar a execução periódica com redirecionamento de logs (por exemplo: `0 8 * * * cd /caminho/ali-coins && ./run_all.sh >> cron.log 2>&1`), o arquivo `cron.log` acumulará saídas ao longo do tempo.
+
+Para evitar crescimento descontrolado do disco sem alterar o comportamento de logging da aplicação, recomenda-se configurar o utilitário nativo de sistema **`logrotate`** com a diretiva `copytruncate`.
+
+> [!NOTE]
+> O `copytruncate` é fundamental para scripts agendados via shell redirect (`>>`), pois permite que o processo continue escrevendo no arquivo sem perda de ponteiro ou travamentos de descritor (`file descriptor`).
+
+### Arquivo de Configuração Recomendado
+
+Exemplo de configuração para manter até 4 semanas de logs com rotação semanal e compressão gzip:
+
+```text
+/home/seu_usuario/ali-coins/*.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+### Passo a Passo de Instalação (Linux)
+
+1. Crie o arquivo de definição em `/etc/logrotate.d/ali-coins` (substituindo pelo caminho absoluto obtido com `pwd`):
+
+   ```bash
+   sudo tee /etc/logrotate.d/ali-coins << 'EOF'
+   /home/seu_usuario/ali-coins/*.log {
+       weekly
+       rotate 4
+       compress
+       delaycompress
+       missingok
+       notifempty
+       copytruncate
+   }
+   EOF
+   ```
+
+2. Ajuste as permissões do arquivo de configuração:
+
+   ```bash
+   sudo chmod 644 /etc/logrotate.d/ali-coins
+   ```
+
+3. Valide a sintaxe e teste a execução em modo de simulação (dry-run):
+   ```bash
+   sudo logrotate -d /etc/logrotate.d/ali-coins
+   ```
+
+O sistema Linux executará a rotação automaticamente no cron diário (`/etc/cron.daily/logrotate`), mantendo o consumo de disco controlado e previsível.
 
 ---
 
