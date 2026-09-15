@@ -199,7 +199,8 @@ async function runCheckin(options = {}) {
         })
         .catch(() => false);
 
-      let alreadyCollected = isCheckedInitial;
+      let alreadyCollected = isCheckedInitial || wasAlreadyCollectedToday;
+      let justCollected = false;
       let mobileStreak = null;
 
       if (!alreadyCollected) {
@@ -216,7 +217,7 @@ async function runCheckin(options = {}) {
                 )
                 .catch(() => {});
               await page.waitForTimeout(800);
-              alreadyCollected = true;
+              justCollected = true;
               break;
             }
           } catch {
@@ -273,20 +274,64 @@ async function runCheckin(options = {}) {
       }
 
       const totalBalance = desktopResult.totalBalance;
-      const isCollected = alreadyCollected || wasAlreadyCollectedToday;
+      const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
       const coinsGainedToday = desktopResult.todayCheckinCoins
         ? desktopResult.todayCheckinCoins
         : isCollected
           ? 'N/D'
           : '0';
-      const streakDays =
+
+      let detectedStreak =
         mobileStreak !== null && mobileStreak !== 'N/D'
           ? mobileStreak
           : desktopResult.desktopStreak !== null && desktopResult.desktopStreak !== 'N/D'
             ? desktopResult.desktopStreak
             : earlyDesktopStreak !== null && earlyDesktopStreak !== 'N/D'
               ? earlyDesktopStreak
-              : 'N/D';
+              : null;
+
+      let streakDays = detectedStreak !== null ? detectedStreak : 'N/D';
+
+      // Proteção contra regressão espúria de streak (ex: leitura 7 do ciclo semanal quando previousStreakDays é 212)
+      if (typeof previousStreakDays === 'number' && previousStreakDays > 0) {
+        const parsedDetected =
+          typeof detectedStreak === 'number'
+            ? detectedStreak
+            : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+
+        const isSpuriousWeeklyCycle =
+          !isNaN(parsedDetected) &&
+          previousStreakDays > 7 &&
+          parsedDetected <= 7 &&
+          parsedDetected > 1;
+
+        if (detectedStreak === null || isNaN(parsedDetected) || isSpuriousWeeklyCycle) {
+          if (alreadyCollected || wasAlreadyCollectedToday) {
+            logger.info(
+              { detectedStreak, previousStreak: previousStreakDays },
+              'Streak detectado na tela é espúrio (<= 7) ou ausente em re-execução. Preservando streak real da sessão.'
+            );
+            streakDays = previousStreakDays;
+          } else if (justCollected) {
+            logger.info(
+              { detectedStreak, previousStreak: previousStreakDays },
+              'Check-in realizado com sucesso hoje, mas o streak lido na tela é espúrio (<= 7). Incrementando streak anterior.'
+            );
+            streakDays = previousStreakDays + 1;
+          } else {
+            streakDays = previousStreakDays;
+          }
+        } else if (
+          (alreadyCollected || wasAlreadyCollectedToday) &&
+          parsedDetected < previousStreakDays
+        ) {
+          logger.info(
+            { detectedStreak, previousStreak: previousStreakDays },
+            'Re-execução com streak detectado menor que o da sessão. Preservando streak anterior.'
+          );
+          streakDays = previousStreakDays;
+        }
+      }
 
       const hasStreak = streakDays !== 'N/D' && streakDays !== null;
       const hasTotalBalance = totalBalance !== 'N/D' && totalBalance !== null;
@@ -318,7 +363,18 @@ async function runCheckin(options = {}) {
       }
 
       if (streakDays !== 'N/D' && streakDays !== null) {
-        await updateSessionStreak(streakDays, sessionOpts);
+        const numStreak =
+          typeof streakDays === 'number'
+            ? streakDays
+            : parseInt(String(streakDays).replace(/[^0-9]/g, ''), 10);
+        if (
+          typeof previousStreakDays !== 'number' ||
+          previousStreakDays <= 7 ||
+          numStreak > 7 ||
+          numStreak === 1
+        ) {
+          await updateSessionStreak(streakDays, sessionOpts);
+        }
       }
 
       const checkinEndTime = new Date();
@@ -326,7 +382,7 @@ async function runCheckin(options = {}) {
 
       const result = {
         userEmail,
-        alreadyCollected: alreadyCollected || wasAlreadyCollectedToday,
+        alreadyCollected: (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected,
         coinsGainedToday,
         totalBalance,
         streakDays,

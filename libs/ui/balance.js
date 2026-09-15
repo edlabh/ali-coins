@@ -16,8 +16,7 @@ const STREAK_PATTERNS = [
   /check-?in(?:\s*(?:de|por|di[aá]rio:?))?\s*([0-9]+)\s*d[ií]as?/i,
   /([0-9]+)\s*d[ií]as?\s*de\s*check-?in/i,
   /completou\s*([0-9]+)\s*d[ií]as?/i,
-  /coletou\s*por\s*([0-9]+)\s*d[ií]as?/i,
-  /(?:dia|day|d[ií]a)\s*([0-9]+)\s*(?:\/|\s*de\s*|\s*of\s*)\s*7/i
+  /coletou\s*por\s*([0-9]+)\s*d[ií]as?/i
 ];
 
 /**
@@ -177,8 +176,7 @@ async function getStreakFromCoinPage(page) {
             /check-?in(?:\s*(?:de|por|di[aá]rio:?))?\s*([0-9]+)\s*d[ií]as?/i,
             /([0-9]+)\s*d[ií]as?\s*de\s*check-?in/i,
             /completou\s*([0-9]+)\s*d[ií]as?/i,
-            /coletou\s*por\s*([0-9]+)\s*d[ií]as?/i,
-            /(?:dia|day|d[ií]a)\s*([0-9]+)\s*(?:\/|\s*de\s*|\s*of\s*)\s*7/i
+            /coletou\s*por\s*([0-9]+)\s*d[ií]as?/i
           ];
           for (const regex of patterns) {
             const m = text.match(regex);
@@ -199,7 +197,7 @@ async function getStreakFromCoinPage(page) {
           if (val !== null) return val;
         }
 
-        // 2. Contêineres de título / streak
+        // 2. Contêineres de título / streak explícito
         const titleSelector =
           streakSelectors.streakTitleContainer ||
           '[class*="titleContainer"], [class*="signTitle"], [class*="streak"]';
@@ -210,26 +208,13 @@ async function getStreakFromCoinPage(page) {
           if (val !== null) return val;
         }
 
-        // 3. Seletor de dia ativo / checado
-        const daySelector =
-          streakSelectors.streakDayNumber ||
-          '[class*="dayNumber"], [class*="checkedDay"], [class*="currentDay"]';
-        const dayEls = document.querySelectorAll(daySelector);
-        for (const dayEl of dayEls) {
-          if (dayEl && dayEl.innerText && dayEl.innerText.trim()) {
-            const val = parseInt(dayEl.innerText.trim(), 10);
-            if (!isNaN(val) && val >= 1 && val <= 365) return val;
-          }
-        }
-
-        // 4. Varredura do texto completo do body
+        // 3. Varredura do texto completo do body por padrões explícitos de sequência
         const bodyText = document.body ? document.body.innerText || '' : '';
         return extractStreak(bodyText);
       },
       {
         streakSelectors: {
-          streakTitleContainer: SELECTORS.checkin?.streakTitleContainer,
-          streakDayNumber: SELECTORS.checkin?.streakDayNumber
+          streakTitleContainer: SELECTORS.checkin?.streakTitleContainer
         }
       }
     );

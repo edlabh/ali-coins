@@ -40,14 +40,30 @@ test('libs/report.js - isStreakBreak detecta quebras reais e descarta falso-posi
     '100 -> 100 sem alreadyCollected é estável'
   );
 
-  // 3. Quebra real (queda de streak)
-  assert.strictEqual(isStreakBreak(1, 200), true, '200 -> 1 é quebra catastrófica de streak');
-  assert.strictEqual(isStreakBreak(1, 15), true, '15 -> 1 é quebra de streak');
-  assert.strictEqual(isStreakBreak(14, 15), true, '15 -> 14 é queda de streak');
+  // 3. Falso-positivo clássico: leitura espúria do ciclo semanal de 7 dias (ex: 7 quando anterior era 212)
+  assert.strictEqual(
+    isStreakBreak(7, 212, true),
+    false,
+    '212 -> 7 com alreadyCollected (re-execução) NUNCA é quebra'
+  );
+  assert.strictEqual(
+    isStreakBreak(7, 212, false),
+    false,
+    '212 -> 7 sem alreadyCollected é leitura do ciclo semanal de 7 dias, não reset para 1'
+  );
+  assert.strictEqual(isStreakBreak(6, 15, false), false, '15 -> 6 é ciclo semanal intermediário');
+
+  // 4. Quebra real (reset catastrófico para o Dia 1 no AliExpress)
+  assert.strictEqual(
+    isStreakBreak(1, 200, false),
+    true,
+    '200 -> 1 em novo check-in é quebra real de streak'
+  );
+  assert.strictEqual(isStreakBreak(1, 15, false), true, '15 -> 1 é quebra real de streak');
   assert.strictEqual(
     isStreakBreak(1, 50, true),
-    true,
-    '50 -> 1 com alreadyCollected ainda é queda'
+    false,
+    'com alreadyCollected (re-execução no mesmo dia), a sequência já foi garantida e não quebra'
   );
 });
 
@@ -124,4 +140,35 @@ test('libs/notify.js - formatação do evento streak_break no Telegram', () => {
   assert.ok(message.includes('5320 moedas'), 'Deve exibir o saldo formatado');
   assert.ok(message.includes('us***@example.com'), 'Deve exibir o usuário mascarado');
   assert.ok(message.includes('server-prod-01'), 'Deve exibir o hostname');
+});
+
+test('collect.js / report.js - simulação de re-execução com previousStreak 212 e leitura espúria 7', () => {
+  const previousStreakDays = 212;
+  const detectedStreak = 7;
+  const alreadyCollected = true;
+
+  // 1. isStreakBreak descarta falso-positivo
+  const broken = isStreakBreak(detectedStreak, previousStreakDays, alreadyCollected);
+  assert.strictEqual(
+    broken,
+    false,
+    'Não deve alertar quebra de streak em re-execução com leitura espúria 7'
+  );
+
+  // 2. Resolução do streak preserva 212
+  const parsedDetected = detectedStreak;
+  const isSpuriousWeeklyCycle =
+    !isNaN(parsedDetected) && previousStreakDays > 7 && parsedDetected <= 7 && parsedDetected > 1;
+
+  assert.strictEqual(
+    isSpuriousWeeklyCycle,
+    true,
+    '7 deve ser classificado como ciclo semanal espúrio'
+  );
+
+  let resolvedStreak = detectedStreak;
+  if (isSpuriousWeeklyCycle && alreadyCollected) {
+    resolvedStreak = previousStreakDays;
+  }
+  assert.strictEqual(resolvedStreak, 212, 'Streak resolvido deve preservar os 212 dias');
 });

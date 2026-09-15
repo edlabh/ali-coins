@@ -110,8 +110,11 @@ const multiAccountReportSchema = z.object({
  * Regras:
  * 1. currentStreak e previousStreak devem ser números válidos.
  * 2. previousStreak deve ser > 1 (primeira execução ou dia 1 não tem histórico prévio de sequência quebrável).
- * 3. Se alreadyCollected e currentStreak >= previousStreak, não é quebra (re-execução no mesmo dia).
- * 4. Se currentStreak < previousStreak, houve queda ou reset (ex: 200 -> 1).
+ * 3. Se alreadyCollected, trata-se de re-execução no mesmo dia: a sequência já foi garantida e NUNCA quebra.
+ * 4. No AliExpress, um streak quebrado sempre reseta para o Dia 1 (+10 moedas).
+ *    Leituras intermediárias como 7 quando o streak anterior era > 7 (ex: 212 -> 7) são leituras do widget de 7 dias da semana,
+ *    NUNCA uma quebra de sequência real.
+ * 5. Quebra real: currentStreak === 1 quando previousStreak > 1 e !alreadyCollected.
  * @param {number|null} currentStreak
  * @param {number|null} previousStreak
  * @param {boolean} [alreadyCollected=false]
@@ -122,11 +125,18 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
   if (typeof previousStreak !== 'number' || isNaN(previousStreak)) return false;
   if (previousStreak <= 1) return false;
 
-  if (alreadyCollected && currentStreak >= previousStreak) {
+  // Se já foi coletado hoje (re-execução no mesmo dia), a sequência já foi garantida
+  if (alreadyCollected) {
     return false;
   }
 
-  if (currentStreak < previousStreak) {
+  // Leituras intermediárias (ex: 7 quando anterior era 212) são do ciclo semanal de 7 dias do AliExpress, nunca quebra real
+  if (currentStreak > 1 && currentStreak < previousStreak) {
+    return false;
+  }
+
+  // Quebra real de sequência: retorno ao dia 1 após histórico anterior > 1
+  if (currentStreak === 1 && previousStreak > 1) {
     return true;
   }
 

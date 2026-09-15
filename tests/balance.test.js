@@ -22,8 +22,6 @@ test('libs/ui/balance.js - extractStreakFromText reconhece padrões multilíngue
     assert.strictEqual(extractStreakFromText('Check-in de 10 dias'), 10);
     assert.strictEqual(extractStreakFromText('Check-in diário: 5 dias'), 5);
     assert.strictEqual(extractStreakFromText('Você completou 21 dias seguidos!'), 21);
-    assert.strictEqual(extractStreakFromText('Dia 4 de 7'), 4);
-    assert.strictEqual(extractStreakFromText('dia 6/7'), 6);
 
     // Padrões em Inglês
     assert.strictEqual(extractStreakFromText('15 days streak'), 15);
@@ -31,13 +29,15 @@ test('libs/ui/balance.js - extractStreakFromText reconhece padrões multilíngue
     assert.strictEqual(extractStreakFromText('5-day streak'), 5);
     assert.strictEqual(extractStreakFromText('streak: 20'), 20);
     assert.strictEqual(extractStreakFromText('8 days in a row'), 8);
-    assert.strictEqual(extractStreakFromText('Day 3 of 7'), 3);
 
     // Padrões em Espanhol
     assert.strictEqual(extractStreakFromText('Secuencia de 5 dias'), 5);
     assert.strictEqual(extractStreakFromText('5 dias seguidos'), 5);
 
-    // Casos negativos / neutros
+    // Casos negativos / neutros (ciclo semanal não é streak contínuo)
+    assert.strictEqual(extractStreakFromText('Dia 4 de 7'), null);
+    assert.strictEqual(extractStreakFromText('dia 6/7'), null);
+    assert.strictEqual(extractStreakFromText('Day 3 of 7'), null);
     assert.strictEqual(extractStreakFromText(null), null);
     assert.strictEqual(extractStreakFromText(''), null);
     assert.strictEqual(extractStreakFromText('+40 moedas'), null);
