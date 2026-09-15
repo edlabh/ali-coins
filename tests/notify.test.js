@@ -9,6 +9,7 @@ const {
   checkIfImportedSessionExpired
 } = require('../libs/notify');
 const { configSchema } = require('../config');
+const logger = require('../logger');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
 test('libs/notify.js - escapeHtml neutraliza caracteres perigosos para HTML do Telegram', () => {
@@ -242,25 +243,47 @@ test('libs/notify.js - sendTelegram com mock de fetch em ambiente isolado', asyn
     // 2. Sucesso HTTP 200
     let lastUrl = null;
     let lastBody = null;
-    global.fetch = async (url, options) => {
-      lastUrl = url;
-      lastBody = JSON.parse(options.body);
-      return {
-        ok: true,
-        status: 200,
-        text: async () => '{"ok":true}'
-      };
+    let loggedSuccessMessage = false;
+    const origInfo = logger.info;
+    logger.info = (...args) => {
+      if (
+        args.some(
+          (a) => typeof a === 'string' && a.includes('Notificação Telegram enviada com sucesso')
+        )
+      ) {
+        loggedSuccessMessage = true;
+      }
+      return origInfo.apply(logger, args);
     };
 
-    const successRes = await sendTelegram({
-      config: validConfig,
-      event: 'dry_run'
-    });
-    assert.strictEqual(successRes.ok, true);
-    assert.strictEqual(successRes.status, 200);
-    assert.ok(lastUrl.includes('bot123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456/sendMessage'));
-    assert.strictEqual(lastBody.chat_id, '987654321');
-    assert.strictEqual(lastBody.parse_mode, 'HTML');
+    try {
+      global.fetch = async (url, options) => {
+        lastUrl = url;
+        lastBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          status: 200,
+          text: async () => '{"ok":true}'
+        };
+      };
+
+      const successRes = await sendTelegram({
+        config: validConfig,
+        event: 'dry_run'
+      });
+      assert.strictEqual(successRes.ok, true);
+      assert.strictEqual(successRes.status, 200);
+      assert.strictEqual(
+        loggedSuccessMessage,
+        true,
+        'Deve emitir log de sucesso no envio da notificação'
+      );
+      assert.ok(lastUrl.includes('bot123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456/sendMessage'));
+      assert.strictEqual(lastBody.chat_id, '987654321');
+      assert.strictEqual(lastBody.parse_mode, 'HTML');
+    } finally {
+      logger.info = origInfo;
+    }
 
     // 2.1 Envio com chatId customizado por conta
     await sendTelegram({

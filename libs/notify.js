@@ -643,6 +643,7 @@ async function sendTelegram({
       };
     }
 
+    logger.info({ event }, 'Notificação Telegram enviada com sucesso.');
     return { ok: true, status: response.status };
   } catch (err) {
     logger.warn(
