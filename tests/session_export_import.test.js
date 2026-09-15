@@ -290,7 +290,7 @@ test('import_session.js - erro seguro quando SESSION_SECRET está ausente ou inv
     await assert.rejects(
       async () => {
         await importSession({
-          secret: 'curta_demais_123',
+          secret: 'curta',
           tokenString: 'v2:test',
           baseDir: tmpDir
         });

@@ -1,0 +1,5 @@
+[allowlist]
+description = "Ignore mock test keys and fixtures in tests directory"
+paths = [
+  '''tests/.*''',
+]
