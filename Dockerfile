@@ -54,7 +54,7 @@ RUN groupadd -g 10001 appuser && \
 # Nota BuildKit: Para compilações mais velozes com cache local de navegadores, pode-se usar:
 # RUN --mount=type=cache,target=/ms-playwright npx playwright install chromium
 COPY package*.json ./
-RUN npm ci --omit=dev && \
+RUN npm ci --omit=dev --ignore-scripts && \
     npx playwright install chromium && \
     chown -R appuser:appuser /ms-playwright /app
 
@@ -69,6 +69,6 @@ USER appuser
 
 # Verificação de saúde da configuração e ambiente
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD-SHELL [ -f credentials.env ] && node all.js --dry-run --json || node -e "require('./config').loadConfig(false)" || exit 1
+    CMD test -f credentials.env && node all.js --dry-run --json || node -e "require('./config').loadConfig(false)" || exit 1
 
 CMD ["npm", "start"]

@@ -2,6 +2,8 @@ node_modules/
 credentials.env
 credentials.env.bak
 session.json
+session.json.enc
+session*.enc
 session_meta.json
 session_token.txt
 github_token.env
