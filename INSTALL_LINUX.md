@@ -10,7 +10,7 @@ Este manual foi criado para guiar passo a passo a instalação completa do **Ali
 2. [Método A: Instalação Automática (Recomendado - 1 Comando)](#2-m%C3%A9todo-a-instala%C3%A7%C3%A3o-autom%C3%A1tica-recomendado---1-comando)
 3. [Método B: Instalação Manual Passo a Passo Detalhada](#3-m%C3%A9todo-b-instala%C3%A7%C3%A3o-manual-passo-a-passo-detalhada)
    - [Passo 1: Limpeza de versões antigas do Node.js](#passo-1-limpeza-de-vers%C3%B5es-antigas-do-nodejs)
-   - [Passo 2: Instalação do Node.js 20 LTS](#passo-2-instala%C3%A7%C3%A3o-do-nodejs-20-lts)
+   - [Passo 2: Instalação do Node.js 22 LTS](#passo-2-instala%C3%A7%C3%A3o-do-nodejs-22-lts)
    - [Passo 3: Clonar o projeto e permissões](#passo-3-clonar-o-projeto-e-permiss%C3%B5es)
    - [Passo 4: Instalação das dependências npm](#passo-4-instala%C3%A7%C3%A3o-das-depend%C3%AAncias-npm)
    - [Passo 5: Instalação do Chromium e dependências nativas do SO](#passo-5-instala%C3%A7%C3%A3o-do-chromium-e-depend%C3%AAncias-nativas-do-so)
@@ -25,6 +25,7 @@ Este manual foi criado para guiar passo a passo a instalação completa do **Ali
 ## 1. Requisitos Mínimos
 
 - **Distribuição:** Ubuntu 20.04 LTS, Ubuntu 22.04 LTS, Ubuntu 24.04 LTS ou Debian 11/12 (arquitetura x86_64 ou ARM64/aarch64).
+- **Node.js:** Versão 22 LTS ou superior (`node >= 22`).
 - **Recursos de Hardware:** Mínimo de 1 vCPU e 1 GB de RAM (para servidores com 1 GB de RAM ou menos, recomenda-se ativar 1 GB ou 2 GB de memória Swap).
 - **Acesso:** Privilégios `sudo` para instalar as bibliotecas de sistema.
 
@@ -43,7 +44,7 @@ chmod +x setup_linux.sh
 O instalador automático realiza sozinho:
 
 1. Instalação de utilitários de sistema (`curl`, `git`, `ca-certificates`, `gnupg`);
-2. Instalação do **Node.js 20 LTS** caso o sistema não tenha ou tenha versão inferior à 18;
+2. Instalação do **Node.js 22 LTS** caso o sistema não tenha ou tenha versão inferior à 22;
 3. Execução do `npm install`;
 4. Download do navegador Chromium via Playwright;
 5. Instalação de todas as bibliotecas nativas de SO específicas para a sua distribuição;
@@ -67,24 +68,24 @@ sudo apt-get remove -y nodejs npm
 sudo apt-get autoremove -y
 ```
 
-### Passo 2: Instalação do Node.js 20 LTS
+### Passo 2: Instalação do Node.js 22 LTS
 
 #### Opção 1: Via Repositório Oficial NodeSource (Recomendado para servidores/VPS)
 
-Instala o binário estável mais recente do Node.js 20 LTS e o npm atualizado:
+Instala o binário estável mais recente do Node.js 22 LTS e o npm atualizado:
 
 ```bash
 # 1. Atualizar índice do apt e instalar pré-requisitos
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg git
 
-# 2. Baixar e registrar o repositório oficial da NodeSource para Node.js 20.x
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# 2. Baixar e registrar o repositório oficial da NodeSource para Node.js 22.x
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 
 # 3. Instalar o Node.js e npm
 sudo apt-get install -y nodejs
 
-# 4. Validar se a instalação foi bem-sucedida (deve exibir v20.x.x e npm 9+)
+# 4. Validar se a instalação foi bem-sucedida (deve exibir v22.x.x e npm 10+)
 node -v
 npm -v
 ```
@@ -101,10 +102,10 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
-# Instalar e fixar Node.js 20 LTS
-nvm install 20
-nvm use 20
-nvm alias default 20
+# Instalar e fixar Node.js 22 LTS
+nvm install 22
+nvm use 22
+nvm alias default 22
 ```
 
 ### Passo 3: Clonar o projeto e permissões
@@ -218,7 +219,7 @@ Se o comando imprimir `✅ Chromium iniciado com sucesso no Linux!`, seu ambient
 
 ### Passo 7: Configuração de Credenciais
 
-1. Copie o arquivo de exemplo:
+1. Copie o arquivo de exemplo e restrinja as permissões para o seu usuário (`0o600`):
 
    ```bash
    cp credentials.env.example credentials.env
@@ -226,22 +227,39 @@ Se o comando imprimir `✅ Chromium iniciado com sucesso no Linux!`, seu ambient
    ```
 
 2. Abra o arquivo no editor de sua preferência (`nano credentials.env`):
+
    ```env
+   # Credenciais do AliExpress (obrigatórias)
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha_do_aliexpress"
 
-   # Chave para criptografia de exportação de sessão (mínimo 32 caracteres)
-   # Gere no terminal com: openssl rand -base64 32
+   # Criptografia local at-rest em disco (session.json.enc) e exportação (mínimo 32 caracteres)
+   # Gere com: openssl rand -base64 32
    SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
+   ENCRYPT_LOCAL_SESSION=true
 
-   # Bloqueio de mídia para acelerar execução (padrão: false)
+   # Rotação suave de chaves criptográficas (opcional):
+   # SESSION_SECRET_OLD="chave_antiga_durante_rotacao"
+
+   # Identificador do host no Telegram (opcional, útil para servidores / containers Docker):
+   # NOTIFY_HOST_LABEL="meu-servidor-vps"
+
+   # Dead Man's Switch / Monitoramento de Uptime (Heartbeat) (opcional, ex: Healthchecks.io):
+   # HEARTBEAT_URL="https://hc-ping.com/seu-uuid-aqui"
+
+   # Desempenho e Navegador:
    ALLOW_MEDIA=false
-
-   # Modo headless (padrão: true)
    HEADLESS=true
-
-   # Nível de log estruturado (padrão: info)
    LOG_LEVEL=info
+
+   # Desativar sandbox do Chromium se necessário (ex: Ubuntu 24.04 sem AppArmor customizado):
+   # NO_SANDBOX=false
+   ```
+
+   Garanta também que quaisquer arquivos de sessão criados tenham acesso restrito:
+
+   ```bash
+   chmod 600 session* session_token.txt 2>/dev/null || true
    ```
 
 ### Passo 8: Primeira Execução

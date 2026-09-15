@@ -1,12 +1,13 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
+cd /d "%~dp0"
 
 echo ======================================================================
 echo    Instalacao e Configuracao: AliExpress Coin Collector (Windows)
 echo ======================================================================
 echo.
 
-:: 1. Verificar Node.js
+REM 1. Verificar Node.js
 echo [1/5] Verificando instalacao do Node.js...
 where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
@@ -23,13 +24,14 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-for /f "tokens=1 delims=." %%a in ('node -v') do set NODE_VERSION_RAW=%%a
-set NODE_MAJOR=%NODE_VERSION_RAW:~1%
-
-if %NODE_MAJOR% LSS 22 (
+REM Validar que a versao do Node.js e maior ou igual a 22
+node -e "const v = parseInt(process.versions.node.split('.')[0], 10); if (isNaN(v) || v < 22) process.exit(1);" >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [ERRO] Sua versao do Node.js (%NODE_MAJOR%) e inferior a versao 22 minima necessaria!
-    echo Atualize para o Node.js 22 LTS via https://nodejs.org/ ou: winget install OpenJS.NodeJS.LTS
+    for /f "delims=" %%v in ('node -v 2^>nul') do set CURRENT_NODE_VER=%%v
+    echo [ERRO] Sua versao do Node.js (%%CURRENT_NODE_VER%%) e inferior a versao 22 minima necessaria!
+    echo Atualize para o Node.js 22 LTS via https://nodejs.org/ ou:
+    echo    winget install OpenJS.NodeJS.LTS
     pause
     exit /b 1
 )
@@ -37,27 +39,33 @@ if %NODE_MAJOR% LSS 22 (
 for /f "delims=" %%v in ('node -v') do echo Node.js encontrado: %%v (compativel)
 for /f "delims=" %%v in ('npm -v') do echo npm encontrado: %%v
 
-:: 2. Instalar dependencias npm
+REM 2. Instalar dependencias npm
 echo.
 echo [2/5] Instalando dependencias do projeto (npm install)...
 call npm install
 if %ERRORLEVEL% NEQ 0 (
+    echo.
     echo [ERRO] Falha ao executar 'npm install'. Verifique sua conexao e tente novamente.
     pause
     exit /b 1
 )
 
-:: 3. Instalar Chromium do Playwright
+REM 3. Instalar Chromium do Playwright
 echo.
 echo [3/5] Baixando binario do Chromium via Playwright...
-call npx playwright install chromium
+if exist "%~dp0node_modules\playwright\cli.js" (
+    call node "%~dp0node_modules\playwright\cli.js" install chromium
+) else (
+    call npx playwright install chromium
+)
 if %ERRORLEVEL% NEQ 0 (
+    echo.
     echo [ERRO] Falha ao baixar o Chromium. Verifique sua conexao e tente novamente.
     pause
     exit /b 1
 )
 
-:: 4. Configurar arquivo de credenciais
+REM 4. Configurar arquivo de credenciais
 echo.
 echo [4/5] Configurando arquivo de credenciais (credentials.env)...
 if not exist "%~dp0credentials.env" (
@@ -69,16 +77,23 @@ if not exist "%~dp0credentials.env" (
     echo Arquivo 'credentials.env' ja existente (mantido).
 )
 
-:: 5. Teste rapido do Chromium
+REM Aplicar restricoes de permissao de arquivo no Windows (somente usuario atual)
+icacls "%~dp0credentials.env" /inheritance:r /grant:r "%USERNAME%:(R,W)" >nul 2>nul
+
+REM 5. Teste rapido do Chromium
 echo.
 echo [5/5] Testando inicializacao do Chromium no Windows...
-node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); await b.close(); console.log('OK'); })();" >nul 2>nul
+node -e "const { chromium } = require('playwright'); chromium.launch({ headless: true }).then(b => b.close()).then(() => process.exit(0)).catch(e => { console.error('[ERRO CHROMIUM]', e.message || e); process.exit(1); })"
 if %ERRORLEVEL% EQU 0 (
     echo [OK] O navegador Chromium iniciou em modo headless com sucesso!
 ) else (
-    echo [AVISO] Nao foi possivel inicializar o Chromium. Se for um Windows novo,
+    echo.
+    echo [AVISO] Nao foi possivel inicializar o Chromium em modo headless.
+    echo Se esta for uma instalacao nova do Windows ou maquina virtual,
     echo pode ser necessario instalar o Microsoft Visual C++ Redistributable 2015-2022:
-    echo winget install Microsoft.VCRedist.2015+.x64
+    echo.
+    echo    winget install Microsoft.VCRedist.2015+.x64
+    echo.
 )
 
 echo.

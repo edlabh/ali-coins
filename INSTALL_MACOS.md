@@ -9,7 +9,7 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 1. [Requisitos Mínimos](#1-requisitos-m%C3%ADnimos)
 2. [Método A: Instalação Automática (setup_macos.sh)](#2-m%C3%A9todo-a-instala%C3%A7%C3%A3o-autom%C3%A1tica-setup_macossh)
 3. [Método B: Instalação Manual Passo a Passo](#3-m%C3%A9todo-b-instala%C3%A7%C3%A3o-manual-passo-a-passo)
-   - [Passo 1: Instalação do Node.js 20 LTS](#passo-1-instala%C3%A7%C3%A3o-do-nodejs-20-lts)
+   - [Passo 1: Instalação do Node.js 22 LTS](#passo-1-instala%C3%A7%C3%A3o-do-nodejs-22-lts)
    - [Passo 2: Baixar ou Clonar o Projeto e Permissões](#passo-2-baixar-ou-clonar-o-projeto-e-permiss%C3%B5es)
    - [Passo 3: Instalar Dependências npm](#passo-3-instalar-depend%C3%AAncias-npm)
    - [Passo 4: Instalar o Navegador Chromium do Playwright](#passo-4-instalar-o-navegador-chromium-do-playwright)
@@ -28,7 +28,7 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 - **Sistema:** macOS 12 (Monterey) ou superior.
 - **Processador:** Apple Silicon (M1/M2/M3/M4 - ARM64) ou Intel (x86_64).
 - **Terminal:** Aplicativo Terminal do macOS ou iTerm2.
-- **Node.js:** Versão 18 ou 20 LTS (recomendada a versão 20 LTS).
+- **Node.js:** Versão 22 LTS ou superior (`node >= 22`).
 
 ---
 
@@ -48,9 +48,9 @@ Após a execução, configure seu e-mail/senha com `nano credentials.env` e inic
 
 ## 3. Método B: Instalação Manual Passo a Passo
 
-### Passo 1: Instalação do Node.js 20 LTS
+### Passo 1: Instalação do Node.js 22 LTS
 
-O projeto necessita do **Node.js 18 ou superior**.
+O projeto necessita do **Node.js 22 ou superior**.
 
 #### Opção 1: Via Homebrew (Recomendado para macOS)
 
@@ -77,7 +77,7 @@ O Homebrew é o gerenciador de pacotes padrão da comunidade para macOS.
 #### Opção 2: Pelo Site Oficial (Pacote .pkg)
 
 1. Acesse: [https://nodejs.org/](https://nodejs.org/).
-2. Baixe a versão recomendada **LTS** (instalador `.pkg` para macOS).
+2. Baixe a versão recomendada **22 LTS** (instalador `.pkg` para macOS).
 3. Abra o arquivo `.pkg` e siga os passos do assistente de instalação da Apple.
 
 #### Opção 3: Via NVM (Node Version Manager)
@@ -85,8 +85,8 @@ O Homebrew é o gerenciador de pacotes padrão da comunidade para macOS.
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 source ~/.zshrc
-nvm install 20
-nvm use 20
+nvm install 22
+nvm use 22
 ```
 
 #### Validar a instalação:
@@ -98,7 +98,7 @@ node -v
 npm -v
 ```
 
-_(Deve exibir `v20.x.x` ou superior e npm versão 9 ou superior)._
+_(Deve exibir `v22.x.x` ou superior e npm versão 10 ou superior)._
 
 ---
 
@@ -150,7 +150,7 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
 
 ### Passo 6: Configurar Credenciais
 
-1. Crie o arquivo `credentials.env` a partir do modelo:
+1. Crie o arquivo `credentials.env` a partir do modelo e restrinja as permissões:
 
    ```bash
    cp credentials.env.example credentials.env
@@ -158,9 +158,33 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
    ```
 
 2. Abra o arquivo no editor de sua preferência (`nano credentials.env` ou `open -e credentials.env`):
+
    ```env
+   # Credenciais do AliExpress (obrigatórias)
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
+
+   # Criptografia local at-rest em disco (session.json.enc) e exportação (mínimo 32 caracteres)
+   # Gere no terminal com: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
+   ENCRYPT_LOCAL_SESSION=true
+
+   # Identificador do host no Telegram (opcional, útil para múltiplos computadores):
+   # NOTIFY_HOST_LABEL="meu-macbook-pro"
+
+   # Dead Man's Switch / Uptime Heartbeat (opcional, ex: Healthchecks.io):
+   # HEARTBEAT_URL="https://hc-ping.com/seu-uuid-aqui"
+
+   # Desempenho e Navegador:
+   ALLOW_MEDIA=false
+   HEADLESS=true
+   LOG_LEVEL=info
+   ```
+
+   Garanta também permissão restrita para todos os arquivos de sessão:
+
+   ```bash
+   chmod 600 session* session_token.txt 2>/dev/null || true
    ```
 
 ---

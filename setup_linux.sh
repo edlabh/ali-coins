@@ -26,7 +26,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 1. Verificar e instalar ferramentas essenciais (curl, git, ca-certificates)
-echo "[1/6] Verificando ferramentas básicas do sistema..."
+echo "[1/7] Verificando ferramentas básicas do sistema..."
 if ! command -v curl >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
   echo "Instalando curl, git e utilitários..."
   $SUDO apt-get update -qq
@@ -34,7 +34,7 @@ if ! command -v curl >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
 fi
 
 # 2. Verificar versão do Node.js
-echo "[2/6] Verificando versão do Node.js..."
+echo "[2/7] Verificando versão do Node.js..."
 NEED_NODE_INSTALL=false
 
 if command -v node >/dev/null 2>&1; then
@@ -60,15 +60,19 @@ if [ "$NEED_NODE_INSTALL" = true ]; then
 fi
 
 # 3. Instalar dependências npm
-echo "[3/6] Instalando dependências do projeto (npm install)..."
+echo "[3/7] Instalando dependências do projeto (npm install)..."
 npm install
 
 # 4. Instalar navegador Chromium do Playwright
-echo "[4/6] Baixando binário do Chromium via Playwright..."
-npx playwright install chromium
+echo "[4/7] Baixando binário do Chromium via Playwright..."
+if [ -f "$SCRIPT_DIR/node_modules/playwright/cli.js" ]; then
+  node "$SCRIPT_DIR/node_modules/playwright/cli.js" install chromium
+else
+  npx playwright install chromium
+fi
 
 # 5. Instalar dependências de sistema para o Chromium no Linux
-echo "[5/6] Instalando bibliotecas do sistema para o Chromium..."
+echo "[5/7] Instalando bibliotecas do sistema para o Chromium..."
 INSTALL_DEPS_SUCCESS=false
 if [ -n "$SUDO" ]; then
   if $SUDO env "PATH=$PATH" npx playwright install-deps chromium; then
@@ -150,7 +154,7 @@ else
   chmod 600 "$SCRIPT_DIR/credentials.env" 2>/dev/null || true
   echo "Arquivo 'credentials.env' já existente (mantido)."
 fi
-chmod 600 "$SCRIPT_DIR"/session*.json "$SCRIPT_DIR"/session_token.txt 2>/dev/null || true
+chmod 600 "$SCRIPT_DIR"/session* "$SCRIPT_DIR"/session_token.txt 2>/dev/null || true
 
 # 8. Teste de inicialização do Chromium
 echo "[7/7] Testando inicialização do Chromium no ambiente..."

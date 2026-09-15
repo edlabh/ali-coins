@@ -76,9 +76,9 @@ cd ali-coins
 
 Execute o instalador correspondente ao seu sistema operacional:
 
-- **Linux (Ubuntu / Debian):** `./setup_linux.sh`
-- **Windows:** Dê dois cliques em `setup_windows.bat` (ou execute via terminal CMD/PowerShell)
-- **macOS:** `./setup_macos.sh`
+- **Linux (Ubuntu / Debian):** `./setup_linux.sh` (Guia detalhado: [INSTALL_LINUX.md](INSTALL_LINUX.md))
+- **Windows:** `setup_windows.bat` (CMD / duplo clique) ou `.\setup_windows.ps1` (PowerShell) (Guia detalhado: [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md))
+- **macOS:** `./setup_macos.sh` (Guia detalhado: [INSTALL_MACOS.md](INSTALL_MACOS.md))
 
 _(O instalador verifica o Node.js >= 22, roda `npm install`, baixa o Chromium e prepara as credenciais)._
 
