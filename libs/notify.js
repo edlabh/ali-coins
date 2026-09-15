@@ -62,6 +62,86 @@ function checkIfImportedSessionExpired(error = null, report = null) {
 }
 
 /**
+ * Extrai a mensagem de erro mais relevante e concisa para notificação do Telegram,
+ * priorizando a mensagem principal e a causa raiz em vez de logs de encerramento/cleanup.
+ * @param {Error|object|string} error
+ * @returns {string}
+ */
+function extractRelevantErrorMessage(error) {
+  if (!error) return 'Erro desconhecido durante o processamento.';
+
+  let raw = '';
+  if (typeof error === 'string') {
+    raw = error;
+  } else if (error instanceof Error || (typeof error === 'object' && error.message)) {
+    raw = error.message;
+  } else {
+    raw = String(error);
+  }
+
+  raw = raw.trim();
+  if (!raw) return 'Erro desconhecido durante o processamento.';
+
+  // Se o erro contém delimitador de logs do Playwright (ex: =========================== logs ===========================),
+  // a causa raiz real está ANTES dos logs de cleanup do processo!
+  if (/={5,}\s*logs?\s*={5,}/i.test(raw)) {
+    const parts = raw.split(/={5,}\s*logs?\s*={5,}/i);
+    const beforeLogs = parts[0]?.trim();
+    if (beforeLogs) {
+      const topLines = beforeLogs
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (topLines.length > 0) {
+        return topLines.slice(0, 3).join('\n');
+      }
+    }
+  }
+
+  // Se tem seção "Call log:", a mensagem principal antecede o log de chamadas
+  if (/Call log:/i.test(raw)) {
+    const parts = raw.split(/Call log:/i);
+    const beforeCall = parts[0]?.trim();
+    if (beforeCall) {
+      const topLines = beforeCall
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (topLines.length > 0) {
+        return topLines.slice(0, 3).join('\n');
+      }
+    }
+  }
+
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length <= 3) {
+    return lines.join('\n');
+  }
+
+  // Filtrar linhas irrelevantes de cleanup de processos e stack traces internos
+  const irrelevantRegex = /^(at\s+|-\s*\[pid=|<\s*gracefully|\(?node:internal)/i;
+  const meaningfulLines = lines.filter((l) => !irrelevantRegex.test(l));
+
+  // Priorizar linhas que contenham termos críticos de erro
+  const errorIndicatorRegex =
+    /(error|fatal|fail|sandboxing|timeout|recusad|inválid|expirad|bloque|crash|exception)/i;
+  const errorLines = meaningfulLines.filter((l) => errorIndicatorRegex.test(l));
+  if (errorLines.length > 0) {
+    return errorLines.slice(0, 3).join('\n');
+  }
+
+  if (meaningfulLines.length > 0) {
+    return meaningfulLines.slice(0, 3).join('\n');
+  }
+
+  return lines.slice(0, 3).join('\n');
+}
+
+/**
  * Constrói mensagem formatada em HTML para o Telegram a partir do relatório e evento
  * @param {object} params
  * @param {object} [params.report] Objeto de relatório (--json) de libs/report.js
@@ -76,7 +156,7 @@ function buildMessage({
   event = 'success',
   error = null,
   customMessage = null,
-  hostname = os.hostname()
+  hostname = process.env.NOTIFY_HOST_LABEL || os.hostname()
 } = {}) {
   const now = formatDateTime(new Date());
   const safeHost = escapeHtml(hostname);
@@ -125,18 +205,11 @@ function buildMessage({
 
   // 4. Falha na execução
   if (event === 'failure') {
-    const errorMsg =
-      error && error.message
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : 'Erro desconhecido durante o processamento.';
-
-    const lastLines = String(errorMsg).trim().split('\n').slice(-3).join('\n');
+    const errorSnippet = extractRelevantErrorMessage(error);
 
     const lines = [
       `🔴 ali-coins — ${now}`,
-      `⚠️ <b>Erro:</b> <code>${escapeHtml(lastLines || errorMsg)}</code>`
+      `⚠️ <b>Erro:</b> <code>${escapeHtml(errorSnippet)}</code>`
     ];
 
     if (report && (report.user || report.userEmail)) {
@@ -242,7 +315,23 @@ function buildMessage({
           (acc.checkin?.coinsGainedToday
             ? parseInt(String(acc.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10) || 0
             : 0);
-        const tasksCoins = acc.meta?.tasksCoinsGained ?? acc.tasks?.coinsGained ?? 0;
+        const balanceAfterCheckin = parseInt(
+          String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
+          10
+        );
+        const balanceFinal = parseInt(
+          String(
+            acc.meta?.finalBalance || acc.tasks?.finalBalance || acc.tasks?.finalCoins || ''
+          ).replace(/\D/g, ''),
+          10
+        );
+        const taskGain =
+          !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
+            ? Math.max(0, balanceFinal - balanceAfterCheckin)
+            : 0;
+
+        const tasksCoins =
+          taskGain > 0 ? taskGain : (acc.meta?.tasksCoinsGained ?? acc.tasks?.coinsGained ?? 0);
         const totalCoins = acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins;
         const balance =
           acc.meta?.finalBalance ||
@@ -276,11 +365,6 @@ function buildMessage({
 
   // 6. Relatório Unificado (Conta Única)
   if (report && report.type === 'unified_report') {
-    const isAlready =
-      event === 'already_collected' ||
-      (report.checkin?.alreadyCollected && (!report.tasks || !report.tasks.coinsGained));
-
-    const titleEmoji = isAlready ? 'ℹ️' : '✅';
     const reportDate = formatDate(new Date());
 
     let checkinCoins = 0;
@@ -291,19 +375,45 @@ function buildMessage({
       if (!isNaN(parsed)) checkinCoins = parsed;
     }
 
+    // Cálculo determinístico por diferença de saldo (delta real entre após check-in e final)
+    const balanceAfterCheckin = parseInt(
+      String(report.tasks?.initialBalance || report.checkin?.totalBalance || '').replace(/\D/g, ''),
+      10
+    );
+    const balanceFinal = parseInt(
+      String(
+        report.meta?.finalBalance || report.tasks?.finalBalance || report.tasks?.finalCoins || ''
+      ).replace(/\D/g, ''),
+      10
+    );
+    const taskGain =
+      !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
+        ? Math.max(0, balanceFinal - balanceAfterCheckin)
+        : 0;
+
     let tasksCoins = 0;
-    if (report.meta?.tasksCoinsGained !== undefined) {
+    if (taskGain > 0) {
+      tasksCoins = taskGain;
+    } else if (report.meta?.tasksCoinsGained !== undefined) {
       tasksCoins = Number(report.meta.tasksCoinsGained) || 0;
     } else if (report.tasks && typeof report.tasks.coinsGained === 'number') {
       tasksCoins = report.tasks.coinsGained;
     }
 
     let totalCoins = 0;
-    if (report.meta?.totalCoinsGained !== undefined) {
-      totalCoins = Number(report.meta.totalCoinsGained) || 0;
+    if (
+      report.meta?.totalCoinsGained !== undefined &&
+      Number(report.meta.totalCoinsGained) >= checkinCoins + tasksCoins
+    ) {
+      totalCoins = Number(report.meta.totalCoinsGained);
     } else {
       totalCoins = checkinCoins + tasksCoins;
     }
+
+    const isAlready =
+      event === 'already_collected' || (report.checkin?.alreadyCollected && tasksCoins === 0);
+
+    const titleEmoji = isAlready ? 'ℹ️' : '✅';
 
     const streakDays =
       report.checkin?.streakDays !== undefined && report.checkin?.streakDays !== null
@@ -476,7 +586,14 @@ async function sendTelegram({
   }
 
   const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  const messageHtml = buildMessage({ report, event, error, customMessage });
+  const hostLabel = cfg.NOTIFY_HOST_LABEL || process.env.NOTIFY_HOST_LABEL || os.hostname();
+  const messageHtml = buildMessage({
+    report,
+    event,
+    error,
+    customMessage,
+    hostname: hostLabel
+  });
 
   const payload = {
     chat_id: targetChatId,
@@ -521,7 +638,6 @@ async function sendTelegram({
       };
     }
 
-    logger.info('Notificação enviada com sucesso para o Telegram.');
     return { ok: true, status: response.status };
   } catch (err) {
     logger.warn(
@@ -533,8 +649,7 @@ async function sendTelegram({
 }
 
 /**
- * Função utilitária para testar a integração do bot diretamente via terminal
- * Exemplo: node -e "require('./libs/notify').test()"
+ * Dispara uma mensagem manual de teste para validar credenciais e conectividade
  * @param {object} [customConfig]
  * @returns {Promise<boolean>}
  */
@@ -557,6 +672,7 @@ async function test(customConfig = null) {
 module.exports = {
   sendTelegram,
   buildMessage,
+  extractRelevantErrorMessage,
   escapeHtml,
   truncateMessageIfNeeded,
   checkIfImportedSessionExpired,

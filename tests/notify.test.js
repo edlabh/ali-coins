@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   escapeHtml,
   buildMessage,
+  extractRelevantErrorMessage,
   truncateMessageIfNeeded,
   sendTelegram,
   checkIfImportedSessionExpired
@@ -419,4 +420,95 @@ test('libs/notify.js - detecção e aviso de sessão remota importada expirada n
     buildMessage({ customMessage: 'Mensagem customizada direta' }),
     'Mensagem customizada direta'
   );
+});
+
+test('libs/notify.js - extractRelevantErrorMessage prioriza causa raiz em vez de logs de encerramento do Playwright', () => {
+  // Caso 1: Erro real com seção de logs de encerramento/cleanup do Playwright
+  const playwrightSandboxError = `
+browserType.launch: Chromium sandboxing failed! No usable sandbox!
+=========================== logs ===========================
+  - [pid=21] starting temporary directories cleanup
+  - [pid=21] finished temporary directories cleanup
+  - [pid=21] <gracefully close end>
+============================================================
+  `;
+  const extracted = extractRelevantErrorMessage(playwrightSandboxError);
+  assert.ok(
+    extracted.includes('Chromium sandboxing failed! No usable sandbox!'),
+    'Deve capturar a linha de falha do sandbox'
+  );
+  assert.ok(
+    !extracted.includes('finished temporary directories cleanup'),
+    'Não deve incluir a cauda de limpeza de diretórios temporários'
+  );
+
+  // Caso 2: Erro com Call log
+  const callLogError = `
+Error: Timeout 35000ms exceeded while waiting for selector ".aecoin-today-checked"
+Call log:
+  - waiting for selector ".aecoin-today-checked" to be visible
+  -   selector did not match any elements
+  - retrying click...
+  `;
+  const extractedCallLog = extractRelevantErrorMessage(callLogError);
+  assert.ok(extractedCallLog.includes('Timeout 35000ms exceeded'));
+  assert.ok(!extractedCallLog.includes('retrying click'));
+
+  // Caso 3: Objeto Error padrão
+  const simpleError = new Error('Falha de conexão com a página de moedas');
+  assert.strictEqual(
+    extractRelevantErrorMessage(simpleError),
+    'Falha de conexão com a página de moedas'
+  );
+
+  // Caso 4: buildMessage com falha real formata a causa raiz
+  const failureHtml = buildMessage({
+    event: 'failure',
+    error: playwrightSandboxError,
+    hostname: 'test-vm'
+  });
+  assert.ok(failureHtml.includes('Chromium sandboxing failed! No usable sandbox!'));
+  assert.ok(!failureHtml.includes('finished temporary directories cleanup'));
+});
+
+test('libs/notify.js - NOTIFY_HOST_LABEL sobrescreve o hostname aleatório de containers', () => {
+  const originalEnv = process.env.NOTIFY_HOST_LABEL;
+  try {
+    process.env.NOTIFY_HOST_LABEL = 'servidor-producao-vps';
+
+    const msg = buildMessage({ event: 'dry_run' });
+    assert.ok(
+      msg.includes('servidor-producao-vps'),
+      'Deve usar o NOTIFY_HOST_LABEL definido nas variáveis de ambiente'
+    );
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.NOTIFY_HOST_LABEL;
+    } else {
+      process.env.NOTIFY_HOST_LABEL = originalEnv;
+    }
+  }
+});
+
+test('libs/notify.js - cálculo de moedas das tarefas por diferença de saldo quando meta não possui tasksCoinsGained', () => {
+  const rawReport = {
+    type: 'unified_report',
+    checkin: {
+      coinsGainedToday: '70',
+      totalBalance: '3135',
+      streakDays: 33
+    },
+    meta: {
+      finalBalance: '3176 moedas',
+      totalDuration: '2m 45s'
+    }
+  };
+
+  const msg = buildMessage({ report: rawReport, event: 'success' });
+  assert.ok(
+    msg.includes('🪙 Ganhas hoje: +111 moedas (check-in +70 / tarefas +41)'),
+    'Deve calcular automaticamente 41 moedas de ganho das tarefas pela diferença (3176 - 3135)'
+  );
+  assert.ok(msg.includes('💰 Saldo: 3176 moedas'));
+  assert.ok(msg.includes('📅 Sequência: 33 dias'));
 });

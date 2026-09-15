@@ -138,6 +138,12 @@ const configSchema = z
       }, z.boolean())
       .default(false),
     TELEGRAM_TIMEOUT_MS: positiveInt(5000),
+    NOTIFY_HOST_LABEL: z
+      .preprocess((val) => {
+        if (val === undefined || val === null) return '';
+        return String(val).trim();
+      }, z.string())
+      .default(''),
 
     // Dead Man's Switch / Monitoramento de Heartbeat (opcional por padrão)
     HEARTBEAT_ENABLED: z

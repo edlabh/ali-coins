@@ -245,9 +245,17 @@ Você pode rodar a automação em container Docker isolado (`node:22-slim`):
 
 ```bash
 docker build -t ali-coins .
+
+# Dica: crie os arquivos de sessão no host antes de montar para persistência at-rest:
+touch session.json.enc session_meta.json session.json
+chmod 600 credentials.env session.json.enc session_meta.json session.json
+
 docker run --rm \
   -v $(pwd)/credentials.env:/app/credentials.env:ro \
+  -v $(pwd)/session.json.enc:/app/session.json.enc \
+  -v $(pwd)/session_meta.json:/app/session_meta.json \
   -v $(pwd)/session.json:/app/session.json \
+  -e NOTIFY_HOST_LABEL="meu-servidor" \
   ali-coins
 ```
 
@@ -259,9 +267,14 @@ docker run --rm \
     -v /etc/passwd:/etc/passwd:ro \
     -v /etc/group:/etc/group:ro \
     -v $(pwd)/credentials.env:/app/credentials.env:ro \
+    -v $(pwd)/session.json.enc:/app/session.json.enc \
+    -v $(pwd)/session_meta.json:/app/session_meta.json \
     -v $(pwd)/session.json:/app/session.json \
+    -e NOTIFY_HOST_LABEL="meu-servidor" \
     ali-coins
   ```
+- **Persistência At-Rest (`session.json.enc`):** Com `ENCRYPT_LOCAL_SESSION=true` (padrão v0.8+), o AliExpress salva a sessão criptografada em `session.json.enc` e os metadados em `session_meta.json`. A montagem desses arquivos garante que a sessão seja persistida entre execuções do container efêmero (`--rm`).
+- **Identificação do Host no Telegram (`NOTIFY_HOST_LABEL`):** Em containers descartáveis, o hostname padrão é o ID aleatório do container. Passe `-e NOTIFY_HOST_LABEL="meu-servidor"` ou a flag `--hostname meu-servidor` para que as notificações identifiquem corretamente o seu servidor.
 - A variável `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` garante o compartilhamento e cache dos navegadores.
 
 ---

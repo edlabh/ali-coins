@@ -84,6 +84,9 @@ TELEGRAM_SILENT=false
 
 # Timeout em milissegundos para requisição HTTP à API do Telegram (padrão: 5000)
 TELEGRAM_TIMEOUT_MS=5000
+
+# Identificação customizada do host nas mensagens (opcional, útil para Docker/VPS)
+NOTIFY_HOST_LABEL="meu-servidor-vps"
 ```
 
 Garanta que as permissões do arquivo estejam restritas ao seu usuário:
