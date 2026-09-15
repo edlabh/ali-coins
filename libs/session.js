@@ -570,6 +570,53 @@ async function rotateSessionSecret(options = {}) {
   return { success: true, user: metaData.user, backupPath };
 }
 
+/**
+ * Migra um arquivo de sessão legado em texto claro (session.json) para formato criptografado (.enc)
+ * @param {object} [options={}]
+ * @returns {Promise<{ migrated: boolean, user?: string }>}
+ */
+async function migrateLegacySession(options = {}) {
+  const { sPath, encPath, mPath } = resolveSessionPaths(options);
+  const { secret, shouldEncrypt } = getEncryptionConfig(options);
+
+  if (!shouldEncrypt || !fs.existsSync(sPath)) {
+    return { migrated: false };
+  }
+
+  let sessionData;
+  try {
+    const content = await fs.promises.readFile(sPath, 'utf-8');
+    sessionData = JSON.parse(content);
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Falha ao analisar JSON da sessão legada.');
+    return { migrated: false };
+  }
+
+  const encrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
+  await safeWriteFile(encPath, encrypted, 'utf-8');
+  safeChmod600(encPath);
+
+  // Remover o arquivo em texto claro após migração segura
+  await fs.promises.unlink(sPath).catch(() => {});
+
+  let metaData = { user: 'legado' };
+  if (fs.existsSync(mPath)) {
+    try {
+      metaData = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
+    } catch {}
+  }
+  metaData.encrypted = true;
+  metaData.migratedAt = new Date().toISOString();
+  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
+  safeChmod600(mPath);
+
+  logger.info(
+    { user: metaData.user },
+    'Sessão legada migrada com sucesso para formato criptografado at-rest.'
+  );
+  return { migrated: true, user: metaData.user };
+}
+
 module.exports = {
   loadSessionFiles,
   clearSession,
@@ -580,5 +627,6 @@ module.exports = {
   isImportedSession,
   pruneSessionBackups,
   rotateSessionSecret,
-  updateSessionStreak
+  updateSessionStreak,
+  migrateLegacySession
 };

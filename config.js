@@ -206,10 +206,11 @@ class ConfigValidationError extends Error {
  */
 function createCliProgram() {
   const program = new Command();
+  const pkg = require('./package.json');
   program
     .name('ali-coins')
     .description('AliExpress Coin Collector & Task Runner com Playwright')
-    .version('0.8.0')
+    .version(pkg.version)
     .option('-d, --dry-run', 'Valida credenciais e ambiente sem abrir navegador')
     .option('-f, --force', 'Ignora e sobrescreve lockfile ativo existente')
     .option('--json', 'Formata a saída de status e relatórios em JSON')
@@ -222,6 +223,10 @@ function createCliProgram() {
     .option('--no-heartbeat', 'Desativa envio de heartbeat / dead man switch')
     .option('--show-token', 'Exibe o token criptografado gerado no terminal (export_session)')
     .option('--from-file <path>', 'Caminho do arquivo com o token de sessão (import_session)')
+    .option(
+      '--plaintext',
+      'Salva a sessão importada em texto puro sem criptografia at-rest (import_session)'
+    )
     .allowUnknownOption(true)
     .helpOption('-h, --help', 'Exibe esta ajuda com a lista de opções');
 
@@ -272,6 +277,10 @@ function isHeartbeat(argv = process.argv) {
 
 function isShowToken() {
   return process.argv.includes('--show-token');
+}
+
+function isPlaintext() {
+  return process.argv.includes('--plaintext');
 }
 
 function getFromFile() {
@@ -602,6 +611,7 @@ module.exports = {
   isNotify,
   isHeartbeat,
   isShowToken,
+  isPlaintext,
   getFromFile,
   checkAndDisplayHelp,
   createCliProgram,
