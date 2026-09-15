@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isInteractiveOrAppOnly, executeTaskAction } = require('../libs/tasks/dispatcher');
+const { openTaskDrawer, extractTasksFromDrawer } = require('../libs/tasks/verifier');
 const { executeSearchTask } = require('../libs/tasks/search');
 const { executePrizeLandTask } = require('../libs/tasks/prizeland');
 const { executeSurpriseItems } = require('../libs/tasks/surprise');
@@ -415,6 +416,194 @@ test('tasks - waitWithScroll não encerra prematuramente com tracking', async ()
     await promise;
     // Se completou normalmente sem erros, o teste passou
     assert.ok(true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - openTaskDrawer retorna true se a gaveta já estiver aberta', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const mockPage = {
+      $eval: async (sel, fn) => {
+        if (sel.includes('e2e_task')) {
+          return fn({ getBoundingClientRect: () => ({ height: 400 }) });
+        }
+        return false;
+      }
+    };
+    const opened = await openTaskDrawer({ page: mockPage });
+    assert.strictEqual(opened, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - openTaskDrawer clica no botão e aguarda renderização das tarefas', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let clicked = false;
+    const mockBtn = {
+      click: async () => {
+        clicked = true;
+      }
+    };
+    let drawerOpen = false;
+
+    const mockPage = {
+      $eval: async (sel, fn) => {
+        if (sel.includes('e2e_task')) {
+          return fn({ getBoundingClientRect: () => ({ height: drawerOpen ? 350 : 0 }) });
+        }
+        return false;
+      },
+      evaluate: async (fn, arg) => {
+        if (typeof fn === 'function') {
+          if (arg) {
+            clicked = true;
+            drawerOpen = true;
+          }
+          return false;
+        }
+        return false;
+      },
+      $: async () => mockBtn,
+      waitForSelector: async () => {
+        drawerOpen = true;
+        return true;
+      },
+      waitForTimeout: async () => {}
+    };
+
+    const opened = await openTaskDrawer(mockPage);
+    assert.strictEqual(opened, true);
+    assert.strictEqual(clicked, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - openTaskDrawer auto-cura com reload defensivo quando preso em skeleton', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let reloaded = false;
+    const mockBtn = { click: async () => {} };
+
+    const mockPage = {
+      $eval: async (sel, fn) => {
+        if (sel.includes('e2e_task')) {
+          return fn({ getBoundingClientRect: () => ({ height: reloaded ? 400 : 0 }) });
+        }
+        return false;
+      },
+      evaluate: async (fn, arg) => {
+        if (arg) return;
+        // Retorna skeleton presente até o reload ocorrer
+        return !reloaded;
+      },
+      reload: async () => {
+        reloaded = true;
+      },
+      $: async () => (reloaded ? mockBtn : null),
+      waitForSelector: async () => true,
+      waitForTimeout: async () => {}
+    };
+
+    const opened = await openTaskDrawer({ page: mockPage });
+    assert.strictEqual(reloaded, true, 'Deve ter disparado reload defensivo');
+    assert.strictEqual(opened, true, 'Deve ter aberto a gaveta após o reload');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - openTaskDrawer utiliza fallback getByRole se seletor CSS falhar', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let roleClicked = false;
+    const mockRoleBtn = {
+      click: async () => {
+        roleClicked = true;
+      }
+    };
+
+    const mockPage = {
+      $eval: async () => false,
+      evaluate: async () => false,
+      $: async () => null, // Seletor CSS retorna null
+      getByRole: (_role, _opts) => ({
+        count: async () => 1,
+        first: () => mockRoleBtn
+      }),
+      waitForSelector: async () => true,
+      waitForTimeout: async () => {}
+    };
+
+    const opened = await openTaskDrawer(mockPage);
+    assert.strictEqual(opened, true);
+    assert.strictEqual(roleClicked, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - openTaskDrawer retorna false graciosamente após 5 tentativas sem exceção', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const mockPage = {
+      $eval: async () => false,
+      evaluate: async () => false,
+      $: async () => null,
+      getByRole: () => ({
+        count: async () => 0
+      }),
+      waitForTimeout: async () => {}
+    };
+
+    const opened = await openTaskDrawer(mockPage);
+    assert.strictEqual(opened, false);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - openTaskDrawer e extractTasksFromDrawer aceitam chamada por objeto e posicional', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const mockPage = {
+      $eval: async (_sel, fn) => fn({ getBoundingClientRect: () => ({ height: 200 }) }),
+      $$eval: async (_sel, fn) =>
+        fn([
+          {
+            querySelector: (s) => {
+              if (s.includes('title')) return { innerText: 'Browse surprise items' };
+              if (s.includes('secondTitle')) return { innerText: 'Tap 3 items' };
+              if (s.includes('btn')) return { innerText: 'GO', getAttribute: () => '' };
+              if (s.includes('statusText')) return { innerText: '0/2' };
+              return null;
+            },
+            innerText: 'Browse surprise items +100 moedas'
+          }
+        ])
+    };
+
+    // 1. Chamada via objeto
+    const openObj = await openTaskDrawer({ page: mockPage });
+    const tasksObj = await extractTasksFromDrawer({ page: mockPage });
+    assert.strictEqual(openObj, true);
+    assert.strictEqual(tasksObj.length, 1);
+    assert.strictEqual(tasksObj[0].title, 'Browse surprise items');
+
+    // 2. Chamada posicional direta
+    const openPos = await openTaskDrawer(mockPage);
+    const tasksPos = await extractTasksFromDrawer(mockPage);
+    assert.strictEqual(openPos, true);
+    assert.strictEqual(tasksPos.length, 1);
+    assert.strictEqual(tasksPos[0].title, 'Browse surprise items');
+
+    // 3. Fallback defensivo com parâmetros nulos
+    assert.strictEqual(await openTaskDrawer(null), false);
+    assert.deepStrictEqual(await extractTasksFromDrawer(null), []);
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }

@@ -93,3 +93,37 @@ test('libs/ui/diagnostics.js - captureDomHashAndArtifacts gera hash SHA-256 e sc
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no Chromium', async () => {
+  const { launchBrowser } = require('../browser');
+  const realFilesSnapshot = snapshotRealFiles();
+  let browser;
+  try {
+    browser = await launchBrowser({ headless: true });
+    const page = await browser.newPage();
+    await page.setContent('<html><body><div id="root"></div></body></html>');
+
+    async function validateSelectors(obj, path = '') {
+      for (const [key, val] of Object.entries(obj)) {
+        const curPath = path ? `${path}.${key}` : key;
+        if (typeof val === 'string' && !val.startsWith('http') && !curPath.includes('Url')) {
+          await page.$(val);
+        } else if (Array.isArray(val)) {
+          for (let idx = 0; idx < val.length; idx++) {
+            await page.$(val[idx]);
+          }
+        } else if (typeof val === 'object' && val !== null) {
+          await validateSelectors(val, curPath);
+        }
+      }
+    }
+
+    await validateSelectors(SELECTORS);
+    assert.ok(true, 'Todos os seletores foram parseados com sucesso');
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

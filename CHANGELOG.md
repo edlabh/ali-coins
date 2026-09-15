@@ -41,10 +41,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   - **Reset de Tentativas por Progresso de Rodada:** Limpeza automática do contador de tentativas consecutivas da tarefa quando há avanço de rodadas, prevenindo o bloqueio prematuro por teto de `TASK_MAX_ATTEMPTS`.
   - **Sincronização Aprimorada pós-Tarefa:** Aumento do tempo de estabilização pós-retorno para 2500ms, permitindo que as animações de moedas e requisições AJAX do msite terminem de atualizar o DOM.
 - **Auto-Cura de Skeleton e Resiliência na Abertura do Painel de Tarefas:**
+  - **Correção da Sintaxe do Seletor (`openDrawerBtn`):** Eliminação de prefixos de engine inválidos (`text=...`) em listas separadas por vírgula que causavam erro de parse no Playwright e retorno silencioso de `null`. Inclusão de `#signButton` e classes dedicadas de tarefas (`.aecoin-taskButton-3V41b`, `[class*="taskButton"]`), com fallback semântico via `page.getByRole('button')`.
+  - **Paciência na Hidratação e Reload Defensivo Único:** Auto-cura com aguardo paciente de hidratação pós-carregamento e no máximo um reload defensivo único, eliminando reloads em cascata concorrentes no meio das tentativas de clique que interrompiam a montagem do SPA do AliExpress.
   - **Navegação Móvel Direta:** Acesso direto à URL móvel com parâmetros imersivos (`_immersiveMode=true&from=pc302`) em `do_tasks.js`, eliminando conflitos de redirecionamento 302 que cancelavam o carregamento de scripts do SPA.
-  - **Auto-Cura contra Skeleton Congelado:** Monitoramento ativo de `.login-pending-container` com reload defensivo automático após 5s em `openTaskDrawer`, destravando o carregamento do msite em caso de falha transitória da FaaS do AliExpress.
   - **Eliminação de Conflito em Modais:** Remoção do seletor de botão de tarefa (`.e2e_normal_task_right_btn`) de `SELECTORS.modals.closeButtons`, impedindo que `closeModals` interfira nas ações de tarefas.
-  - **Seletores Flexíveis de Abertura:** Suporte expandido para seletores de botão da gaveta (`openDrawerBtn`), cobrindo wrappers, divs clicáveis e correspondências semânticas de texto.
 
 ---
 

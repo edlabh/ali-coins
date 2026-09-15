@@ -7,14 +7,15 @@ const defaultLogger = require('../../logger');
 
 /**
  * Abre a gaveta de tarefas no msite com até 5 tentativas resilientes,
- * auto-cura de skeleton congelado (.login-pending-container) via reload
+ * auto-cura de skeleton congelado (.login-pending-container) via reload único
  * e múltiplos fallbacks de seletores de botão.
- * @param {object} params
- * @param {import('playwright').Page} params.page
- * @param {object} [params.logger]
+ * @param {object|import('playwright').Page} optionsOrPage
+ * @param {object} [maybeLogger]
  * @returns {Promise<boolean>}
  */
-async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
+async function openTaskDrawer(optionsOrPage, maybeLogger) {
+  const page = optionsOrPage && optionsOrPage.page ? optionsOrPage.page : optionsOrPage;
+  const logger = (optionsOrPage && optionsOrPage.logger) || maybeLogger || defaultLogger;
   if (!page) return false;
 
   let isDrawerOpen = false;
@@ -33,18 +34,20 @@ async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
 
   // Auto-cura: monitora se a página está presa no esqueleto de carregamento (skeleton)
   if (page.evaluate) {
-    for (let wait = 0; wait < 10; wait++) {
+    let reloaded = false;
+    for (let wait = 0; wait < 12; wait++) {
       const isSkeleton = await page
         .evaluate(() => !!document.querySelector('.login-pending-container'))
         .catch(() => false);
 
       const hasBtn = await page.$(SELECTORS.tasks.openDrawerBtn).catch(() => null);
 
-      if (!isSkeleton || hasBtn) break;
+      if (hasBtn || (!isSkeleton && wait > 0)) break;
 
-      // Se persistir no skeleton por 5 segundos, recarrega a página defensivamente
-      if (wait === 5 && typeof page.reload === 'function') {
+      // Se persistir no skeleton por 6 segundos e ainda não recarregou, recarrega a página defensivamente
+      if (wait === 6 && !reloaded && typeof page.reload === 'function') {
         logger.info('Página presa em skeleton de carregamento. Recarregando página (reload)...');
+        reloaded = true;
         await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
       }
 
@@ -58,13 +61,31 @@ async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
     await closeModals(page);
 
     logger.info(`Tentativa ${attempt}/5 de abrir o painel "Ganhe mais moedas"...`);
-    const taskBtn = await page.$(SELECTORS.tasks.openDrawerBtn).catch(() => null);
+    let taskBtn = await page.$(SELECTORS.tasks.openDrawerBtn).catch(() => null);
+
+    // Fallback semântico se query CSS direta não encontrar
+    if (!taskBtn && typeof page.getByRole === 'function') {
+      try {
+        const roleBtn = page.getByRole('button', { name: /earn more coins|ganhe mais moedas/i });
+        if ((await roleBtn.count().catch(() => 0)) > 0) {
+          taskBtn = roleBtn.first();
+        }
+      } catch {
+        // Fallback ignorado se falhar
+      }
+    }
 
     if (taskBtn) {
-      if (page.evaluate) {
+      if (typeof taskBtn.click === 'function') {
+        try {
+          await taskBtn.click({ timeout: 2000 });
+        } catch {
+          if (page.evaluate) {
+            await page.evaluate((el) => el.click(), taskBtn).catch(() => {});
+          }
+        }
+      } else if (page.evaluate) {
         await page.evaluate((el) => el.click(), taskBtn).catch(() => {});
-      } else if (taskBtn.click) {
-        await taskBtn.click().catch(() => {});
       }
 
       // Aguarda abertura da gaveta e renderização das tarefas
@@ -84,20 +105,12 @@ async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
     } else {
       // Se botão não foi encontrado, rola a página para renderizar elementos lazy
       if (page.evaluate) {
-        await page.evaluate(() => window.scrollBy(0, 200)).catch(() => {});
-      }
-      // Se na tentativa 2 o botão ainda não estiver presente, tenta um reload
-      if (attempt === 2 && typeof page.reload === 'function') {
-        logger.info('Botão do painel não encontrado na 2ª tentativa. Recarregando página...');
-        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-        if (page.waitForTimeout) {
-          await page.waitForTimeout(2000).catch(() => {});
-        }
+        await page.evaluate(() => window.scrollBy(0, 150)).catch(() => {});
       }
     }
 
     if (page.waitForTimeout) {
-      await page.waitForTimeout(1000).catch(() => {});
+      await page.waitForTimeout(1500).catch(() => {});
     }
   }
   return isDrawerOpen;
@@ -105,11 +118,11 @@ async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
 
 /**
  * Lê todas as tarefas presentes na gaveta do msite
- * @param {object} params
- * @param {import('playwright').Page} params.page
+ * @param {object|import('playwright').Page} optionsOrPage
  * @returns {Promise<Array<object>>}
  */
-async function extractTasksFromDrawer({ page } = {}) {
+async function extractTasksFromDrawer(optionsOrPage) {
+  const page = optionsOrPage && optionsOrPage.page ? optionsOrPage.page : optionsOrPage;
   if (!page || !page.$$eval) return [];
   return await page.$$eval(SELECTORS.tasks.taskItem, (els) =>
     els.map((e, idx) => {
