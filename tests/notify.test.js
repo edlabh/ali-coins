@@ -286,6 +286,22 @@ test('libs/notify.js - sendTelegram com mock de fetch em ambiente isolado', asyn
     assert.strictEqual(blockedRes.ok, false);
     assert.strictEqual(blockedRes.status, 403);
 
+    // 3.1 Falha HTTP 403 (bot can't initiate conversation) -> trata e retorna ok=false
+    global.fetch = async () => ({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden: bot can't initiate conversation with a user",
+      text: async () =>
+        '{"ok":false,"error_code":403,"description":"Forbidden: bot can\'t initiate conversation with a user"}'
+    });
+
+    const cantInitiateRes = await sendTelegram({
+      config: validConfig,
+      event: 'dry_run'
+    });
+    assert.strictEqual(cantInitiateRes.ok, false);
+    assert.strictEqual(cantInitiateRes.status, 403);
+
     // 4. Erro de rede ou timeout (AbortSignal) -> não quebra a execução do chamador
     global.fetch = async () => {
       throw new Error('The operation was aborted due to timeout');

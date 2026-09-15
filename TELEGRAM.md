@@ -42,30 +42,45 @@ O recurso é **100% opcional** (desativado por padrão) e utiliza o cliente HTTP
    Keep your token secure and store it safely, it can be used by anyone to control your bot.
    ```
 6. **Copie e guarde esse token.** Ele será o seu `TELEGRAM_BOT_TOKEN`.
+7. Guarde também o link permanente de acesso direto ao seu bot gerado pelo @BotFather (exemplo: `t.me/meu_alicoins_bot`).
 
 ---
 
-## 🆔 Passo 2: Obter o seu `CHAT_ID`
+## 💬 Passo 2: Inicializar a Conversa com o Bot (Autorização Prévia Obrigatória)
 
-Para que o bot envie mensagens para você, você precisa descobrir o ID numérico do seu chat.
+> [!IMPORTANT]
+> **Restrição de Arquitetura da Telegram Bot API:** Por políticas estritas de privacidade e combate a spam da plataforma Telegram, **bots são impossibilitados de iniciar conversas de forma ativa com usuários**. Uma aplicação não possui permissão técnica para enviar mensagens a um destinatário que nunca tenha interagido com o bot anteriormente. Caso uma tentativa de envio ocorra sem essa autorização prévia, a API do Telegram recusará a requisição com o erro `HTTP 403: Forbidden: bot can't initiate conversation with a user` ou `HTTP 400: Bad Request: chat not found`.
+
+Antes de obter seu identificador ou preencher as configurações do sistema, é indispensável autorizar o bot através do primeiro contato:
+
+1. No aplicativo do Telegram, acerte a conversa com seu bot recém-criado buscando pelo **username** definido no Passo 1 (exemplo: `@meu_alicoins_bot`) ou acessando diretamente o link permanente fornecido pelo `@BotFather` (`https://t.me/meu_alicoins_bot`).
+2. Na janela de conversa, clique no botão **Começar** / **Iniciar** (ou envie manualmente a mensagem `/start`).
+3. Com o envio desse comando inicial, o canal de comunicação estará formalmente aberto e o bot estará plenamente autorizado a despachar notificações e relatórios de execução para a sua conta.
+
+---
+
+## 🆔 Passo 3: Obter o seu `CHAT_ID`
+
+Para que o bot envie mensagens para você, é necessário obter o identificador numérico exclusivo do seu chat (`TELEGRAM_CHAT_ID`).
 
 ### Método A: Mais rápido (via @userinfobot)
 
 1. Pesquise por **`@userinfobot`** no Telegram e envie qualquer mensagem ou `/start`.
-2. O bot responderá com seus dados. Copie o valor numérico do campo **`Id`** (exemplo: `987654321` ou `-100...` para canais/grupos).
+2. O bot responderá com seus dados cadastrais. Copie o valor numérico do campo **`Id`** (exemplo: `987654321` para contas individuais ou `-100...` para canais/grupos).
 
 ### Método B: Nativo via API do Telegram
 
-1. Abra uma conversa com o seu próprio bot recém-criado (pesquise pelo username `meu_alicoins_bot`) e clique em **Iniciar** (`/start`).
-2. No seu terminal, execute o comando `curl` substituindo `SEU_TOKEN` pelo token obtido no Passo 1:
+Como você já inicializou o diálogo com o seu bot enviando `/start` no **Passo 2**, os dados da conversa já se encontram registrados nos servidores do Telegram:
+
+1. No seu terminal, execute o comando `curl` substituindo `SEU_TOKEN` pelo token obtido no Passo 1:
    ```bash
    curl -s "https://api.telegram.org/botSEU_TOKEN/getUpdates"
    ```
-3. Na resposta JSON retornada, localize a propriedade `"chat":{"id": 987654321, ...}`. Esse número é o seu `TELEGRAM_CHAT_ID`.
+2. Na resposta JSON retornada, localize a propriedade `"chat":{"id": 987654321, ...}`. Esse número é o seu `TELEGRAM_CHAT_ID`.
 
 ---
 
-## ⚙️ Passo 3: Configurar o `credentials.env`
+## ⚙️ Passo 4: Configurar o `credentials.env`
 
 Abra o arquivo `credentials.env` e preencha as variáveis correspondentes:
 
@@ -97,7 +112,7 @@ chmod 0600 credentials.env
 
 ---
 
-## 🧪 Passo 4: Como Testar a Integração
+## 🧪 Passo 5: Como Testar a Integração
 
 O projeto oferece maneiras rápidas e seguras para testar as notificações sem abrir o navegador nem realizar login real:
 
@@ -212,10 +227,10 @@ Ao agendar tarefas automatizadas no servidor via `crontab`, você pode alternar 
 - **Causa:** Você bloqueou o bot nas opções de conversa do Telegram ou excluiu a conversa.
 - **Solução:** Abra o bot no Telegram, desbloqueie-o e clique em `Reiniciar` ou envie `/start`.
 
-### 3. `HTTP 400: Bad Request: chat not found`
+### 3. `HTTP 400: Bad Request: chat not found` ou `HTTP 403: Forbidden: bot can't initiate conversation with a user`
 
-- **Causa:** O `TELEGRAM_CHAT_ID` está incorreto ou você **nunca iniciou uma conversa** com o bot. Bots não podem enviar mensagens primeiro para um usuário sem que ele dê `/start`.
-- **Solução:** Abra o bot no Telegram, clique em `Iniciar` (`/start`) e certifique-se de que o `CHAT_ID` é idêntico ao fornecido pelo `@userinfobot`.
+- **Causa:** O `TELEGRAM_CHAT_ID` informado é inválido ou a etapa de inicialização prévia da conversa não foi realizada. Por arquitetura e diretrizes de privacidade da Telegram Bot API, bots não possuem permissão para iniciar conversas de forma ativa com nenhum usuário; o destinatário deve obrigatoriamente enviar a primeira mensagem.
+- **Solução:** Acesse o diálogo com seu bot no Telegram (pesquise por seu `@username` ou acesse `https://t.me/<username_do_seu_bot>`), clique no botão **Iniciar** (`/start`) e verifique se o valor de `TELEGRAM_CHAT_ID` no `credentials.env` corresponde com exatidão ao identificador numérico obtido no Passo 3.
 
 ### 4. Timeout / Erro de Rede
 

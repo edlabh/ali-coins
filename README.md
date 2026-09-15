@@ -165,10 +165,13 @@ A automação suporta envio de status em tempo real (saldo atualizado, streak, m
    - Inicie uma conversa com o [@BotFather](https://t.me/BotFather) no Telegram.
    - Envie o comando `/newbot`, escolha um nome e um username único (ex: `MeuAliCoinsBot`).
    - Copie o **HTTP API Token** gerado (formato `123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456`).
-2. **Obter seu Chat ID:**
+2. **Inicializar a Conversa com o Bot (Autorização Prévia Obrigatória):**
+   - Acesse o diálogo com o bot recém-criado (pesquise por `@MeuAliCoinsBot` ou acesse `https://t.me/MeuAliCoinsBot`) e clique em **Iniciar** (`/start`).
+   - _Nota de conformidade:_ Por políticas de privacidade da Telegram Bot API, **bots não possuem permissão para iniciar conversas com usuários**. O envio prévio do comando `/start` é indispensável para autorizar a entrega de mensagens.
+3. **Obter seu Chat ID:**
    - Inicie uma conversa com o [@userinfobot](https://t.me/userinfobot) no Telegram.
    - O bot responderá com seu `Id` numérico (ex: `987654321`).
-3. **Configurar no `credentials.env`:**
+4. **Configurar no `credentials.env`:**
 
 ```env
 TELEGRAM_ENABLED=true

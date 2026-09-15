@@ -205,6 +205,7 @@ Adicione a linha para execução diária (exemplo: todos os dias às 04:15 da ma
 > - Se você configurou `TELEGRAM_ENABLED=true` no `credentials.env`, a notificação será enviada automaticamente em cada execução (sucesso, já coletado ou eventual erro).
 > - Para não ser acordado de madrugada, ative `TELEGRAM_SILENT=true` no `credentials.env` para que as mensagens cheguem sem alerta sonoro.
 > - Caso queira desativar notificações especificamente no cron, adicione a flag `--no-notify`.
+> - **Atenção à inicialização:** Certifique-se de ter iniciado a conversa com o seu bot enviando `/start` antes da primeira execução, pois a API do Telegram não autoriza bots a iniciarem conversas com usuários.
 > - Consulte [**`TELEGRAM.md`**](TELEGRAM.md) para o guia detalhado de criação do bot e resolução de dúvidas.
 
 ---

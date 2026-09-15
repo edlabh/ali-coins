@@ -631,6 +631,11 @@ async function sendTelegram({
         { status: response.status, statusText: response.statusText, response: respBody },
         'Falha ao enviar notificação para o Telegram.'
       );
+      if (/can't initiate conversation|chat not found/i.test(respBody)) {
+        logger.warn(
+          'Dica: Bots do Telegram não podem iniciar conversas com usuários. Abra a conversa com seu bot no aplicativo e envie /start para autorizar o recebimento.'
+        );
+      }
       return {
         ok: false,
         status: response.status,
