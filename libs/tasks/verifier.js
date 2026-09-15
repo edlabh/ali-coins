@@ -6,13 +6,17 @@ const { closeModals } = require('../ui/navigation');
 const defaultLogger = require('../../logger');
 
 /**
- * Abre a gaveta de tarefas no msite com até 5 tentativas resilientes
+ * Abre a gaveta de tarefas no msite com até 5 tentativas resilientes,
+ * auto-cura de skeleton congelado (.login-pending-container) via reload
+ * e múltiplos fallbacks de seletores de botão.
  * @param {object} params
  * @param {import('playwright').Page} params.page
  * @param {object} [params.logger]
  * @returns {Promise<boolean>}
  */
 async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
+  if (!page) return false;
+
   let isDrawerOpen = false;
   try {
     isDrawerOpen = await page
@@ -27,10 +31,27 @@ async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
 
   if (isDrawerOpen) return true;
 
-  if (page.waitForFunction) {
-    await page
-      .waitForFunction(() => !document.querySelector('.login-pending-container'), { timeout: 8000 })
-      .catch(() => {});
+  // Auto-cura: monitora se a página está presa no esqueleto de carregamento (skeleton)
+  if (page.evaluate) {
+    for (let wait = 0; wait < 10; wait++) {
+      const isSkeleton = await page
+        .evaluate(() => !!document.querySelector('.login-pending-container'))
+        .catch(() => false);
+
+      const hasBtn = await page.$(SELECTORS.tasks.openDrawerBtn).catch(() => null);
+
+      if (!isSkeleton || hasBtn) break;
+
+      // Se persistir no skeleton por 5 segundos, recarrega a página defensivamente
+      if (wait === 5 && typeof page.reload === 'function') {
+        logger.info('Página presa em skeleton de carregamento. Recarregando página (reload)...');
+        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+      }
+
+      if (page.waitForTimeout) {
+        await page.waitForTimeout(1000).catch(() => {});
+      }
+    }
   }
 
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -38,24 +59,41 @@ async function openTaskDrawer({ page, logger = defaultLogger } = {}) {
 
     logger.info(`Tentativa ${attempt}/5 de abrir o painel "Ganhe mais moedas"...`);
     const taskBtn = await page.$(SELECTORS.tasks.openDrawerBtn).catch(() => null);
+
     if (taskBtn) {
       if (page.evaluate) {
         await page.evaluate((el) => el.click(), taskBtn).catch(() => {});
       } else if (taskBtn.click) {
         await taskBtn.click().catch(() => {});
       }
-    } else if (page.evaluate) {
-      await page.evaluate(() => window.scrollBy(0, 150)).catch(() => {});
-    }
 
-    try {
-      if (page.waitForSelector) {
-        await page.waitForSelector(SELECTORS.tasks.taskItem, { timeout: 4000 });
-        isDrawerOpen = true;
-        break;
+      // Aguarda abertura da gaveta e renderização das tarefas
+      try {
+        if (page.waitForSelector) {
+          await page.waitForSelector(SELECTORS.tasks.taskItem, { timeout: 6000 });
+          isDrawerOpen = true;
+          break;
+        }
+      } catch {
+        // Fallback: verifica altura do container da gaveta
+        isDrawerOpen = await page
+          .$eval(SELECTORS.tasks.drawerContainer, (el) => el.getBoundingClientRect().height > 100)
+          .catch(() => false);
+        if (isDrawerOpen) break;
       }
-    } catch {
-      // Próxima tentativa
+    } else {
+      // Se botão não foi encontrado, rola a página para renderizar elementos lazy
+      if (page.evaluate) {
+        await page.evaluate(() => window.scrollBy(0, 200)).catch(() => {});
+      }
+      // Se na tentativa 2 o botão ainda não estiver presente, tenta um reload
+      if (attempt === 2 && typeof page.reload === 'function') {
+        logger.info('Botão do painel não encontrado na 2ª tentativa. Recarregando página...');
+        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+        if (page.waitForTimeout) {
+          await page.waitForTimeout(2000).catch(() => {});
+        }
+      }
     }
 
     if (page.waitForTimeout) {

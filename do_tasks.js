@@ -107,13 +107,9 @@ async function runTasks(options = {}) {
 
     try {
       logger.info('Acessando central de moedas...');
-      await gotoWithRetry(page, SELECTORS.desktop.mycoinUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: config.NAV_TIMEOUT_SHORT
-      }).catch(() => {});
-      await page.waitForLoadState('domcontentloaded');
-
-      await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+      const mobileCoinUrl =
+        'https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=pc302';
+      await gotoWithRetry(page, mobileCoinUrl, {
         waitUntil: 'domcontentloaded',
         timeout: config.NAV_TIMEOUT
       });
@@ -121,11 +117,19 @@ async function runTasks(options = {}) {
 
       if (page.url().includes('coin-pc-index')) {
         await page.setViewportSize({ width: 412, height: 915 });
-        await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+        await gotoWithRetry(page, mobileCoinUrl, {
           waitUntil: 'domcontentloaded',
           timeout: config.NAV_TIMEOUT_SHORT
         });
       }
+
+      // Pré-aguardo de estabilização do DOM mobile
+      await page
+        .waitForSelector(
+          'button[class*="aecoin-signButton"], [class*="signButtonWrapper"], #signButton, [class*="today-checked"], [class*="task"]',
+          { timeout: 8000 }
+        )
+        .catch(() => {});
 
       const loginInput = await page.$(SELECTORS.login.usernameInput);
       const bodyText = await page.innerText('body').catch(() => '');

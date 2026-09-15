@@ -40,6 +40,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   - **Resgate de Recompensas Intermediárias:** Suporte a botões de coleta (`Coletar`, `Collect`, `Claim`, `Receber`, `+5 moedas`), realizando o resgate imediato antes de prosseguir para a próxima rodada da tarefa.
   - **Reset de Tentativas por Progresso de Rodada:** Limpeza automática do contador de tentativas consecutivas da tarefa quando há avanço de rodadas, prevenindo o bloqueio prematuro por teto de `TASK_MAX_ATTEMPTS`.
   - **Sincronização Aprimorada pós-Tarefa:** Aumento do tempo de estabilização pós-retorno para 2500ms, permitindo que as animações de moedas e requisições AJAX do msite terminem de atualizar o DOM.
+- **Auto-Cura de Skeleton e Resiliência na Abertura do Painel de Tarefas:**
+  - **Navegação Móvel Direta:** Acesso direto à URL móvel com parâmetros imersivos (`_immersiveMode=true&from=pc302`) em `do_tasks.js`, eliminando conflitos de redirecionamento 302 que cancelavam o carregamento de scripts do SPA.
+  - **Auto-Cura contra Skeleton Congelado:** Monitoramento ativo de `.login-pending-container` com reload defensivo automático após 5s em `openTaskDrawer`, destravando o carregamento do msite em caso de falha transitória da FaaS do AliExpress.
+  - **Eliminação de Conflito em Modais:** Remoção do seletor de botão de tarefa (`.e2e_normal_task_right_btn`) de `SELECTORS.modals.closeButtons`, impedindo que `closeModals` interfira nas ações de tarefas.
+  - **Seletores Flexíveis de Abertura:** Suporte expandido para seletores de botão da gaveta (`openDrawerBtn`), cobrindo wrappers, divs clicáveis e correspondências semânticas de texto.
 
 ---
 

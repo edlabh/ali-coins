@@ -57,7 +57,7 @@ const SELECTORS = {
     taskStatus: '.statusText',
     taskRight: '.e2e_normal_task_right',
     openDrawerBtn:
-      'button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas")',
+      'button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, [class*="signButtonWrapper"] button, [class*="signButtonWrapper"] div, div[class*="aecoin-signButton"], button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas"), text="Ganhe mais moedas", text="Earn more coins"',
     productCard: '.feeds-discount-card',
     waterBtn:
       '.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"], button:has-text("regar"), button:has-text("Water")'
@@ -66,7 +66,6 @@ const SELECTORS = {
   // Modais e Popups Comuns
   modals: {
     closeButtons: [
-      '.e2e_normal_task_right_btn',
       '[class*="close"]',
       '[class*="dialog-close"]',
       '[class*="aecoin-close"]',

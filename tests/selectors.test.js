@@ -38,6 +38,10 @@ test('libs/selectors.js - integridade e estrutura dos seletores', () => {
 
     // Modais e Desktop
     assert.ok(Array.isArray(SELECTORS.modals.closeButtons));
+    assert.ok(
+      !SELECTORS.modals.closeButtons.includes('.e2e_normal_task_right_btn'),
+      'modals.closeButtons não deve conter botão de tarefas da gaveta'
+    );
     assert.ok(typeof SELECTORS.desktop.mycoinCheckin === 'string');
     assert.ok(typeof SELECTORS.desktop.mycoinUrl === 'string');
   } finally {
