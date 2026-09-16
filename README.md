@@ -208,18 +208,32 @@ Provedores de nuvem possuem IPs de Datacenter que o AliExpress identifica com ri
 1. No seu **computador pessoal** (conexão residencial onde o login não é desafiado), execute o script uma vez e exporte a sessão criptografada:
    ```bash
    export SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
+
+   # Para conta única:
    node export_session.js
+
+   # Para todas as contas configuradas (multi-conta):
+   node export_session.js --all
+
+   # Para uma conta específica:
+   node export_session.js --account=2
    ```
 2. No seu **servidor na nuvem** (dentro da pasta `ali-coins`), importe a sessão via STDIN ou arquivo:
 
    ```bash
    export SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
+
+   # Importar todas as contas de uma vez:
+   node import_session.js --all
+
+   # Ou importar individualmente via STDIN:
    node import_session.js < session_token.txt
+   node import_session.js < session_token_2.txt
    # ou via arquivo:
-   node import_session.js --from-file=session_token.txt
+   node import_session.js --from-file=session_token_2.txt
    ```
 
-   > ⚠️ **Aviso de Segurança:** Por segurança, o script recusa a passagem de tokens via linha de comando (`argv`), pois isso exporia credenciais no histórico do shell (`history`) e na listagem de processos do sistema (`ps aux`).
+   > ⚠️ **Aviso de Segurança:** Por segurança, o script recusa a passagem de tokens via linha de comando (`argv`), pois isso exporia credenciais no histórico do shell (`history`) e na listagem de processos do sistema (`ps aux`). O importador realiza **auto-roteamento inteligente**, salvando a sessão da conta correspondente sem nunca sobrescrever outras contas.
 
 3. Execute `./run_all.sh` na nuvem. A sessão permanecerá válida por semanas/meses sem exigir login.
 

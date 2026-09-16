@@ -233,6 +233,10 @@ Se o comando imprimir `✅ Chromium iniciado com sucesso no Linux!`, seu ambient
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha_do_aliexpress"
 
+   # Suporte Multi-Conta Sequencial (opcional - até 20 contas):
+   # ALI_USER_2="segunda_conta@email.com"
+   # ALI_PASSWORD_2="senha_da_segunda_conta"
+
    # Criptografia local at-rest em disco (session.json.enc) e exportação (mínimo 32 caracteres)
    # Gere com: openssl rand -base64 32
    SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"

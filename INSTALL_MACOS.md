@@ -164,6 +164,10 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
 
+   # Suporte Multi-Conta Sequencial (opcional - até 20 contas):
+   # ALI_USER_2="segunda_conta@email.com"
+   # ALI_PASSWORD_2="senha_da_segunda_conta"
+
    # Criptografia local at-rest em disco (session.json.enc) e exportação (mínimo 32 caracteres)
    # Gere no terminal com: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"

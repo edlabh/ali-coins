@@ -94,6 +94,11 @@ TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456"
 # Seu ID de usuário ou ID do grupo/canal
 TELEGRAM_CHAT_ID="987654321"
 
+# Chat IDs específicos para contas secundárias (opcional):
+# Se omitidos, todas as contas herdam e notificam automaticamente no TELEGRAM_CHAT_ID principal:
+# TELEGRAM_CHAT_ID_2="111222333"
+# TELEGRAM_CHAT_ID_3="444555666"
+
 # Enviar notificação sem som (notificação silenciosa) (padrão: false)
 TELEGRAM_SILENT=false
 
@@ -103,6 +108,9 @@ TELEGRAM_TIMEOUT_MS=5000
 # Identificação customizada do host nas mensagens (opcional, útil para Docker/VPS)
 NOTIFY_HOST_LABEL="meu-servidor-vps"
 ```
+
+> 💡 **Multi-Contas com Apenas 1 Bot / 1 Chat (Recomendado):**
+> Se você deseja receber os relatórios de todas as contas no mesmo bot e na mesma conversa, declare apenas `TELEGRAM_CHAT_ID`. O sistema aplica fallback automático para todas as contas e envia tanto os relatórios de cada conta quanto o resumo consolidado no mesmo chat!
 
 Garanta que as permissões do arquivo estejam restritas ao seu usuário:
 

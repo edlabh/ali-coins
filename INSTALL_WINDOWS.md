@@ -196,6 +196,10 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
 
+   # Suporte Multi-Conta Sequencial (opcional - até 20 contas):
+   # ALI_USER_2="segunda_conta@email.com"
+   # ALI_PASSWORD_2="senha_da_segunda_conta"
+
    # Chave de criptografia AES-256-GCM para repouso (at-rest) e exportação (mínimo 32 caracteres)
    # Como gerar usando Node.js no Windows: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
@@ -259,22 +263,39 @@ Caso seu login no AliExpress encontre Slide Captcha ou você queira transferir a
 
 ### Exportar sessão criptografada (AES-256-GCM v2):
 
-```cmd
-node export_session.js
-```
+- **Conta única ou padrão:**
+  ```cmd
+  node export_session.js
+  ```
+- **Exportar todas as contas (multi-conta):**
+  ```cmd
+  node export_session.js --all
+  ```
+- **Exportar apenas uma conta específica:**
+  ```cmd
+  node export_session.js --account=2
+  ```
 
-O token criptografado será gravado em `session_token.txt`.
+Os tokens criptografados serão gravados em `session_token.txt` (Conta 1), `session_token_2.txt` (Conta 2), etc.
 
 ### Importar sessão criptografada:
 
-- **No Prompt de Comando (CMD):**
+- **Importar todas as contas de uma vez:**
+  ```cmd
+  node import_session.js --all
+  ```
+- **Importar conta individual (Prompt de Comando - CMD):**
   ```cmd
   node import_session.js --from-file=session_token.txt
+  node import_session.js --from-file=session_token_2.txt
   ```
-- **No PowerShell:**
+- **Importar conta individual (PowerShell):**
   ```powershell
   Get-Content session_token.txt | node import_session.js
+  Get-Content session_token_2.txt | node import_session.js
   ```
+
+> O importador realiza **auto-roteamento inteligente**: ele identifica a qual conta o token pertence e salva nos arquivos isolados correspondentes (`session.json.enc` para a Conta 1, `session_<hash>.json.enc` para as demais), nunca sobrescrevendo outras contas.
 
 ---
 
