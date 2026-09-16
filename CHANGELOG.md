@@ -12,6 +12,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Scripts Batch do Windows (`setup_windows.bat`, `run_all.bat`, `run.bat`, `run_tasks.bat`):** Correção da validação da versão do Node.js (`set NODE_MAJOR` com operador `LSS`) eliminando o erro de parsing do interpretador `cmd.exe` causado por `< 22` e operadores `||` em comandos inline que interrompiam a execução logo nas primeiras linhas. Adição de `chcp 65001 >nul` para UTF-8 nativo no CMD, ancoragem de diretório com `cd /d "%~dp0"`, eliminação de `||` no teste do Chromium e mecanismo defensivo com `pause` ao detectar falha em execuções por duplo-clique no Explorador de Arquivos.
 - **Encoding UTF-8 no Windows PowerShell (`run_all.ps1`, `run.ps1`, `run_tasks.ps1`, `setup_windows.ps1`):** Configuração nativa de suporte completo a UTF-8 (`chcp 65001`, `[Console]::OutputEncoding`, `[Console]::InputEncoding` e `$OutputEncoding = [System.Text.Encoding]::UTF8`) e repasse de argumentos via splatting (`@args`), eliminando problemas de caracteres corrompidos/mojibake na exibição de logs, acentuações e emojis (`🪙`, `💰`, `⏱️`, `✅`, `🚨`).
 
+### Adicionado
+
+- **Gerador de Chave SESSION_SECRET no Windows (`generate_secret.bat`, `generate_secret.ps1`):** Utilitários dedicados para gerar chaves de 32 bytes em Base64 para `SESSION_SECRET` suportando opcionalmente OpenSSL (`openssl rand -base64 32`) com detecção automática do binário no sistema ou no Git for Windows, e solução complementar nativa via Node.js crypto (`crypto.randomBytes(32)`) e .NET `RandomNumberGenerator`, dispensando a instalação avulsa do OpenSSL no Windows.
+- **Configuração Automática de Chave no Setup do Windows:** `setup_windows.bat` e `setup_windows.ps1` passam a gerar e pré-configurar automaticamente a chave `SESSION_SECRET` em `credentials.env` recém-criado, com orientações detalhadas em `INSTALL_WINDOWS.md`.
+
 ## [0.8.2] - 2026-09-15
 
 ### Corrigido

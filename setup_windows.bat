@@ -82,6 +82,28 @@ if not exist "%~dp0credentials.env" (
 REM Aplicar restricoes de permissao de arquivo no Windows (somente usuario atual)
 icacls "%~dp0credentials.env" /inheritance:r /grant:r "%USERNAME%:(R,W)" >nul 2>nul
 
+REM Detectar openssl no PATH ou no Git for Windows para possibilitar uso opcional de "openssl rand -base64 32"
+where openssl >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    if exist "%ProgramFiles%\Git\usr\bin\openssl.exe" set "PATH=%ProgramFiles%\Git\usr\bin;%PATH%"
+    if exist "%ProgramFiles(x86)%\Git\usr\bin\openssl.exe" set "PATH=%ProgramFiles(x86)%\Git\usr\bin;%PATH%"
+    if exist "%LOCALAPPDATA%\Programs\Git\usr\bin\openssl.exe" set "PATH=%LOCALAPPDATA%\Programs\Git\usr\bin;%PATH%"
+)
+
+REM Gerar chave AES-256 de 32 bytes (Base64) se SESSION_SECRET estiver vazio
+set "GEN_KEY="
+where openssl >nul 2>nul
+if %ERRORLEVEL% EQU 0 (
+    for /f "delims=" %%k in ('openssl rand -base64 32 2^>nul') do set "GEN_KEY=%%k"
+)
+if not defined GEN_KEY (
+    for /f "delims=" %%k in ('node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" 2^>nul') do set "GEN_KEY=%%k"
+)
+
+if defined GEN_KEY (
+    node -e "const fs=require('fs');const p=require('path').join('%~dp0','credentials.env');if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');if(/SESSION_SECRET=\"\"/.test(c)){c=c.replace('SESSION_SECRET=\"\"','SESSION_SECRET=\"' + process.env.GEN_KEY + '\"');fs.writeFileSync(p,c,'utf8');console.log('[OK] Chave SESSION_SECRET de 32 caracteres configurada com sucesso.');}}"
+)
+
 REM 5. Teste rapido do Chromium
 echo.
 echo [5/5] Testando inicializacao do Chromium no Windows...
@@ -106,6 +128,10 @@ echo.
 echo Proximos passos:
 echo  1. Abra o arquivo 'credentials.env' no Bloco de Notas e preencha seus dados:
 echo     notepad credentials.env
+echo     (A chave SESSION_SECRET ja foi gerada de forma segura com 32 caracteres).
+echo     Para gerar novas chaves futuramente:
+echo       - Via OpenSSL: openssl rand -base64 32
+echo       - Sem OpenSSL (Node nativo): generate_secret.bat
 echo.
 echo  2. Execute a automacao unificada (Check-in diario + Tarefas):
 echo     run_all.bat

@@ -197,7 +197,6 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
    ALI_PASSWORD="sua_senha"
 
    # Chave de criptografia AES-256-GCM para repouso (at-rest) e exportação (mínimo 32 caracteres)
-   # Gere uma chave com: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
 
    # Criptografia local at-rest da sessão em disco (session.json.enc)
@@ -211,6 +210,26 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
    ```
 
    _Salve o arquivo (`Ctrl + S`) e feche o Bloco de Notas._
+
+#### Como gerar a chave de 32 caracteres (`SESSION_SECRET`):
+
+Você pode obter sua chave criptográfica por qualquer um dos seguintes métodos:
+
+- **Opção 1 (Via OpenSSL - se instalado no sistema ou no Git for Windows):**
+  Se você já possui o OpenSSL instalado (ou Git for Windows), execute no terminal:
+  ```cmd
+  openssl rand -base64 32
+  ```
+- **Opção 2 (Solução Complementar Nativa - Sem precisar instalar OpenSSL):**
+  Como o Node.js já está instalado no seu sistema, execute:
+  ```cmd
+  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
+  Ou simplesmente execute o utilitário gerador de chaves fornecido no projeto:
+  - No Prompt de Comando (CMD): `generate_secret.bat`
+  - No PowerShell: `.\generate_secret.ps1`
+- **Opção 3 (Geração Automática pelo Instalador):**
+  Se você utilizou o instalador `setup_windows.bat` ou `setup_windows.ps1` (Método A), a chave `SESSION_SECRET` de 32 caracteres já foi gerada e configurada automaticamente no seu arquivo `credentials.env`.
 
 ---
 

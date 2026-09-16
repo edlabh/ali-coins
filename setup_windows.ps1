@@ -87,6 +87,51 @@ if (-not (Test-Path $credFile)) {
     Write-Host "Arquivo 'credentials.env' ja existente (mantido)." -ForegroundColor Cyan
 }
 
+# Detectar openssl no PATH ou no Git for Windows para possibilitar uso opcional de 'openssl rand -base64 32'
+if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+    $gitPaths = @(
+        "$env:ProgramFiles\Git\usr\bin\openssl.exe",
+        "${env:ProgramFiles(x86)}\Git\usr\bin\openssl.exe",
+        "$env:LOCALAPPDATA\Programs\Git\usr\bin\openssl.exe"
+    )
+    foreach ($p in $gitPaths) {
+        if (Test-Path $p) {
+            $gitBin = Split-Path -Parent $p
+            $env:PATH = "$gitBin;$env:PATH"
+            break
+        }
+    }
+}
+
+$genKey = $null
+if (Get-Command openssl -ErrorAction SilentlyContinue) {
+    try {
+        $genKey = (& openssl rand -base64 32 2>$null).Trim()
+    } catch {}
+}
+if (-not $genKey -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    try {
+        $genKey = (& node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" 2>$null).Trim()
+    } catch {}
+}
+if (-not $genKey) {
+    try {
+        $bytes = New-Object byte[] 32
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $rng.GetBytes($bytes)
+        $genKey = [Convert]::ToBase64String($bytes)
+    } catch {}
+}
+
+if ($genKey -and (Test-Path $credFile)) {
+    $content = Get-Content -Path $credFile -Raw
+    if ($content -match 'SESSION_SECRET=""') {
+        $content = $content -replace 'SESSION_SECRET=""', "SESSION_SECRET=`"$genKey`""
+        [System.IO.File]::WriteAllText($credFile, $content, [System.Text.Encoding]::UTF8)
+        Write-Host "[OK] Chave SESSION_SECRET de 32 caracteres configurada com sucesso." -ForegroundColor Green
+    }
+}
+
 # 5. Teste rapido do Chromium
 Write-Host ""
 Write-Host "[5/5] Testando inicializacao do Chromium no Windows..." -ForegroundColor Yellow
@@ -107,8 +152,12 @@ Write-Host "          INSTALACAO CONCLUIDA COM SUCESSO!                         
 Write-Host "======================================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Proximos passos:"
-Write-Host " 1. Abra o arquivo 'credentials.env' e preencha seus dados:"
+Write-Host " 1. Abra o arquivo 'credentials.env' e preencha seus dados de login:"
 Write-Host "    notepad credentials.env"
+Write-Host "    (A chave SESSION_SECRET ja foi gerada de forma segura com 32 caracteres)."
+Write-Host "    Para gerar novas chaves futuramente:"
+Write-Host "      - Via OpenSSL: openssl rand -base64 32"
+Write-Host "      - Sem OpenSSL (Node nativo): .\generate_secret.ps1"
 Write-Host ""
 Write-Host " 2. Execute a automacao unificada (Check-in diario + Tarefas):"
 Write-Host "    .\run_all.ps1   (ou run_all.bat)"

@@ -96,3 +96,73 @@ test('Windows Scripts - run_*.ps1 arguments splatting and exit code propagation'
     );
   }
 });
+
+test('Windows Scripts - generate_secret scripts (OpenSSL and native Node.js fallback)', () => {
+  const batContent = fs.readFileSync(path.join(__dirname, '..', 'generate_secret.bat'), 'utf8');
+  const psContent = fs.readFileSync(path.join(__dirname, '..', 'generate_secret.ps1'), 'utf8');
+
+  // generate_secret.bat
+  assert.ok(
+    batContent.includes('chcp 65001 >nul'),
+    'generate_secret.bat deve configurar chcp 65001'
+  );
+  assert.ok(
+    batContent.includes('openssl rand -base64 32'),
+    'generate_secret.bat deve suportar openssl rand -base64 32'
+  );
+  assert.ok(
+    batContent.includes('crypto').toString() && batContent.includes('randomBytes(32)'),
+    'generate_secret.bat deve ter fallback nativo Node.js crypto'
+  );
+  assert.ok(batContent.includes('cd /d "%~dp0"'), 'generate_secret.bat deve ancorar o diretório');
+
+  // generate_secret.ps1
+  assert.ok(psContent.includes('chcp 65001'), 'generate_secret.ps1 deve configurar chcp 65001');
+  assert.ok(
+    psContent.includes('openssl rand -base64 32'),
+    'generate_secret.ps1 deve suportar openssl rand -base64 32'
+  );
+  assert.ok(
+    psContent.includes('randomBytes(32)'),
+    'generate_secret.ps1 deve ter fallback nativo Node.js crypto'
+  );
+  assert.ok(
+    psContent.includes('RandomNumberGenerator'),
+    'generate_secret.ps1 deve ter fallback nativo .NET'
+  );
+
+  // Validação da chave gerada pelo método nativo complementar (Node.js crypto)
+  const crypto = require('crypto');
+  const generated = crypto.randomBytes(32).toString('base64');
+  assert.strictEqual(
+    Buffer.from(generated, 'base64').length,
+    32,
+    'Chave deve ter exatamente 32 bytes binários'
+  );
+  assert.ok(generated.length >= 43, 'Representação base64 deve ter no mínimo 43 caracteres');
+});
+
+test('Windows Scripts - setup installers key generation integration', () => {
+  const batSetup = fs.readFileSync(path.join(__dirname, '..', 'setup_windows.bat'), 'utf8');
+  const psSetup = fs.readFileSync(path.join(__dirname, '..', 'setup_windows.ps1'), 'utf8');
+
+  // setup_windows.bat
+  assert.ok(
+    batSetup.includes('openssl rand -base64 32'),
+    'setup_windows.bat deve suportar openssl rand -base64 32'
+  );
+  assert.ok(
+    batSetup.includes('randomBytes(32)'),
+    'setup_windows.bat deve ter fallback nativo Node.js crypto'
+  );
+
+  // setup_windows.ps1
+  assert.ok(
+    psSetup.includes('openssl rand -base64 32'),
+    'setup_windows.ps1 deve suportar openssl rand -base64 32'
+  );
+  assert.ok(
+    psSetup.includes('randomBytes(32)'),
+    'setup_windows.ps1 deve ter fallback nativo Node.js crypto'
+  );
+});
