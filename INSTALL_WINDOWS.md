@@ -197,6 +197,7 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
    ALI_PASSWORD="sua_senha"
 
    # Chave de criptografia AES-256-GCM para repouso (at-rest) e exportação (mínimo 32 caracteres)
+   # Como gerar usando Node.js no Windows: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
 
    # Criptografia local at-rest da sessão em disco (session.json.enc)
@@ -215,20 +216,22 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
 
 Você pode obter sua chave criptográfica por qualquer um dos seguintes métodos:
 
-- **Opção 1 (Via OpenSSL - se instalado no sistema ou no Git for Windows):**
-  Se você já possui o OpenSSL instalado (ou Git for Windows), execute no terminal:
-  ```cmd
-  openssl rand -base64 32
-  ```
-- **Opção 2 (Solução Complementar Nativa - Sem precisar instalar OpenSSL):**
-  Como o Node.js já está instalado no seu sistema, execute:
+- **Opção 1 (Recomendada no Windows - Via Node.js nativo, sem OpenSSL):**
+  Como o Node.js já está instalado no seu sistema, execute diretamente no CMD ou PowerShell:
   ```cmd
   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   ```
-  Ou simplesmente execute o utilitário gerador de chaves fornecido no projeto:
+  Isso gerará instantaneamente uma chave aleatória criptograficamente segura de 32 bytes em Base64 (44 caracteres) pronta para colar no `credentials.env`.
+- **Opção 2 (Via Script de 1 Clique):**
+  Execute o utilitário gerador de chaves incluído na raiz do projeto:
   - No Prompt de Comando (CMD): `generate_secret.bat`
   - No PowerShell: `.\generate_secret.ps1`
-- **Opção 3 (Geração Automática pelo Instalador):**
+- **Opção 3 (Via OpenSSL - se instalado no sistema ou no Git for Windows):**
+  Se você já possui o OpenSSL instalado no sistema ou o Git for Windows, execute no terminal:
+  ```cmd
+  openssl rand -base64 32
+  ```
+- **Opção 4 (Geração Automática pelo Instalador):**
   Se você utilizou o instalador `setup_windows.bat` ou `setup_windows.ps1` (Método A), a chave `SESSION_SECRET` de 32 caracteres já foi gerada e configurada automaticamente no seu arquivo `credentials.env`.
 
 ---

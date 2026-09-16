@@ -98,7 +98,8 @@ ALI_PASSWORD="sua_senha"
 # NOTIFY_WEBHOOK_URL="https://discord.com/api/webhooks/..."
 
 # Chave para criptografia de exportação de sessão (mínimo 32 caracteres)
-# Gere no terminal com: openssl rand -base64 32
+# No Windows usando Node.js: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# No Linux/macOS: openssl rand -base64 32
 SESSION_SECRET="sua_chave_secreta_com_pelo_menos_32_caracteres"
 
 # Bloqueio de mídia (imagens, vídeos, fontes) para acelerar execução (padrão: false)
