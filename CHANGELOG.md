@@ -5,7 +5,7 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-## [0.8.3] - 2026-09-16
+## [0.8.3] - 2026-09-16 (atualizada em 2026-09-16)
 
 ### Corrigido
 
@@ -14,8 +14,13 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Adicionado
 
+- **Retenção Automática de Diagnósticos em `scratch/`:** Expansão do mecanismo `pruneSessionBackups` (`libs/session.js`) para expirar artefatos de diagnóstico em `scratch/` (`*-trace-*.zip`, `*.png`, `dom-*.hash.txt`, `mobile_body.html`, `*.jpeg`) compartilhando a política de `SESSION_BACKUP_RETENTION_DAYS` ou `DIAGNOSTICS_RETENTION_DAYS` (padrão de 7 dias) e suporte integral a `--dry-run`. Proteção estrita garantida: arquivos essenciais de sessão e agendamento (`session.json`, `session.json.enc`, `session_meta.json`, `session_token.txt`, `cron.log`, `credentials.env`) permanecem 100% protegidos contra remoção acidental.
 - **Gerador de Chave SESSION_SECRET no Windows (`generate_secret.bat`, `generate_secret.ps1`):** Utilitários dedicados para gerar chaves de 32 bytes em Base64 para `SESSION_SECRET` suportando opcionalmente OpenSSL (`openssl rand -base64 32`) com detecção automática do binário no sistema ou no Git for Windows, e solução complementar nativa via Node.js crypto (`crypto.randomBytes(32)`) e .NET `RandomNumberGenerator`, dispensando a instalação avulsa do OpenSSL no Windows.
 - **Configuração Automática de Chave no Setup do Windows:** `setup_windows.bat` e `setup_windows.ps1` passam a gerar e pré-configurar automaticamente a chave `SESSION_SECRET` em `credentials.env` recém-criado, com orientações detalhadas em `INSTALL_WINDOWS.md`.
+
+### Alterado
+
+- **Manutenção de Dependências:** Atualização de `prettier` de `3.9.6` para `^3.9.7` em `devDependencies`.
 
 ## [0.8.2] - 2026-09-15
 

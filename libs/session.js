@@ -387,17 +387,65 @@ async function updateSessionStreak(streakDays, options = {}) {
 }
 
 /**
- * Remove backups antigos em scratch/session.bak-* com base na política de retenção
+ * Determina se um arquivo em scratch/ é elegível para expiração/remoção por antiguidade.
+ * NUNCA remove sessões ativas (session.json*), metadados de sessão ou cron.log.
+ * @param {string} file Nome do arquivo (basename)
+ * @returns {boolean}
+ */
+function isPrunableArtifact(file) {
+  // 1. Arquivos críticos estritamente protegidos
+  if (
+    file === 'session.json' ||
+    file === 'session.json.enc' ||
+    file.startsWith('session.json') ||
+    file === 'session_meta.json' ||
+    file.startsWith('session_meta') ||
+    file === 'session_token.txt' ||
+    file === 'cron.log' ||
+    file.startsWith('cron.log') ||
+    file.startsWith('credentials.env') ||
+    file === '.gitkeep'
+  ) {
+    return false;
+  }
+
+  // 2. Backups versionados de sessão (session.bak-*)
+  if (file.startsWith('session.bak-') && (file.endsWith('.json.enc') || file.endsWith('.json'))) {
+    return true;
+  }
+
+  // 3. Playwright Traces de falhas (*-trace-*.zip)
+  if (file.endsWith('.zip') && file.includes('-trace-')) {
+    return true;
+  }
+
+  // 4. Screenshots e imagens de diagnóstico (*.png, *.jpeg, *.jpg)
+  if (file.endsWith('.png') || file.endsWith('.jpeg') || file.endsWith('.jpg')) {
+    return true;
+  }
+
+  // 5. Dumps de hash normalizado de falhas e artefatos HTML
+  if ((file.startsWith('dom-') && file.endsWith('.hash.txt')) || file === 'mobile_body.html') {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Remove backups e artefatos de diagnóstico antigos em scratch/ com base na política de retenção
  * @param {object} [options={}]
- * @param {number} [options.retentionDays=7] Número de dias de retenção (default: 7 ou SESSION_BACKUP_RETENTION_DAYS)
+ * @param {number} [options.retentionDays=7] Número de dias de retenção (default: 7, ou DIAGNOSTICS_RETENTION_DAYS / SESSION_BACKUP_RETENTION_DAYS)
  * @param {boolean} [options.dryRun=false] Se true, não remove fisicamente os arquivos
- * @param {string} [options.scratchDir] Diretório de backups
+ * @param {string} [options.scratchDir] Diretório de backups / diagnósticos
  * @returns {Promise<Array<string>>} Lista de caminhos de arquivos removidos (ou que seriam)
  */
 async function pruneSessionBackups(options = {}) {
   const { scratchDir: defaultScratchDir } = resolveSessionPaths(options);
   const targetScratchDir = options.scratchDir || defaultScratchDir;
-  const envDays = Number(process.env.SESSION_BACKUP_RETENTION_DAYS);
+  const envDays = Number(
+    process.env.DIAGNOSTICS_RETENTION_DAYS || process.env.SESSION_BACKUP_RETENTION_DAYS
+  );
   const retentionDays =
     typeof options.retentionDays === 'number'
       ? options.retentionDays
@@ -417,10 +465,7 @@ async function pruneSessionBackups(options = {}) {
     const maxAgeMs = retentionDays * 24 * 60 * 60 * 1000;
 
     for (const file of files) {
-      if (
-        file.startsWith('session.bak-') &&
-        (file.endsWith('.json.enc') || file.endsWith('.json'))
-      ) {
+      if (isPrunableArtifact(file)) {
         const fullPath = path.join(targetScratchDir, file);
         try {
           const stat = await fs.promises.stat(fullPath);
@@ -429,14 +474,14 @@ async function pruneSessionBackups(options = {}) {
             if (dryRun) {
               logger.info(
                 { file: fullPath, ageDays: (ageMs / (1000 * 60 * 60 * 24)).toFixed(1) },
-                '[DRY-RUN] Backup antigo de sessão seria removido.'
+                '[DRY-RUN] Artefato antigo em scratch/ seria removido pela política de retenção.'
               );
               pruned.push(fullPath);
             } else {
               await fs.promises.unlink(fullPath);
               logger.info(
                 { file: fullPath },
-                'Backup antigo de sessão removido pela política de retenção.'
+                'Artefato antigo em scratch/ removido pela política de retenção.'
               );
               pruned.push(fullPath);
             }
@@ -447,7 +492,10 @@ async function pruneSessionBackups(options = {}) {
       }
     }
   } catch (err) {
-    logger.debug({ err: err.message }, 'Falha ao inspecionar diretório para limpeza de backups.');
+    logger.debug(
+      { err: err.message },
+      'Falha ao inspecionar diretório para limpeza de backups e diagnósticos.'
+    );
   }
 
   return pruned;
@@ -625,6 +673,7 @@ module.exports = {
   resolveSessionPaths,
   getEncryptionConfig,
   isImportedSession,
+  isPrunableArtifact,
   pruneSessionBackups,
   rotateSessionSecret,
   updateSessionStreak,

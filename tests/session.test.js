@@ -8,6 +8,7 @@ const {
   validateAndRefresh,
   clearSession,
   isImportedSession,
+  isPrunableArtifact,
   rotateSessionSecret,
   pruneSessionBackups,
   getEncryptionConfig
@@ -469,7 +470,126 @@ test('libs/session.js - pruneSessionBackups limpa backups antigos segundo retent
     assert.strictEqual(actualPruned.length, 2);
     assert.ok(!fs.existsSync(fileOld));
     assert.ok(fs.existsSync(fileRecent));
-    assert.ok(!fs.existsSync(fileAncient));
+    assert(!fs.existsSync(fileAncient));
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - pruneSessionBackups e isPrunableArtifact removem traces e prints antigos e protegem session.json e cron.log', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('diagnostics-prune-test-');
+
+  try {
+    // 1. Testar isPrunableArtifact
+    assert.strictEqual(
+      isPrunableArtifact('session.json'),
+      false,
+      'session.json deve ser protegido'
+    );
+    assert.strictEqual(
+      isPrunableArtifact('session.json.enc'),
+      false,
+      'session.json.enc deve ser protegido'
+    );
+    assert.strictEqual(
+      isPrunableArtifact('session_meta.json'),
+      false,
+      'session_meta.json deve ser protegido'
+    );
+    assert.strictEqual(isPrunableArtifact('cron.log'), false, 'cron.log deve ser protegido');
+    assert.strictEqual(
+      isPrunableArtifact('credentials.env'),
+      false,
+      'credentials.env deve ser protegido'
+    );
+
+    assert.strictEqual(isPrunableArtifact('tasks-failed-trace-1789424968716.zip'), true);
+    assert.strictEqual(isPrunableArtifact('tasks_drawer_failed.png'), true);
+    assert.strictEqual(isPrunableArtifact('failure-123.png'), true);
+    assert.strictEqual(isPrunableArtifact('dom-2026-09-14T22-29-28-592Z.hash.txt'), true);
+    assert.strictEqual(isPrunableArtifact('mobile_body.html'), true);
+    assert.strictEqual(isPrunableArtifact('session.bak-2026-09-01.json.enc'), true);
+
+    // 2. Testar poda no diretório scratch
+    const scratchDir = path.join(tmpDir, 'scratch');
+    fs.mkdirSync(scratchDir, { recursive: true });
+
+    const now = Date.now();
+    const tenDaysAgo = new Date(now - 10 * 24 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(now - 1 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    // Artefatos elegíveis antigos
+    const traceOld = path.join(scratchDir, 'tasks-failed-trace-1789000000000.zip');
+    const pngOld = path.join(scratchDir, 'tasks_drawer_failed.png');
+    const hashOld = path.join(scratchDir, 'dom-2026-09-01T00-00-00-000Z.hash.txt');
+
+    // Artefatos elegíveis recentes
+    const traceRecent = path.join(scratchDir, 'tasks-failed-trace-1789999999999.zip');
+    const pngRecent = path.join(scratchDir, 'failure-recent.png');
+
+    // Arquivos protegidos (mesmo antigos)
+    const sessionProtected = path.join(scratchDir, 'session.json');
+    const sessionEncProtected = path.join(scratchDir, 'session.json.enc');
+    const metaProtected = path.join(scratchDir, 'session_meta.json');
+    const cronProtected = path.join(scratchDir, 'cron.log');
+
+    fs.writeFileSync(traceOld, 'zip trace content');
+    fs.writeFileSync(pngOld, 'png content');
+    fs.writeFileSync(hashOld, 'hash content');
+    fs.writeFileSync(traceRecent, 'recent trace');
+    fs.writeFileSync(pngRecent, 'recent png');
+    fs.writeFileSync(sessionProtected, '{"user":"test"}');
+    fs.writeFileSync(sessionEncProtected, 'encrypted content');
+    fs.writeFileSync(metaProtected, '{"meta":1}');
+    fs.writeFileSync(cronProtected, 'log output');
+
+    fs.utimesSync(traceOld, tenDaysAgo, tenDaysAgo);
+    fs.utimesSync(pngOld, tenDaysAgo, tenDaysAgo);
+    fs.utimesSync(hashOld, tenDaysAgo, tenDaysAgo);
+    fs.utimesSync(traceRecent, oneDayAgo, oneDayAgo);
+    fs.utimesSync(pngRecent, oneDayAgo, oneDayAgo);
+    fs.utimesSync(sessionProtected, thirtyDaysAgo, thirtyDaysAgo);
+    fs.utimesSync(sessionEncProtected, thirtyDaysAgo, thirtyDaysAgo);
+    fs.utimesSync(metaProtected, thirtyDaysAgo, thirtyDaysAgo);
+    fs.utimesSync(cronProtected, thirtyDaysAgo, thirtyDaysAgo);
+
+    // Dry-run: identifica os 3 antigos mas não apaga
+    const dryPruned = await pruneSessionBackups({
+      scratchDir,
+      retentionDays: 7,
+      dryRun: true
+    });
+    assert.strictEqual(dryPruned.length, 3);
+    assert.ok(fs.existsSync(traceOld));
+    assert.ok(fs.existsSync(pngOld));
+    assert.ok(fs.existsSync(hashOld));
+
+    // Execução real: remove os 3 antigos elegíveis
+    const actualPruned = await pruneSessionBackups({
+      scratchDir,
+      retentionDays: 7,
+      dryRun: false
+    });
+    assert.strictEqual(actualPruned.length, 3);
+    assert.ok(!fs.existsSync(traceOld), 'Trace antigo deve ser removido');
+    assert.ok(!fs.existsSync(pngOld), 'PNG antigo deve ser removido');
+    assert.ok(!fs.existsSync(hashOld), 'Hash antigo deve ser removido');
+
+    // Recentes mantidos
+    assert.ok(fs.existsSync(traceRecent), 'Trace recente deve ser mantido');
+    assert.ok(fs.existsSync(pngRecent), 'PNG recente deve ser mantido');
+
+    // Protegidos mantidos mesmo com 30 dias
+    assert.ok(fs.existsSync(sessionProtected), 'session.json protegido nunca deve ser apagado');
+    assert.ok(
+      fs.existsSync(sessionEncProtected),
+      'session.json.enc protegido nunca deve ser apagado'
+    );
+    assert.ok(fs.existsSync(metaProtected), 'session_meta.json protegido nunca deve ser apagado');
+    assert.ok(fs.existsSync(cronProtected), 'cron.log protegido nunca deve ser apagado');
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);

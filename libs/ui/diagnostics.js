@@ -80,6 +80,12 @@ async function closeContextWithDiagnostics(context, { failed = false, name = 'co
   }
 
   await context.close().catch(() => {});
+
+  // Disparar poda defensiva em background para manter scratch/ dentro da política de retenção
+  try {
+    const { pruneSessionBackups } = require('../session');
+    pruneSessionBackups({ scratchDir: outDir }).catch(() => {});
+  } catch {}
 }
 
 /**
@@ -96,6 +102,13 @@ async function saveFailureScreenshot(page, name = 'failure') {
     await page.screenshot({ path: filePath, fullPage: true });
     safeChmod600(filePath);
     logger.info({ filePath }, `Screenshot de diagnóstico salva: ${path.basename(filePath)}`);
+
+    // Disparar poda defensiva em background
+    try {
+      const { pruneSessionBackups } = require('../session');
+      pruneSessionBackups({ scratchDir: outDir }).catch(() => {});
+    } catch {}
+
     return filePath;
   } catch (err) {
     logger.debug({ err: err.message }, 'Falha ao salvar screenshot de diagnóstico.');
