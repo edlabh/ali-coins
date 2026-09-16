@@ -5,6 +5,16 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.1] - 2026-09-16
+
+### Corrigido
+
+- **Cálculo de Moedas no Check-in Já Coletado (Bug 12):** Na função `buildUnifiedReportPayload()` (`libs/report.js`), adicionada a condição `checkinResult.alreadyCollected === false` no cálculo de `checkinCoinsGained`. Evita duplicação ou contagem de moedas informativas em execuções subsequentes no mesmo dia.
+- **Proteção de Sessão Multi-Conta no Importador (Bug 13):** Em `import_session.js`, lança `ImportSessionError` explícito quando o e-mail do token não coincide com nenhuma conta configurada em `credentials.env` ou `accounts.json` em ambientes com mais de uma conta (`accounts.length > 1`), impedindo a sobrescrita acidental da Conta 1 primária.
+- **Isolamento de Streak Entre Contas (Bug 14):** Em `collect.js`, `previousStreakDays` passa a validar se `sessionStatus.previousMeta?.user === userEmail` antes de reutilizar o streak anterior, impedindo que contas novas herdem a sequência de dias de contas antigas e emitam alertas falsos de quebra de streak.
+- **Roteamento de Alertas no Telegram (Bug 15):** Em `libs/notify.js`, `resolveUser()` retorna `null` para relatórios consolidados multi-conta (`multi_account_report`) e omite a linha `👤 Conta:` em alertas de escopo global (`streak_break`, `lock_active`, `failure`, `2fa_required`).
+- **Confiabilidade da Suíte de Testes no Node.js 22:** Desativação de worker threads assíncronas do `pino.transport` durante testes (`NODE_TEST_CONTEXT` / `NODE_ENV=test`) em `logger.js`, inclusão de timeout defensivo de 15 segundos (`--test-timeout=15000`) em `package.json` e ajuste de timeout para 500ms no teste de 2FA não-interativo (`tests/non_interactive_2fa.test.js`).
+
 ## [0.9.0] - 2026-09-16
 
 ### Corrigido
