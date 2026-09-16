@@ -557,3 +557,30 @@ test('libs/notify.js - cálculo de moedas das tarefas por diferença de saldo qu
   assert.ok(msg.includes('💰 Saldo: 3176 moedas'));
   assert.ok(msg.includes('📅 Sequência: 33 dias'));
 });
+
+test('libs/notify.js - Bug 12: Telegram report exibe check-in +0 quando alreadyCollected é true', () => {
+  const report = {
+    type: 'unified_report',
+    user: 'test@example.com',
+    checkin: {
+      coinsGainedToday: '70',
+      totalBalance: '3135',
+      streakDays: 33,
+      alreadyCollected: true
+    },
+    tasks: {
+      coinsGained: 5,
+      finalCoins: '3140 moedas'
+    },
+    meta: {
+      finalBalance: '3140 moedas',
+      checkinCoinsGained: 0,
+      tasksCoinsGained: 5,
+      totalCoinsGained: 5,
+      totalDuration: '1m 15s'
+    }
+  };
+
+  const msg = buildMessage({ report, event: 'already_collected' });
+  assert.ok(msg.includes('🪙 Ganhas hoje: +5 moedas (check-in +0 / tarefas +5)'));
+});

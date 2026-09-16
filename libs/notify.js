@@ -381,7 +381,11 @@ function buildMessage({
     let checkinCoins = 0;
     if (report.meta?.checkinCoinsGained !== undefined) {
       checkinCoins = Number(report.meta.checkinCoinsGained) || 0;
-    } else if (report.checkin?.coinsGainedToday && report.checkin.coinsGainedToday !== 'N/D') {
+    } else if (
+      report.checkin?.coinsGainedToday &&
+      report.checkin.coinsGainedToday !== 'N/D' &&
+      report.checkin.alreadyCollected !== true
+    ) {
       const parsed = parseInt(String(report.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
       if (!isNaN(parsed)) checkinCoins = parsed;
     }
@@ -462,7 +466,11 @@ function buildMessage({
     const userDisplay = resolveUser(report);
 
     let checkinCoins = 0;
-    if (report.coinsGainedToday && report.coinsGainedToday !== 'N/D') {
+    if (
+      report.coinsGainedToday &&
+      report.coinsGainedToday !== 'N/D' &&
+      report.alreadyCollected !== true
+    ) {
       const parsed = parseInt(String(report.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
       if (!isNaN(parsed)) checkinCoins = parsed;
     }

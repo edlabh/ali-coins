@@ -310,3 +310,56 @@ test('libs/report.js - sendWebhookNotification com formatação de moedas ganhas
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/report.js - Bug 12: buildUnifiedReportPayload zera checkinCoinsGained quando alreadyCollected é true', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const checkin = {
+      userEmail: 'user@example.com',
+      alreadyCollected: true,
+      coinsGainedToday: '70',
+      streakDays: 33,
+      totalBalance: '3135',
+      duration: '45s'
+    };
+
+    const tasks = {
+      results: [
+        { title: 'Explore sponsored items', status: 'Concluída', estimatedCoins: '+5 moedas' }
+      ],
+      initialBalance: 3135,
+      finalBalance: 3140,
+      coinsGained: 5,
+      finalCoins: '3140 moedas',
+      duration: '30s'
+    };
+
+    const meta = {
+      mainStartTime: new Date('2026-09-16T08:00:00Z'),
+      mainEndTime: new Date('2026-09-16T08:01:15Z'),
+      totalDuration: '1m 15s',
+      step1Duration: '45s',
+      step2Duration: '30s'
+    };
+
+    const payload = buildUnifiedReportPayload(checkin, tasks, meta);
+    assert.strictEqual(
+      payload.meta.checkinCoinsGained,
+      0,
+      'checkinCoinsGained deve ser 0 quando alreadyCollected === true'
+    );
+    assert.strictEqual(payload.meta.tasksCoinsGained, 5);
+    assert.strictEqual(
+      payload.meta.totalCoinsGained,
+      5,
+      'totalCoinsGained deve somar apenas tarefas quando check-in já foi coletado'
+    );
+
+    // Validação de contrato Zod
+    const validated = unifiedReportSchema.parse(payload);
+    assert.strictEqual(validated.meta.checkinCoinsGained, 0);
+    assert.strictEqual(validated.meta.totalCoinsGained, 5);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

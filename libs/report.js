@@ -159,7 +159,11 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
         : 'N/D';
 
   let checkinCoinsGained = 0;
-  if (checkinResult?.coinsGainedToday && checkinResult.coinsGainedToday !== 'N/D') {
+  if (
+    checkinResult?.coinsGainedToday &&
+    checkinResult.coinsGainedToday !== 'N/D' &&
+    checkinResult.alreadyCollected === false
+  ) {
     const parsed = parseInt(String(checkinResult.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
     if (!isNaN(parsed)) checkinCoinsGained = parsed;
   }
