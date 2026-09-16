@@ -1,5 +1,6 @@
 @echo off
 setlocal
+chcp 65001 >nul
 cd /d "%~dp0"
 
 echo ======================================================================
@@ -25,8 +26,9 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM Validar que a versao do Node.js e maior ou igual a 22
-node -e "const v = parseInt(process.versions.node.split('.')[0], 10); if (isNaN(v) || v < 22) process.exit(1);" >nul 2>nul
-if %ERRORLEVEL% NEQ 0 (
+set NODE_MAJOR=0
+for /f "delims=" %%v in ('node -e "console.log(process.versions.node.split('.')[0])" 2^>nul') do set NODE_MAJOR=%%v
+if %NODE_MAJOR% LSS 22 (
     echo.
     for /f "delims=" %%v in ('node -v 2^>nul') do set CURRENT_NODE_VER=%%v
     echo [ERRO] Sua versao do Node.js (%%CURRENT_NODE_VER%%) e inferior a versao 22 minima necessaria!
@@ -83,7 +85,7 @@ icacls "%~dp0credentials.env" /inheritance:r /grant:r "%USERNAME%:(R,W)" >nul 2>
 REM 5. Teste rapido do Chromium
 echo.
 echo [5/5] Testando inicializacao do Chromium no Windows...
-node -e "const { chromium } = require('playwright'); chromium.launch({ headless: true }).then(b => b.close()).then(() => process.exit(0)).catch(e => { console.error('[ERRO CHROMIUM]', e.message || e); process.exit(1); })"
+node -e "const { chromium } = require('playwright'); chromium.launch({ headless: true }).then(function(b) { return b.close(); }).then(function() { process.exit(0); }).catch(function(e) { console.error('[ERRO CHROMIUM]', e && e.message ? e.message : e); process.exit(1); });"
 if %ERRORLEVEL% EQU 0 (
     echo [OK] O navegador Chromium iniciou em modo headless com sucesso!
 ) else (

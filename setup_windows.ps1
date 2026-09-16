@@ -7,6 +7,13 @@
 #>
 
 $ErrorActionPreference = "Stop"
+
+# Configurar suporte UTF-8 no console e na integracao com executaveis externos
+$null = chcp 65001
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
@@ -83,7 +90,7 @@ if (-not (Test-Path $credFile)) {
 # 5. Teste rapido do Chromium
 Write-Host ""
 Write-Host "[5/5] Testando inicializacao do Chromium no Windows..." -ForegroundColor Yellow
-$testResult = & node -e "const { chromium } = require('playwright'); chromium.launch({ headless: true }).then(b => b.close()).then(() => process.exit(0)).catch(e => { console.error(e.message || e); process.exit(1); })" 2>&1
+$testResult = & node -e "const { chromium } = require('playwright'); chromium.launch({ headless: true }).then(b => b.close()).then(() => process.exit(0)).catch(e => { console.error(e && e.message ? e.message : e); process.exit(1); })" 2>&1
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "[OK] O navegador Chromium iniciou em modo headless com sucesso!" -ForegroundColor Green

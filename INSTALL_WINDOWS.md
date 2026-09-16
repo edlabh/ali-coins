@@ -325,3 +325,13 @@ Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Tri
   ```powershell
   New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
   ```
+
+### G. Caracteres Estranhos ou Emojis Quebrados nos Logs (Mojibake / Codificação)
+
+- **Causa:** Por padrão, os terminais clássicos do Windows (CMD e PowerShell 5.1) utilizam páginas de código legadas (CP850 ou CP437), que não renderizam nativamente strings UTF-8 ou emojis como `🪙`, `💰`, `⏱️`, `✅`, `🚨`.
+- **Solução:**
+  - Utilize os scripts fornecidos (`run_all.bat` ou `.\run_all.ps1`), que configuram automaticamente a página de código UTF-8 (`chcp 65001`) e os encodings de console.
+  - Caso prefira rodar comandos `node` manualmente em um terminal aberto, basta executar antes:
+    - No Prompt de Comando (CMD): `chcp 65001`
+    - No PowerShell: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 > $null`
+  - Recomendamos também o uso do **Windows Terminal** (nativo no Windows 11 ou instalável via `winget install Microsoft.WindowsTerminal`), que possui suporte moderno e renderização completa de emojis por padrão.
