@@ -173,7 +173,9 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
 
   return {
     type: 'unified_report',
-    user: checkinResult ? checkinResult.userEmail : tasksResult ? tasksResult.userEmail : undefined,
+    user:
+      meta.user ||
+      (checkinResult ? checkinResult.userEmail : tasksResult ? tasksResult.userEmail : undefined),
     checkin: checkinResult
       ? {
           alreadyCollected: checkinResult.alreadyCollected,

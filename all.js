@@ -5,7 +5,8 @@ const {
   isJson,
   checkAndDisplayHelp,
   loadAccounts,
-  syncAccountSessions
+  syncAccountSessions,
+  maskUser
 } = require('./config');
 const { formatDateTime, formatDuration, calculateAccountBackoff } = require('./time_utils');
 const { acquireLock, LockActiveError } = require('./lockfile');
@@ -212,6 +213,9 @@ async function main() {
       const totalDuration = formatDuration(mainEndTime - mainStartTime);
 
       const unifiedPayload = buildUnifiedReportPayload(checkinResult, tasksResult, {
+        user:
+          account?.maskedUser ||
+          (process.env.ALI_USER ? maskUser(process.env.ALI_USER) : undefined),
         mainStartTime,
         mainEndTime,
         totalDuration,

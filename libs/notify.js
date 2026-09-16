@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const { formatDate, formatDateTime } = require('../time_utils');
+const { maskUser } = require('../config');
 const logger = require('../logger');
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -161,6 +162,15 @@ function buildMessage({
   const now = formatDateTime(new Date());
   const safeHost = escapeHtml(hostname);
 
+  const resolveUser = (rep) => {
+    if (!rep) return process.env.ALI_USER ? maskUser(process.env.ALI_USER) : 'desconhecida';
+    const raw = rep.user || rep.userEmail || rep.account?.maskedUser || rep.account?.user;
+    if (raw) {
+      return raw.includes('***') ? raw : maskUser(raw);
+    }
+    return process.env.ALI_USER ? maskUser(process.env.ALI_USER) : 'desconhecida';
+  };
+
   if (customMessage) {
     return customMessage;
   }
@@ -191,11 +201,13 @@ function buildMessage({
   // 3. Lockfile ativo
   if (event === 'lock_active') {
     const errorDetails = error && error.message ? error.message : String(error || '');
+    const userDisplay = resolveUser(report);
     return [
       '⚠️ <b>AliExpress Moedas - Execução Bloqueada (Lock Ativo)</b>',
       '',
       'Outra instância da automação já está em execução no host. A execução atual foi finalizada para evitar sobreposição.',
       errorDetails ? `ℹ️ <i>${escapeHtml(errorDetails)}</i>` : '',
+      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
       `📅 <b>Data:</b> ${now}`,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`
     ]
@@ -212,7 +224,10 @@ function buildMessage({
       `⚠️ <b>Erro:</b> <code>${escapeHtml(errorSnippet)}</code>`
     ];
 
-    if (report && (report.user || report.userEmail)) {
+    const userDisplay = resolveUser(report);
+    if (userDisplay && userDisplay !== 'desconhecida') {
+      lines.push(`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`);
+    } else if (report && (report.user || report.userEmail)) {
       lines.push(`👤 <b>Conta:</b> <code>${escapeHtml(report.user || report.userEmail)}</code>`);
     }
 
@@ -243,29 +258,29 @@ function buildMessage({
         : report?.totalBalance
           ? `${report.totalBalance} moedas`
           : 'N/D');
-    const userMasked = report?.user || report?.userEmail;
+    const userDisplay = resolveUser(report);
 
     const lines = [
       `🚨 <b>STREAK QUEBRADO</b> — ${now}`,
       '',
       '⚠️ <b>Atenção:</b> A sequência diária de check-in foi interrompida ou resetada!',
+      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `📉 <b>Ontem:</b> ${yesterdayStreak} dias ➔ <b>Hoje:</b> ${todayStreak} dias`,
       `💰 <b>Saldo Atual:</b> ${escapeHtml(balance)}`
     ];
 
-    if (userMasked) {
-      lines.push(`👤 <b>Conta:</b> <code>${escapeHtml(userMasked)}</code>`);
-    }
-
-    lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
     return lines.join('\n');
   }
 
   // 6. Alerta de 2FA em ambiente não-interativo
   if (event === '2fa_required') {
-    const userMasked = report?.user || report?.userEmail;
+    const userDisplay = resolveUser(report);
     const lines = [
       `🔐 <b>AliExpress Moedas - Verificação 2FA Solicitada</b> — ${now}`,
+      '',
+      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       '',
       '⚠️ <b>Execução Não-Interativa (Cron / CI):</b>',
       'O AliExpress solicitou verificação 2FA (e-mail ou SMS) e a automação foi finalizada em &lt;5s para evitar travamento.',
@@ -277,12 +292,6 @@ function buildMessage({
       '4. Importe a sessão no servidor: <code>node import_session.js &lt; session_token.txt</code>'
     ];
 
-    if (userMasked) {
-      lines.push('');
-      lines.push(`👤 <b>Conta:</b> <code>${escapeHtml(userMasked)}</code>`);
-    }
-
-    lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
     return lines.join('\n');
   }
 
@@ -358,7 +367,8 @@ function buildMessage({
       );
     }
 
-    lines.push(`📅 <b>Data:</b> ${now} | 🖥️ <b>Host:</b> <code>${safeHost}</code>`);
+    lines.push(`📅 <b>Data:</b> ${now}`);
+    lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
 
     return truncateMessageIfNeeded(lines.join('\n'));
   }
@@ -366,6 +376,7 @@ function buildMessage({
   // 6. Relatório Unificado (Conta Única)
   if (report && report.type === 'unified_report') {
     const reportDate = formatDate(new Date());
+    const userDisplay = resolveUser(report);
 
     let checkinCoins = 0;
     if (report.meta?.checkinCoinsGained !== undefined) {
@@ -432,6 +443,8 @@ function buildMessage({
 
     const lines = [
       `${titleEmoji} ali-coins — ${reportDate}`,
+      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${totalCoins} moedas (check-in +${checkinCoins} / tarefas +${tasksCoins})`,
       `📅 Sequência: ${streakDays} dias`,
       `💰 Saldo: ${saldoDisplay}`,
@@ -446,6 +459,7 @@ function buildMessage({
     const isAlready = event === 'already_collected' || report.alreadyCollected;
     const titleEmoji = isAlready ? 'ℹ️' : '✅';
     const reportDate = formatDate(new Date());
+    const userDisplay = resolveUser(report);
 
     let checkinCoins = 0;
     if (report.coinsGainedToday && report.coinsGainedToday !== 'N/D') {
@@ -469,6 +483,8 @@ function buildMessage({
 
     const lines = [
       `${titleEmoji} ali-coins — ${reportDate}`,
+      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${checkinCoins} moedas (check-in +${checkinCoins} / tarefas +0)`,
       `📅 Sequência: ${streakDays} dias`,
       `💰 Saldo: ${saldoDisplay}`,
@@ -482,6 +498,7 @@ function buildMessage({
   if (report && report.type === 'tasks') {
     const titleEmoji = '✅';
     const reportDate = formatDate(new Date());
+    const userDisplay = resolveUser(report);
     const tasksCoins = typeof report.coinsGained === 'number' ? report.coinsGained : 0;
 
     let saldoDisplay = 'N/D';
@@ -499,6 +516,8 @@ function buildMessage({
 
     const lines = [
       `${titleEmoji} ali-coins — ${reportDate}`,
+      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${tasksCoins} moedas (check-in +0 / tarefas +${tasksCoins})`,
       `💰 Saldo: ${saldoDisplay}`,
       `⏱️ Duração: ${duration}`
@@ -512,6 +531,7 @@ function buildMessage({
     '🔔 <b>AliExpress Moedas - Notificação</b>',
     '',
     `Status: ${escapeHtml(event)}`,
+    `👤 <b>Conta:</b> <code>${escapeHtml(resolveUser(report))}</code>`,
     `📅 <b>Data:</b> ${now}`,
     `🖥️ <b>Host:</b> <code>${safeHost}</code>`
   ].join('\n');
