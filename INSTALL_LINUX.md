@@ -49,9 +49,9 @@ O instalador automático realiza sozinho:
 4. Download do navegador Chromium via Playwright;
 5. Instalação de todas as bibliotecas nativas de SO específicas para a sua distribuição;
 6. Configuração das permissões de execução dos scripts `.sh`;
-7. Criação do arquivo de configuração `credentials.env`.
+7. Criação do arquivo de configuração `credentials.env` com geração automática e pré-configuração da chave `SESSION_SECRET` (AES-256).
 
-Após a conclusão, basta editar suas credenciais com `nano credentials.env` e rodar `./run_all.sh`.
+Após a conclusão, basta editar suas credenciais com `nano credentials.env` (a chave criptográfica já vem pré-configurada) e rodar `./run_all.sh`.
 
 ---
 

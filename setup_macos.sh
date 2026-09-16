@@ -72,6 +72,19 @@ else
 fi
 chmod 600 "$SCRIPT_DIR"/session* "$SCRIPT_DIR"/session_token.txt 2>/dev/null || true
 
+# Gerar chave AES-256 de 32 bytes (Base64) se SESSION_SECRET estiver vazio
+GEN_KEY=""
+if command -v openssl >/dev/null 2>&1; then
+  GEN_KEY="$(openssl rand -base64 32 2>/dev/null || true)"
+fi
+if [ -z "$GEN_KEY" ] && command -v node >/dev/null 2>&1; then
+  GEN_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" 2>/dev/null || true)"
+fi
+
+if [ -n "$GEN_KEY" ] && [ -f "$SCRIPT_DIR/credentials.env" ]; then
+  GEN_KEY="$GEN_KEY" node -e "const fs=require('fs');const p=require('path').join(process.argv[1],'credentials.env');if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');if(/SESSION_SECRET=\"\"/.test(c)){c=c.replace('SESSION_SECRET=\"\"','SESSION_SECRET=\"' + process.env.GEN_KEY + '\"');fs.writeFileSync(p,c,'utf8');console.log('[OK] Chave SESSION_SECRET de 32 caracteres gerada e configurada com sucesso.');}}" "$SCRIPT_DIR"
+fi
+
 # 5. Teste de inicialização do Chromium
 echo "[5/5] Testando inicialização do Chromium no macOS..."
 if node -e "const { chromium } = require('playwright'); (async () => { const b = await chromium.launch({ headless: true }); await b.close(); })();" 2>/dev/null; then
@@ -88,6 +101,7 @@ echo ""
 echo "Próximos passos:"
 echo " 1. Edite o arquivo 'credentials.env' com seus dados de login do AliExpress:"
 echo "    nano credentials.env"
+echo "    (A chave SESSION_SECRET já foi gerada e configurada com 32 caracteres)."
 echo ""
 echo " 2. Execute a automação unificada (Check-in diário + Tarefas):"
 echo "    ./run_all.sh"

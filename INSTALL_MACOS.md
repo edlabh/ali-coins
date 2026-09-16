@@ -34,7 +34,7 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 
 ## 2. Método A: Instalação Automática (`setup_macos.sh`)
 
-O projeto inclui um script que detecta sua arquitetura (Apple Silicon ou Intel), instala o **Node.js** via Homebrew caso necessário, baixa o binário nativo do Chromium, concede permissões de execução e prepara seu arquivo de credenciais:
+O projeto inclui um script que detecta sua arquitetura (Apple Silicon ou Intel), instala o **Node.js** via Homebrew caso necessário, baixa o binário nativo do Chromium, concede permissões de execução e prepara seu arquivo de credenciais com geração automática e pré-configuração da chave `SESSION_SECRET` (AES-256):
 
 ```bash
 cd ali-coins
@@ -42,7 +42,7 @@ chmod +x setup_macos.sh
 ./setup_macos.sh
 ```
 
-Após a execução, configure seu e-mail/senha com `nano credentials.env` e inicie a coleta com `./run_all.sh`.
+Após a execução, configure seu e-mail/senha com `nano credentials.env` (a chave criptográfica já vem pré-configurada) e inicie a coleta com `./run_all.sh`.
 
 ---
 
