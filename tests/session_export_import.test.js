@@ -2,8 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { exportSession, isAllowedStorageKey } = require('../export_session');
-const { importSession, migrateLegacySession, ImportSessionError } = require('../import_session');
+const { exportSession, exportAllSessions, isAllowedStorageKey } = require('../export_session');
+const {
+  importSession,
+  importAllSessions,
+  migrateLegacySession,
+  ImportSessionError
+} = require('../import_session');
 const { loadSessionFiles } = require('../libs/session');
 const { safeWriteFile } = require('../security');
 const {
@@ -302,6 +307,196 @@ test('import_session.js - erro seguro quando SESSION_SECRET está ausente ou inv
       }
     );
   } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('export_session & import_session - auto-roteamento e isolamento de sessão multi-conta (Conta 1 e Conta 2)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('export-import-multi-');
+  const originalEnv = {
+    ALI_USER: process.env.ALI_USER,
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    ALI_USER_2: process.env.ALI_USER_2,
+    ALI_PASSWORD_2: process.env.ALI_PASSWORD_2
+  };
+
+  try {
+    process.env.ALI_USER = 'primary@multi-test.com';
+    process.env.ALI_PASSWORD = 'primary_password_123';
+    process.env.ALI_USER_2 = 'secondary@multi-test.com';
+    process.env.ALI_PASSWORD_2 = 'secondary_password_123';
+
+    const { loadAccounts } = require('../config');
+    const accounts = loadAccounts(process.env, tmpDir);
+    assert.strictEqual(accounts.length, 2);
+
+    const [acc1, acc2] = accounts;
+
+    const session1 = {
+      cookies: [{ name: 'xman_us_t', value: 'cookie_acc1', expires: 9999999999 }],
+      origins: []
+    };
+    const session2 = {
+      cookies: [{ name: 'xman_us_t', value: 'cookie_acc2', expires: 9999999999 }],
+      origins: []
+    };
+
+    await safeWriteFile(acc1.sessionPath, JSON.stringify(session1, null, 2));
+    await safeWriteFile(acc1.sessionMetaPath, JSON.stringify({ user: acc1.user }, null, 2));
+    await safeWriteFile(acc2.sessionPath, JSON.stringify(session2, null, 2));
+    await safeWriteFile(acc2.sessionMetaPath, JSON.stringify({ user: acc2.user }, null, 2));
+
+    // Exportar Conta 2 especificando account: 2
+    const exp2 = await exportSession({
+      account: 2,
+      secret: TEST_SECRET,
+      showToken: false,
+      baseDir: tmpDir
+    });
+
+    assert.strictEqual(exp2.user, 'secondary@multi-test.com');
+    const tPath2 = path.join(tmpDir, 'session_token_2.txt');
+    assert.ok(fs.existsSync(tPath2), 'Deve criar session_token_2.txt');
+
+    // Remover arquivos da Conta 2 para simular máquina remota sem a sessão da Conta 2
+    await fs.promises.unlink(acc2.sessionPath);
+    await fs.promises.unlink(acc2.sessionMetaPath);
+
+    // Importar na máquina remota sem passar sessionPath nem account (auto-roteamento via meta.user do token)
+    const imp2 = await importSession({
+      secret: TEST_SECRET,
+      fromFile: tPath2,
+      baseDir: tmpDir
+    });
+
+    assert.strictEqual(imp2.user, 'secondary@multi-test.com');
+    assert.strictEqual(imp2.accountIndex, 2);
+    assert.ok(fs.existsSync(`${acc2.sessionPath}.enc`), 'Deve criar session_<hash>.json.enc');
+    assert.ok(fs.existsSync(acc2.sessionMetaPath), 'Deve criar session_meta_<hash>.json');
+
+    // Verificar que a Conta 1 permaneceu intacta
+    assert.ok(fs.existsSync(acc1.sessionPath), 'Sessão da Conta 1 não deve ser afetada');
+    const acc1Content = JSON.parse(await fs.promises.readFile(acc1.sessionPath, 'utf-8'));
+    assert.strictEqual(acc1Content.cookies[0].value, 'cookie_acc1');
+
+    // Verificar que a sessão da Conta 2 pode ser carregada por loadSessionFiles
+    const loaded2 = await loadSessionFiles({
+      sessionPath: acc2.sessionPath,
+      sessionMetaPath: acc2.sessionMetaPath,
+      secret: TEST_SECRET
+    });
+    assert.ok(loaded2.sessionData);
+    assert.strictEqual(loaded2.sessionData.cookies[0].value, 'cookie_acc2');
+  } finally {
+    process.env.ALI_USER = originalEnv.ALI_USER;
+    process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;
+    if (originalEnv.ALI_USER_2 !== undefined) {
+      process.env.ALI_USER_2 = originalEnv.ALI_USER_2;
+    } else {
+      delete process.env.ALI_USER_2;
+    }
+    if (originalEnv.ALI_PASSWORD_2 !== undefined) {
+      process.env.ALI_PASSWORD_2 = originalEnv.ALI_PASSWORD_2;
+    } else {
+      delete process.env.ALI_PASSWORD_2;
+    }
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('export-import-all-');
+  const originalEnv = {
+    ALI_USER: process.env.ALI_USER,
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    ALI_USER_2: process.env.ALI_USER_2,
+    ALI_PASSWORD_2: process.env.ALI_PASSWORD_2
+  };
+
+  try {
+    process.env.ALI_USER = 'user1@batch-test.com';
+    process.env.ALI_PASSWORD = 'pwd1_batch';
+    process.env.ALI_USER_2 = 'user2@batch-test.com';
+    process.env.ALI_PASSWORD_2 = 'pwd2_batch';
+
+    const { loadAccounts } = require('../config');
+    const accounts = loadAccounts(process.env, tmpDir);
+    const [acc1, acc2] = accounts;
+
+    const s1 = { cookies: [{ name: 'xman_us_t', value: 'tok1' }], origins: [] };
+    const s2 = { cookies: [{ name: 'xman_us_t', value: 'tok2' }], origins: [] };
+
+    await safeWriteFile(acc1.sessionPath, JSON.stringify(s1, null, 2));
+    await safeWriteFile(acc1.sessionMetaPath, JSON.stringify({ user: acc1.user }, null, 2));
+    await safeWriteFile(acc2.sessionPath, JSON.stringify(s2, null, 2));
+    await safeWriteFile(acc2.sessionMetaPath, JSON.stringify({ user: acc2.user }, null, 2));
+
+    // Exportar todas as contas
+    const exported = await exportAllSessions({
+      baseDir: tmpDir,
+      secret: TEST_SECRET
+    });
+
+    assert.strictEqual(exported.length, 2);
+    assert.strictEqual(exported[0].index, 1);
+    assert.strictEqual(exported[0].user, 'user1@batch-test.com');
+    assert.strictEqual(exported[0].tokenFile, 'session_token.txt');
+
+    assert.strictEqual(exported[1].index, 2);
+    assert.strictEqual(exported[1].user, 'user2@batch-test.com');
+    assert.strictEqual(exported[1].tokenFile, 'session_token_2.txt');
+
+    assert.ok(fs.existsSync(path.join(tmpDir, 'session_token.txt')));
+    assert.ok(fs.existsSync(path.join(tmpDir, 'session_token_2.txt')));
+
+    // Limpar arquivos de sessão locais para simular servidor remoto limpo
+    await fs.promises.unlink(acc1.sessionPath);
+    await fs.promises.unlink(acc1.sessionMetaPath);
+    await fs.promises.unlink(acc2.sessionPath);
+    await fs.promises.unlink(acc2.sessionMetaPath);
+
+    // Importar todas as contas no servidor remoto
+    const imported = await importAllSessions({
+      baseDir: tmpDir,
+      secret: TEST_SECRET
+    });
+
+    assert.strictEqual(imported.length, 2);
+    assert.ok(fs.existsSync(`${acc1.sessionPath}.enc`));
+    assert.ok(fs.existsSync(acc1.sessionMetaPath));
+    assert.ok(fs.existsSync(`${acc2.sessionPath}.enc`));
+    assert.ok(fs.existsSync(acc2.sessionMetaPath));
+
+    const loaded1 = await loadSessionFiles({
+      sessionPath: acc1.sessionPath,
+      sessionMetaPath: acc1.sessionMetaPath,
+      secret: TEST_SECRET
+    });
+    const loaded2 = await loadSessionFiles({
+      sessionPath: acc2.sessionPath,
+      sessionMetaPath: acc2.sessionMetaPath,
+      secret: TEST_SECRET
+    });
+
+    assert.strictEqual(loaded1.sessionData.cookies[0].value, 'tok1');
+    assert.strictEqual(loaded2.sessionData.cookies[0].value, 'tok2');
+  } finally {
+    process.env.ALI_USER = originalEnv.ALI_USER;
+    process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;
+    if (originalEnv.ALI_USER_2 !== undefined) {
+      process.env.ALI_USER_2 = originalEnv.ALI_USER_2;
+    } else {
+      delete process.env.ALI_USER_2;
+    }
+    if (originalEnv.ALI_PASSWORD_2 !== undefined) {
+      process.env.ALI_PASSWORD_2 = originalEnv.ALI_PASSWORD_2;
+    } else {
+      delete process.env.ALI_PASSWORD_2;
+    }
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
   }

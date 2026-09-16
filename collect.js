@@ -1,7 +1,6 @@
 const {
   loadConfig,
   sessionPath,
-  sessionMetaPath,
   handleDryRun,
   isForce,
   isJson,
@@ -41,7 +40,7 @@ async function runCheckin(options = {}) {
   const userEmail = (account && account.user) || options.userEmail || config.ALI_USER;
   const currentSessionPath = (account && account.sessionPath) || options.sessionPath || sessionPath;
   const currentSessionMetaPath =
-    (account && account.sessionMetaPath) || options.sessionMetaPath || sessionMetaPath;
+    (account && account.sessionMetaPath) || options.sessionMetaPath || null;
   const sessionOpts = {
     sessionPath: currentSessionPath,
     sessionMetaPath: currentSessionMetaPath,

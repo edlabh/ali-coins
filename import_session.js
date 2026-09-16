@@ -134,14 +134,15 @@ async function migrateLegacySession(options = {}) {
 }
 
 /**
- * Importa a sessão criptografada (v1 ou v2), descriptografa e salva em session.json.enc (ou session.json se --plaintext) com 0o600
+ * Importa a sessão criptografada (v1 ou v2), descriptografa e salva no arquivo da conta correspondente com 0o600
  * @param {object} [options={}]
  * @param {string} [options.secret]
  * @param {string} [options.fromFile]
  * @param {string} [options.tokenString]
+ * @param {string|number} [options.account]
  * @param {boolean} [options.plaintext]
  * @param {boolean} [options.migrateLegacy]
- * @returns {Promise<{ user: string, cookiesCount: number, encrypted: boolean }>}
+ * @returns {Promise<{ user: string, cookiesCount: number, encrypted: boolean, accountIndex: number, sessionPath: string }>}
  */
 async function importSession(options = {}) {
   logger.info('===================================================================');
@@ -155,7 +156,7 @@ async function importSession(options = {}) {
     );
   }
 
-  const { sPath, encPath, mPath } = resolveSessionPaths(options);
+  const baseDir = options.baseDir || __dirname;
   const encConfig = getEncryptionConfig(options);
   const isPlaintextOptOut = Boolean(
     options.plaintext ||
@@ -205,9 +206,51 @@ async function importSession(options = {}) {
 
   const validated = validateSessionPayload(parsedPayload);
   const sessionData = validated.session;
+  const tokenUser = (validated.meta && validated.meta.user) || 'importado';
+
+  // Roteamento automático multi-conta
+  let targetSessionPath = options.sessionPath;
+  let targetSessionMetaPath = options.sessionMetaPath;
+  let matchedAccount = null;
+
+  const { loadAccounts } = require('./config');
+  const accounts = loadAccounts(process.env, baseDir);
+
+  if (options.account) {
+    matchedAccount =
+      accounts.find((a) => a.index === Number(options.account)) ||
+      accounts.find(
+        (a) => a.user && a.user.toLowerCase() === String(options.account).trim().toLowerCase()
+      );
+    if (!matchedAccount) {
+      throw new ImportSessionError(
+        `Conta "${options.account}" não encontrada nas contas configuradas.`
+      );
+    }
+    if (!targetSessionPath) {
+      targetSessionPath = matchedAccount.sessionPath;
+      targetSessionMetaPath = matchedAccount.sessionMetaPath;
+    }
+  } else if (!targetSessionPath) {
+    matchedAccount = accounts.find(
+      (a) => a.user && a.user.toLowerCase() === tokenUser.toLowerCase()
+    );
+    if (matchedAccount) {
+      targetSessionPath = matchedAccount.sessionPath;
+      targetSessionMetaPath = matchedAccount.sessionMetaPath;
+    }
+  }
+
+  const { sPath, encPath, mPath } = resolveSessionPaths({
+    ...options,
+    baseDir,
+    sessionPath: targetSessionPath,
+    sessionMetaPath: targetSessionMetaPath
+  });
+
   const metaData = {
     ...(validated.meta || {}),
-    user: (validated.meta && validated.meta.user) || 'importado',
+    user: tokenUser,
     isImported: true,
     importedAt: new Date().toISOString(),
     savedAt: new Date().toISOString(),
@@ -227,18 +270,20 @@ async function importSession(options = {}) {
     }
   }
 
+  const accountLabel = matchedAccount ? ` (Conta ${matchedAccount.index})` : '';
+
   if (shouldEncrypt) {
     const encryptedToken = encryptSession(JSON.stringify(sessionData, null, 2), secret);
     await safeWriteFile(encPath, encryptedToken, 'utf-8');
     safeChmod600(encPath);
 
-    // Se existir session.json legado em texto puro, remover somente após gravação bem-sucedida do .enc
+    // Se existir arquivo legado em texto puro, remover somente após gravação bem-sucedida do .enc
     if (fs.existsSync(sPath)) {
       await fs.promises.unlink(sPath).catch(() => {});
     }
 
     logger.info(
-      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${metaData.user}"!`
+      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${metaData.user}"${accountLabel}!`
     );
     if (metaData.exportedAt) {
       logger.info(`[SUCESSO] Data de exportação original: ${metaData.exportedAt}`);
@@ -247,20 +292,20 @@ async function importSession(options = {}) {
       logger.info(`[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`);
     }
     logger.info(
-      `[SUCESSO] Arquivo "session.json.enc" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, criptografia AES-256-GCM v2 at-rest).`
+      `[SUCESSO] Arquivo "${path.basename(encPath)}" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, criptografia AES-256-GCM v2 at-rest).`
     );
-    logger.info('[SUCESSO] Arquivo "session_meta.json" gravado com permissão 0o600.\n');
+    logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
   } else {
     await safeWriteFile(sPath, JSON.stringify(sessionData, null, 2), 'utf-8');
     safeChmod600(sPath);
 
-    // Se existir session.json.enc anterior e foi solicitado plaintext, remover .enc
+    // Se existir arquivo .enc anterior e foi solicitado plaintext, remover .enc
     if (fs.existsSync(encPath)) {
       await fs.promises.unlink(encPath).catch(() => {});
     }
 
     logger.info(
-      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${metaData.user}"!`
+      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${metaData.user}"${accountLabel}!`
     );
     if (metaData.exportedAt) {
       logger.info(`[SUCESSO] Data de exportação original: ${metaData.exportedAt}`);
@@ -269,9 +314,9 @@ async function importSession(options = {}) {
       logger.info(`[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`);
     }
     logger.info(
-      `[SUCESSO] Arquivo "session.json" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, opt-out plaintext at-rest).`
+      `[SUCESSO] Arquivo "${path.basename(sPath)}" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, opt-out plaintext at-rest).`
     );
-    logger.info('[SUCESSO] Arquivo "session_meta.json" gravado com permissão 0o600.\n');
+    logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
   }
 
   await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
@@ -283,16 +328,102 @@ async function importSession(options = {}) {
   return {
     user: metaData.user,
     cookiesCount: sessionData.cookies.length,
-    encrypted: shouldEncrypt
+    encrypted: shouldEncrypt,
+    accountIndex: matchedAccount ? matchedAccount.index : 1,
+    sessionPath: shouldEncrypt ? encPath : sPath
   };
 }
 
+/**
+ * Importa todas as contas encontradas a partir de tokens (session_token*.txt)
+ * @param {object} [options={}]
+ * @returns {Promise<Array<{ user: string, cookiesCount: number, encrypted: boolean, accountIndex: number, sessionPath: string, tokenFile: string }>>}
+ */
+async function importAllSessions(options = {}) {
+  const baseDir = options.baseDir || __dirname;
+  const { loadAccounts } = require('./config');
+  const accounts = loadAccounts(process.env, baseDir);
+  const imported = [];
+
+  logger.info('===================================================================');
+  logger.info('   IMPORTAÇÃO MULTI-CONTA DE SESSÕES ALIEXPRESS');
+  logger.info('===================================================================\n');
+
+  const tokenFiles = new Set();
+  for (const acc of accounts) {
+    const tName = acc.index === 1 ? 'session_token.txt' : `session_token_${acc.index}.txt`;
+    const tPath = path.join(baseDir, tName);
+    if (fs.existsSync(tPath)) tokenFiles.add(tPath);
+    if (acc.index === 1) {
+      const alt1 = path.join(baseDir, 'session_token_1.txt');
+      if (fs.existsSync(alt1)) tokenFiles.add(alt1);
+    }
+  }
+
+  try {
+    const entries = fs.readdirSync(baseDir);
+    for (const entry of entries) {
+      if (/^session_token.*\.txt$/i.test(entry)) {
+        tokenFiles.add(path.join(baseDir, entry));
+      }
+    }
+  } catch {}
+
+  if (tokenFiles.size === 0) {
+    throw new ImportSessionError(
+      'Nenhum arquivo de token de sessão ("session_token*.txt") encontrado para importação multi-conta.'
+    );
+  }
+
+  for (const tPath of tokenFiles) {
+    try {
+      logger.info(`Processando arquivo de token: ${path.basename(tPath)}...`);
+      const res = await importSession({
+        ...options,
+        baseDir,
+        fromFile: tPath,
+        sessionPath: undefined,
+        sessionMetaPath: undefined
+      });
+      imported.push({
+        ...res,
+        tokenFile: path.basename(tPath)
+      });
+    } catch (err) {
+      logger.error(
+        { file: path.basename(tPath), err: err.message },
+        'Falha ao importar arquivo de token.'
+      );
+    }
+  }
+
+  if (imported.length > 0) {
+    logger.info('===================================================================');
+    logger.info(`   IMPORTAÇÃO CONCLUÍDA: ${imported.length} CONTA(S) IMPORTADA(S)`);
+    logger.info('===================================================================');
+    for (const imp of imported) {
+      logger.info(
+        ` • [Conta ${imp.accountIndex}] ${imp.user} <- ${imp.tokenFile} (salvo em ${path.basename(imp.sessionPath)})`
+      );
+    }
+    logger.info('===================================================================');
+  }
+
+  return imported;
+}
+
 if (require.main === module) {
-  const { checkAndDisplayHelp } = require('./config');
+  const { checkAndDisplayHelp, isAll, getAccountArg } = require('./config');
   if (checkAndDisplayHelp()) {
     process.exit(0);
   }
-  importSession()
+
+  const allFlag = isAll();
+  const accountArg = getAccountArg();
+
+  const runPromise = allFlag ? importAllSessions() : importSession({ account: accountArg });
+
+  runPromise
     .then(() => {
       process.exit(0);
     })
@@ -304,6 +435,7 @@ if (require.main === module) {
 
 module.exports = {
   importSession,
+  importAllSessions,
   migrateLegacySession,
   ImportSessionError,
   readTokenFromInput

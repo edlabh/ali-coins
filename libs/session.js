@@ -21,16 +21,29 @@ const logger = require('../logger');
  */
 function resolveSessionPaths(options = {}) {
   const baseDir = options.baseDir;
-  let sPath =
+  const rawPath =
     options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : defaultSessionPath);
-  let mPath =
-    options.sessionMetaPath ||
-    (baseDir ? path.join(baseDir, 'session_meta.json') : defaultSessionMetaPath);
+  const encPath = rawPath.endsWith('.enc') ? rawPath : `${rawPath}.enc`;
+  const plainPath = rawPath.endsWith('.enc') ? rawPath.slice(0, -4) : rawPath;
+
+  let mPath = options.sessionMetaPath;
+  if (!mPath) {
+    if (options.sessionPath) {
+      const dir = path.dirname(plainPath);
+      const base = path.basename(plainPath);
+      if (base.startsWith('session_')) {
+        mPath = path.join(dir, base.replace(/^session_/, 'session_meta_'));
+      } else if (base === 'session.json') {
+        mPath = path.join(dir, 'session_meta.json');
+      } else {
+        mPath = path.join(dir, `${base.replace(/\.json$/, '')}_meta.json`);
+      }
+    } else {
+      mPath = baseDir ? path.join(baseDir, 'session_meta.json') : defaultSessionMetaPath;
+    }
+  }
   const targetScratchDir =
     options.scratchDir || (baseDir ? path.join(baseDir, 'scratch') : defaultScratchDir);
-
-  const encPath = sPath.endsWith('.enc') ? sPath : `${sPath}.enc`;
-  const plainPath = sPath.endsWith('.enc') ? sPath.slice(0, -4) : sPath;
 
   return { sPath: plainPath, encPath, mPath, scratchDir: targetScratchDir };
 }
@@ -165,9 +178,11 @@ async function clearSession(options = {}) {
   // Backup versionado antes de remover se houver sessão
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const baseName = path.basename(sPath, '.json');
+    const tag = baseName === 'session' ? '' : `-${baseName}`;
     if (fs.existsSync(encPath)) {
       await fs.promises.mkdir(targetScratchDir, { recursive: true });
-      const bakPath = path.join(targetScratchDir, `session.bak-${timestamp}.json.enc`);
+      const bakPath = path.join(targetScratchDir, `session.bak${tag}-${timestamp}.json.enc`);
       const data = await fs.promises.readFile(encPath, 'utf-8');
       await safeWriteFile(bakPath, data, 'utf-8');
       safeChmod600(bakPath);
@@ -176,13 +191,13 @@ async function clearSession(options = {}) {
       await fs.promises.mkdir(targetScratchDir, { recursive: true });
       const raw = await fs.promises.readFile(sPath, 'utf-8');
       if (secret && secret.length >= 32) {
-        const bakPath = path.join(targetScratchDir, `session.bak-${timestamp}.json.enc`);
+        const bakPath = path.join(targetScratchDir, `session.bak${tag}-${timestamp}.json.enc`);
         const encData = encryptSession(raw, secret);
         await safeWriteFile(bakPath, encData, 'utf-8');
         safeChmod600(bakPath);
         logger.info({ backup: bakPath }, 'Backup versionado da sessão (.enc) criado com sucesso.');
       } else {
-        const bakPath = path.join(targetScratchDir, `session.bak-${timestamp}.json`);
+        const bakPath = path.join(targetScratchDir, `session.bak${tag}-${timestamp}.json`);
         await safeWriteFile(bakPath, raw, 'utf-8');
         safeChmod600(bakPath);
         logger.info({ backup: bakPath }, 'Backup versionado da sessão (.json) criado com sucesso.');
@@ -247,7 +262,33 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
       );
     }
     const prevMeta = metaData;
-    await clearSession(options);
+    let shouldClear = true;
+    if (metaData && metaData.user && metaData.user !== userEmail) {
+      try {
+        const { loadAccounts } = require('../config');
+        const baseDir = options.baseDir || path.dirname(resolveSessionPaths(options).sPath);
+        const configuredAccounts = loadAccounts(process.env, baseDir);
+        const isKnownUser =
+          configuredAccounts.some((a) => a.user === metaData.user) ||
+          (process.env.ALI_USER && process.env.ALI_USER.trim() === metaData.user) ||
+          Object.keys(process.env).some(
+            (k) =>
+              k.startsWith('ALI_USER_') && process.env[k] && process.env[k].trim() === metaData.user
+          );
+        if (isKnownUser) {
+          shouldClear = false;
+          logger.warn(
+            { activeUser: metaData.user, expectedUser: userEmail },
+            'Sessão em cache pertence a outra conta configurada. Preservando arquivos sem exclusão.'
+          );
+        }
+      } catch {
+        // Ignora erros no loadAccounts e procede normalmente
+      }
+    }
+    if (shouldClear) {
+      await clearSession(options);
+    }
     return {
       valid: false,
       reason: validation.reason,

@@ -227,6 +227,11 @@ function createCliProgram() {
       '--plaintext',
       'Salva a sessão importada em texto puro sem criptografia at-rest (import_session)'
     )
+    .option('--all', 'Exporta ou importa todas as contas configuradas com sessão ativa')
+    .option(
+      '--account <id>',
+      'Especifica o índice (1, 2) ou e-mail da conta (export_session / import_session)'
+    )
     .allowUnknownOption(true)
     .helpOption('-h, --help', 'Exibe esta ajuda com a lista de opções');
 
@@ -289,6 +294,22 @@ function getFromFile() {
     return fromFileArg.split('=')[1].trim();
   }
   const idx = process.argv.indexOf('--from-file');
+  if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('-')) {
+    return process.argv[idx + 1].trim();
+  }
+  return null;
+}
+
+function isAll() {
+  return process.argv.includes('--all');
+}
+
+function getAccountArg() {
+  const accArg = process.argv.find((a) => a.startsWith('--account='));
+  if (accArg) {
+    return accArg.split('=')[1].trim();
+  }
+  const idx = process.argv.indexOf('--account');
   if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('-')) {
     return process.argv[idx + 1].trim();
   }
@@ -496,6 +517,62 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
 }
 
 /**
+ * Sincroniza e migra arquivos de sessão quando há reordenação de contas ou transição mono -> multi-conta
+ * @param {Array<object>} accounts
+ * @param {string} [baseDir=__dirname]
+ */
+function syncAccountSessions(accounts, baseDir = __dirname) {
+  if (!Array.isArray(accounts) || accounts.length === 0) return;
+  const legacyMetaPath = path.join(baseDir, 'session_meta.json');
+  const legacySessionPath = path.join(baseDir, 'session.json');
+  const legacySessionEncPath = path.join(baseDir, 'session.json.enc');
+
+  if (!fs.existsSync(legacyMetaPath)) return;
+
+  try {
+    const raw = fs.readFileSync(legacyMetaPath, 'utf-8');
+    const meta = JSON.parse(raw);
+    if (!meta || !meta.user) return;
+
+    // Se a sessão em session_meta.json não pertence à conta primária (accounts[0]),
+    // mas pertence a uma das contas secundárias configuradas (accounts[1..n])
+    if (accounts.length > 1 && accounts[0].user !== meta.user) {
+      const targetAcc = accounts.slice(1).find((a) => a.user === meta.user);
+      if (targetAcc) {
+        const targetEncPath = `${targetAcc.sessionPath}.enc`;
+        const targetPlainPath = targetAcc.sessionPath;
+        const targetMetaPath = targetAcc.sessionMetaPath;
+
+        const hasSecondarySession = fs.existsSync(targetEncPath) || fs.existsSync(targetPlainPath);
+        if (!hasSecondarySession) {
+          if (fs.existsSync(legacySessionEncPath)) {
+            fs.renameSync(legacySessionEncPath, targetEncPath);
+            try {
+              fs.chmodSync(targetEncPath, 0o600);
+            } catch {}
+          } else if (fs.existsSync(legacySessionPath)) {
+            fs.renameSync(legacySessionPath, targetPlainPath);
+            try {
+              fs.chmodSync(targetPlainPath, 0o600);
+            } catch {}
+          }
+          fs.renameSync(legacyMetaPath, targetMetaPath);
+          try {
+            fs.chmodSync(targetMetaPath, 0o600);
+          } catch {}
+          logger.info(
+            { user: targetAcc.maskedUser },
+            'Sessão legada vinculada a conta secundária migrada com sucesso para arquivos isolados.'
+          );
+        }
+      }
+    }
+  } catch (err) {
+    logger.debug({ err: err.message }, 'Aviso ao verificar sincronização de sessões multi-conta.');
+  }
+}
+
+/**
  * Manipula execução em modo dry-run sem chamar process.exit()
  * Retorna true se dry-run ativo, false caso contrário.
  * @returns {Promise<boolean>}
@@ -612,6 +689,8 @@ module.exports = {
   isHeartbeat,
   isShowToken,
   isPlaintext,
+  isAll,
+  getAccountArg,
   getFromFile,
   checkAndDisplayHelp,
   createCliProgram,
@@ -619,6 +698,7 @@ module.exports = {
   handleDryRun,
   maskUser,
   loadAccounts,
+  syncAccountSessions,
   credentialsEnvPath,
   sessionPath,
   sessionEncPath,

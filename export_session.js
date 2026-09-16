@@ -63,13 +63,34 @@ async function exportSession(options = {}) {
   logger.info('===================================================================');
 
   const baseDir = options.baseDir;
-  const sPath = options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
-  const mPath =
+  let sPath = options.sessionPath || (baseDir ? path.join(baseDir, 'session.json') : sessionPath);
+  let mPath =
     options.sessionMetaPath ||
     (baseDir ? path.join(baseDir, 'session_meta.json') : sessionMetaPath);
-  const tPath =
+  let tPath =
     options.sessionTokenPath ||
     (baseDir ? path.join(baseDir, 'session_token.txt') : sessionTokenPath);
+
+  if (options.account) {
+    const { loadAccounts } = require('./config');
+    const accounts = loadAccounts(process.env, baseDir || __dirname);
+    const target =
+      accounts.find((a) => a.index === Number(options.account)) ||
+      accounts.find((a) => a.user === String(options.account).trim());
+    if (!target) {
+      throw new ExportSessionError(
+        `Conta "${options.account}" não encontrada nas contas configuradas.`
+      );
+    }
+    sPath = target.sessionPath;
+    mPath = target.sessionMetaPath;
+    if (!options.sessionTokenPath) {
+      tPath =
+        target.index === 1
+          ? path.join(baseDir || __dirname, 'session_token.txt')
+          : path.join(baseDir || __dirname, `session_token_${target.index}.txt`);
+    }
+  }
 
   const secret = options.secret || process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -81,6 +102,8 @@ async function exportSession(options = {}) {
   const { loadSessionFiles } = require('./libs/session');
   const { sessionData: session, metaData: loadedMeta } = await loadSessionFiles({
     ...options,
+    sessionPath: sPath,
+    sessionMetaPath: mPath,
     secret,
     autoMigrate: false
   });
@@ -164,8 +187,82 @@ async function exportSession(options = {}) {
   return { token: encryptedBlob, fingerprint, user: meta.user };
 }
 
+/**
+ * Exporta todas as contas configuradas com sessão ativa
+ * @param {object} [options={}]
+ * @returns {Promise<Array<{ index: number, user: string, maskedUser: string, token: string, fingerprint: string, tokenFile: string }>>}
+ */
+async function exportAllSessions(options = {}) {
+  const { loadAccounts } = require('./config');
+  const baseDir = options.baseDir || __dirname;
+  const accounts = loadAccounts(process.env, baseDir);
+  const exported = [];
+
+  logger.info('===================================================================');
+  logger.info(`   EXPORTAÇÃO MULTI-CONTA DE SESSÕES ALIEXPRESS (${accounts.length} CONTAS)`);
+  logger.info('===================================================================\n');
+
+  for (const acc of accounts) {
+    const encPath = `${acc.sessionPath}.enc`;
+    const hasSession = fs.existsSync(acc.sessionPath) || fs.existsSync(encPath);
+    if (!hasSession) {
+      logger.warn(
+        `[Conta ${acc.index}/${accounts.length} - ${acc.maskedUser}] Nenhum arquivo de sessão ativo encontrado. Pulando...`
+      );
+      continue;
+    }
+
+    const tPath =
+      acc.index === 1
+        ? path.join(baseDir, 'session_token.txt')
+        : path.join(baseDir, `session_token_${acc.index}.txt`);
+
+    try {
+      const res = await exportSession({
+        ...options,
+        sessionPath: acc.sessionPath,
+        sessionMetaPath: acc.sessionMetaPath,
+        sessionTokenPath: tPath,
+        showToken: false
+      });
+      exported.push({
+        index: acc.index,
+        user: acc.user,
+        maskedUser: acc.maskedUser,
+        token: res.token,
+        fingerprint: res.fingerprint,
+        tokenFile: path.basename(tPath)
+      });
+    } catch (err) {
+      logger.error(
+        { account: acc.maskedUser, err: err.message },
+        `Falha ao exportar sessão da Conta ${acc.index}.`
+      );
+    }
+  }
+
+  if (exported.length > 0) {
+    logger.info('===================================================================');
+    logger.info(`   EXPORTAÇÃO CONCLUÍDA: ${exported.length} CONTA(S) EXPORTADA(S)`);
+    logger.info('===================================================================');
+    for (const exp of exported) {
+      logger.info(` • [Conta ${exp.index}] ${exp.maskedUser} -> ${exp.tokenFile}`);
+    }
+    logger.info('\n--- COMO IMPORTAR NO SEU SERVIDOR REMOTO ---');
+    logger.info('Opção A (Importar todas as contas no servidor remoto):');
+    logger.info('  node import_session.js --all\n');
+    logger.info('Opção B (Importar individualmente via STDIN):');
+    for (const exp of exported) {
+      logger.info(`  node import_session.js < ${exp.tokenFile}`);
+    }
+    logger.info('===================================================================');
+  }
+
+  return exported;
+}
+
 if (require.main === module) {
-  const { checkAndDisplayHelp } = require('./config');
+  const { checkAndDisplayHelp, isAll, getAccountArg, loadAccounts } = require('./config');
   if (checkAndDisplayHelp()) {
     process.exit(0);
   }
@@ -195,19 +292,48 @@ if (require.main === module) {
         process.exit(1);
       });
   } else {
-    exportSession()
-      .then(() => {
-        process.exit(0);
-      })
-      .catch((err) => {
-        logger.error({ err: err.message }, 'Falha na exportação da sessão.');
-        process.exit(1);
-      });
+    const accounts = loadAccounts(process.env, __dirname);
+    const accountArg = getAccountArg();
+    const allFlag = isAll();
+
+    if (accountArg) {
+      exportSession({ account: accountArg })
+        .then(() => {
+          process.exit(0);
+        })
+        .catch((err) => {
+          logger.error({ err: err.message }, 'Falha na exportação da sessão.');
+          process.exit(1);
+        });
+    } else if (allFlag || accounts.length > 1) {
+      exportAllSessions()
+        .then((res) => {
+          if (res.length === 0) {
+            logger.warn('Nenhuma sessão ativa encontrada para exportar.');
+            process.exit(1);
+          }
+          process.exit(0);
+        })
+        .catch((err) => {
+          logger.error({ err: err.message }, 'Falha na exportação multi-conta.');
+          process.exit(1);
+        });
+    } else {
+      exportSession()
+        .then(() => {
+          process.exit(0);
+        })
+        .catch((err) => {
+          logger.error({ err: err.message }, 'Falha na exportação da sessão.');
+          process.exit(1);
+        });
+    }
   }
 }
 
 module.exports = {
   exportSession,
+  exportAllSessions,
   ExportSessionError,
   isAllowedStorageKey,
   ALLOWED_STORAGE_KEY_PATTERNS

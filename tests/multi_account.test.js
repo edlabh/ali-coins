@@ -3,9 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { maskUser, loadAccounts } = require('../config');
+const { maskUser, loadAccounts, syncAccountSessions } = require('../config');
 const { calculateAccountBackoff } = require('../time_utils');
-const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
+const { resolveSessionPaths, validateAndRefresh, saveSession } = require('../libs/session');
+const {
+  createIsolatedTestDir,
+  cleanupIsolatedTestDir,
+  snapshotRealFiles,
+  assertRealFilesUntouched
+} = require('./test_helper');
 
 test('config.js - maskUser formata emails e identificadores com segurança', () => {
   assert.strictEqual(maskUser('usuario@example.com'), 'us***@example.com');
@@ -207,6 +213,222 @@ test('all.js - calculateAccountBackoff calcula progressão exponencial, jitter, 
       process.env.ACCOUNT_BACKOFF_BASE_MS = oldEnv;
     } else {
       delete process.env.ACCOUNT_BACKOFF_BASE_MS;
+    }
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - resolveSessionPaths deriva session_meta correspondente a partir de sessionPath', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const tmpDir = createIsolatedTestDir('ali-res-paths-');
+
+    // 1. Caminho secundário com hash deriva session_meta_<hash>.json
+    const customSession = path.join(tmpDir, 'session_abcdef12.json');
+    const res1 = resolveSessionPaths({ sessionPath: customSession });
+    assert.strictEqual(res1.sPath, customSession);
+    assert.strictEqual(res1.encPath, `${customSession}.enc`);
+    assert.strictEqual(res1.mPath, path.join(tmpDir, 'session_meta_abcdef12.json'));
+
+    // 2. Caminho secundário com extensão .enc
+    const customEnc = path.join(tmpDir, 'session_71b9e590.json.enc');
+    const res2 = resolveSessionPaths({ sessionPath: customEnc });
+    assert.strictEqual(res2.sPath, path.join(tmpDir, 'session_71b9e590.json'));
+    assert.strictEqual(res2.encPath, customEnc);
+    assert.strictEqual(res2.mPath, path.join(tmpDir, 'session_meta_71b9e590.json'));
+
+    // 3. Fallback seguro quando sessionMetaPath é passado explicitamente como null
+    const res3 = resolveSessionPaths({ sessionPath: customSession, sessionMetaPath: null });
+    assert.strictEqual(res3.mPath, path.join(tmpDir, 'session_meta_abcdef12.json'));
+
+    // 4. Override explícito de sessionMetaPath é respeitado
+    const customMeta = path.join(tmpDir, 'my_custom_meta.json');
+    const res4 = resolveSessionPaths({ sessionPath: customSession, sessionMetaPath: customMeta });
+    assert.strictEqual(res4.mPath, customMeta);
+
+    // 5. session.json padrão deriva session_meta.json
+    const defaultJson = path.join(tmpDir, 'session.json');
+    const res5 = resolveSessionPaths({ sessionPath: defaultJson });
+    assert.strictEqual(res5.mPath, path.join(tmpDir, 'session_meta.json'));
+
+    cleanupIsolatedTestDir(tmpDir);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('config.js - syncAccountSessions migra sessão legada de session.json para conta secundária sem perda de dados', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('ali-sync-acc-');
+
+  try {
+    const legacyMetaPath = path.join(tmpDir, 'session_meta.json');
+    const legacyEncPath = path.join(tmpDir, 'session.json.enc');
+
+    // Simula sessão prévia de second@example.com salva no formato legado mono-conta
+    fs.writeFileSync(
+      legacyMetaPath,
+      JSON.stringify({ user: 'second@example.com', lastStreakDays: 42 }),
+      'utf-8'
+    );
+    fs.writeFileSync(legacyEncPath, 'DUMMY_ENCRYPTED_DATA_V2', 'utf-8');
+
+    const env = {
+      ALI_USER: 'first@example.com',
+      ALI_PASSWORD: 'first_password',
+      ALI_USER_2: 'second@example.com',
+      ALI_PASSWORD_2: 'second_password'
+    };
+
+    const accounts = loadAccounts(env, tmpDir);
+    assert.strictEqual(accounts.length, 2);
+    syncAccountSessions(accounts, tmpDir);
+
+    // A sessão foi migrada automaticamente para os caminhos isolados da Conta 2
+    const targetEnc = `${accounts[1].sessionPath}.enc`;
+    const targetMeta = accounts[1].sessionMetaPath;
+
+    assert.strictEqual(
+      fs.existsSync(targetEnc),
+      true,
+      'Arquivo .enc deve ter sido migrado para Conta 2'
+    );
+    assert.strictEqual(
+      fs.existsSync(targetMeta),
+      true,
+      'Arquivo meta deve ter sido migrado para Conta 2'
+    );
+    assert.strictEqual(fs.readFileSync(targetEnc, 'utf-8'), 'DUMMY_ENCRYPTED_DATA_V2');
+
+    const metaContent = JSON.parse(fs.readFileSync(targetMeta, 'utf-8'));
+    assert.strictEqual(metaContent.user, 'second@example.com');
+    assert.strictEqual(metaContent.lastStreakDays, 42);
+
+    // O arquivo legado session.json.enc e session_meta.json original foi liberado
+    assert.strictEqual(
+      fs.existsSync(legacyEncPath),
+      false,
+      'session.json.enc legado deve ter sido movido'
+    );
+    assert.strictEqual(
+      fs.existsSync(legacyMetaPath),
+      false,
+      'session_meta.json legado deve ter sido movido'
+    );
+
+    cleanupIsolatedTestDir(tmpDir);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - isolamento multi-conta: validação de conta secundária não carrega nem corrompe metadados da primária', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('ali-multi-iso-');
+
+  try {
+    const env = {
+      ALI_USER: 'first@example.com',
+      ALI_PASSWORD: 'first_password',
+      ALI_USER_2: 'second@example.com',
+      ALI_PASSWORD_2: 'second_password'
+    };
+    const accounts = loadAccounts(env, tmpDir);
+
+    const fakeCookie = (name) => ({
+      name,
+      value: 'valid_ticket_123',
+      expires: Math.floor(Date.now() / 1000) + 7200
+    });
+
+    // 1. Salva sessão da Conta 1
+    await saveSession({ cookies: [fakeCookie('xman_us_t')] }, accounts[0].user, {
+      sessionPath: accounts[0].sessionPath,
+      sessionMetaPath: accounts[0].sessionMetaPath,
+      encryptLocalSession: false
+    });
+
+    // 2. Salva sessão da Conta 2
+    await saveSession({ cookies: [fakeCookie('xman_us_t')] }, accounts[1].user, {
+      sessionPath: accounts[1].sessionPath,
+      sessionMetaPath: accounts[1].sessionMetaPath,
+      encryptLocalSession: false
+    });
+
+    // 3. Validação da Conta 2 passando apenas sessionPath (simulando chamada por módulo sem passar sessionMetaPath)
+    const refreshedAccount2 = await validateAndRefresh(accounts[1].user, null, {
+      sessionPath: accounts[1].sessionPath,
+      encryptLocalSession: false
+    });
+
+    assert.strictEqual(refreshedAccount2.valid, true, 'Conta 2 deve ser validada com sucesso');
+    assert.strictEqual(refreshedAccount2.metaData.user, 'second@example.com');
+
+    // 4. Metadados e sessão da Conta 1 permanecem intactos e inalterados
+    const primaryMeta = JSON.parse(fs.readFileSync(accounts[0].sessionMetaPath, 'utf-8'));
+    assert.strictEqual(primaryMeta.user, 'first@example.com');
+    assert.strictEqual(fs.existsSync(accounts[0].sessionPath), true);
+
+    cleanupIsolatedTestDir(tmpDir);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - validateAndRefresh preserva sessão de outra conta configurada sem invocar clearSession destrutivo', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('ali-preserve-foreign-');
+  const oldEnvUser2 = process.env.ALI_USER_2;
+  const oldEnvPass2 = process.env.ALI_PASSWORD_2;
+
+  try {
+    process.env.ALI_USER_2 = 'configured_second@example.com';
+    process.env.ALI_PASSWORD_2 = 'pass2';
+
+    // Salva sessão pertencente a configured_second@example.com em session.json legado
+    const fakeCookie = {
+      name: 'xman_us_t',
+      value: 'token_second_123',
+      expires: Math.floor(Date.now() / 1000) + 7200
+    };
+    await saveSession({ cookies: [fakeCookie] }, 'configured_second@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+
+    // Executa validateAndRefresh com usuário primário diferente ('primary_user@example.com')
+    const res = await validateAndRefresh('primary_user@example.com', null, {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+
+    // Deve reportar inválido para a conta primária
+    assert.strictEqual(res.valid, false);
+    assert.ok(res.reason.includes('não corresponde à conta configurada'));
+
+    // MAS os arquivos de sessão de configured_second@example.com NÃO devem ter sido deletados
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session.json')),
+      true,
+      'session.json de conta configurada não deve ser apagado'
+    );
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session_meta.json')),
+      true,
+      'session_meta.json de conta configurada não deve ser apagado'
+    );
+
+    cleanupIsolatedTestDir(tmpDir);
+  } finally {
+    if (oldEnvUser2 !== undefined) {
+      process.env.ALI_USER_2 = oldEnvUser2;
+    } else {
+      delete process.env.ALI_USER_2;
+    }
+    if (oldEnvPass2 !== undefined) {
+      process.env.ALI_PASSWORD_2 = oldEnvPass2;
+    } else {
+      delete process.env.ALI_PASSWORD_2;
     }
     assertRealFilesUntouched(realFilesSnapshot);
   }

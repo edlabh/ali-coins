@@ -75,25 +75,67 @@ flowchart LR
 
 O projeto inclui scripts dedicados para exportação e importação de sessão criptografada com **AES-256-GCM** (usando `scrypt` para derivação de chave e tag de autenticação):
 
-1. **No seu computador pessoal (onde o login foi realizado):**
-   Defina a variável `SESSION_SECRET` (mínimo de 32 caracteres) e exporte a sessão:
+#### A. Exportação no Computador Pessoal (onde o login foi realizado)
 
-   ```bash
-   export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"
-   node export_session.js
-   ```
+Defina a variável `SESSION_SECRET` (mínimo de 32 caracteres) no `credentials.env` ou no ambiente:
 
-   O script gerará um token criptografado (formato `v1:iv:tag:ciphertext:base64`), salvando-o com permissão restrita `0o600` em `session_token.txt`. Por segurança contra vazamento em telas e logs, o terminal exibirá apenas o fingerprint SHA-256 e o tamanho do arquivo. (Caso precise exibir o token completo na tela, adicione a flag `--show-token`).
+- **Exportar todas as contas ativas (padrão em ambiente multi-conta):**
 
-2. **No terminal do servidor na nuvem (dentro de `~/ali-coins`):**
-   Transfira o arquivo `session_token.txt` ou envie seu conteúdo via STDIN:
-   ```bash
-   export SESSION_SECRET="sua_chave_ultra_secreta_com_mais_de_32_caracteres"
-   node import_session.js < session_token.txt
-   # ou via argumento de arquivo:
-   node import_session.js --from-file=session_token.txt
-   ```
-   > 🔒 **Importante:** O script recusa tokens diretamente em `process.argv` para impedir vazamento de credenciais no histórico do shell (`~/.bash_history`) ou na listagem do `ps aux`. A memória do token é zerada logo após a descriptografia. O utilitário valida a estrutura via schema `zod`, cria o `session.json` e o `session_meta.json` com permissão `0o600` e confirma a prontidão do ambiente.
+  ```bash
+  node export_session.js
+  # ou explicitamente:
+  node export_session.js --all
+  ```
+
+  O script exportará todas as contas configuradas gerando tokens individuais:
+  - Conta 1 -> `session_token.txt`
+  - Conta 2 -> `session_token_2.txt`
+  - Conta N -> `session_token_N.txt`
+
+- **Exportar apenas uma conta específica:**
+  ```bash
+  # Pelo índice numérico (1, 2, ...):
+  node export_session.js --account=2
+
+  # Ou pelo e-mail da conta:
+  node export_session.js --account="usuario@gmail.com"
+  ```
+
+Os tokens criptografados (formato `v2:salt:iv:tag:ciphertext`) são salvos com permissões restritas `0o600`. Por segurança contra vazamento em telas e logs, o terminal exibe apenas o fingerprint SHA-256 e o tamanho do arquivo. (Caso precise exibir o token completo na tela, adicione `--show-token`).
+
+#### B. Importação no Servidor na Nuvem (dentro de `~/ali-coins`)
+
+Transfira os arquivos de token gerados para a pasta do projeto no servidor:
+
+- **Importar TODAS as contas de uma única vez:**
+
+  ```bash
+  node import_session.js --all
+  ```
+
+  O utilitário processa todos os arquivos `session_token*.txt` do diretório, descriptografa com a sua `SESSION_SECRET`, reconhece cada conta pelo `meta.user` e grava nos arquivos isolados correspondentes (`session.json.enc`, `session_<hash>.json.enc`, etc.), aplicando `0o600` em todos.
+
+- **Importar individualmente (via STDIN - recomendado):**
+
+  ```bash
+  # Conta 1:
+  node import_session.js < session_token.txt
+
+  # Conta 2:
+  node import_session.js < session_token_2.txt
+  ```
+
+- **Importar individualmente (via arquivo ou flag explícita):**
+  ```bash
+  node import_session.js --from-file=session_token_2.txt
+  # ou especificando a conta:
+  node import_session.js --account=2 < session_token_2.txt
+  ```
+
+> 🔒 **Auto-Roteamento Inteligente e Proteção Multi-Conta:**
+> Mesmo se você não especificar `--account`, o importador analisa o e-mail embutido no token criptografado e compara com as contas cadastradas no `credentials.env` do servidor remoto. Se o token pertencer à Conta 2, ele salvará automaticamente em `session_<hash>.json.enc`, **nunca sobrescrevendo nem corrompendo a sessão da Conta 1**.
+>
+> 🔒 **Segurança do Shell:** O script recusa tokens diretamente em `process.argv` para impedir vazamento de credenciais no histórico do shell (`~/.bash_history`) ou na listagem de processos do sistema (`ps aux`). A memória do buffer do token é zerada logo após a descriptografia.
 
 ---
 

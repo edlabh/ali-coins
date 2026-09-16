@@ -5,6 +5,17 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.0] - 2026-09-16
+
+### Corrigido
+
+- **Divergência de Sessão e Limpeza Indevida no Multi-Conta:** Correção da causa raiz do erro `Conta da sessão ativa ("conta1") não corresponde à conta configurada ("conta2")`. A função `resolveSessionPaths` (`libs/session.js`) agora deriva dinamicamente o caminho de metadados correspondente (`session_meta_<hash>.json` ou `session_meta.json`) a partir do `sessionPath` da conta. O arquivo `collect.js` removeu o fallback rígido para caminhos globais, e `validateAndRefresh` não executa mais `clearSession` destrutivo se o cache pertencer a outra conta configurada no `credentials.env`. Adicionada migração transparente e não destrutiva de sessões legadas via `syncAccountSessions` (`config.js`) e isolamento rigoroso de contextos de navegador Playwright entre iterações de contas em `all.js`.
+
+### Adicionado
+
+- **Exportação Multi-Conta (`export_session.js`):** Suporte nativo a múltiplas contas com as opções `--all` e `--account <id|email>`. Ao executar em ambiente com mais de uma conta configurada, o utilitário exporta todas as contas ativas gerando tokens criptografados individuais (`session_token.txt`, `session_token_2.txt`, etc.) ou exporta estritamente a conta solicitada.
+- **Importação com Auto-Roteamento Inteligente (`import_session.js`):** Suporte nativo a `--all` e `--account <id|email>`. O importador inspeciona o payload descriptografado (`meta.user`) e roteia a gravação automaticamente para o arquivo isolado da respectiva conta (`session.json.enc` para a Conta 1, `session_<hash>.json.enc` para contas secundárias), impedindo sobrescritas acidentais. O comando `node import_session.js --all` importa e protege todas as contas de uma única vez no servidor remoto.
+
 ## [0.8.3] - 2026-09-16 (atualizada em 2026-09-16)
 
 ### Corrigido

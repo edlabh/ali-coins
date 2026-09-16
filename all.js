@@ -4,7 +4,8 @@ const {
   isForce,
   isJson,
   checkAndDisplayHelp,
-  loadAccounts
+  loadAccounts,
+  syncAccountSessions
 } = require('./config');
 const { formatDateTime, formatDuration, calculateAccountBackoff } = require('./time_utils');
 const { acquireLock, LockActiveError } = require('./lockfile');
@@ -35,6 +36,9 @@ async function main() {
 
   const accounts = loadAccounts(process.env, __dirname);
   const isMulti = accounts.length > 1;
+  if (isMulti) {
+    syncAccountSessions(accounts, __dirname);
+  }
 
   // 2. Lockfile para conta única (evita concorrência global no cron)
   let releaseSingleLock = null;
@@ -313,6 +317,13 @@ async function main() {
         logger.info(
           `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser}`
         );
+
+        // Garante isolamento estrito de cookies e storage fechando contextos remanescentes
+        if (browser && typeof browser.contexts === 'function') {
+          for (const ctx of browser.contexts()) {
+            await ctx.close().catch(() => {});
+          }
+        }
 
         let releaseAccountLock = null;
         try {
