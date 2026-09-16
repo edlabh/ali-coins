@@ -19,8 +19,14 @@ test('Unix Scripts - setup_linux.sh and setup_macos.sh syntax and anchoring vali
       const scriptPath = path.join(__dirname, '..', script);
       assert.ok(fs.existsSync(scriptPath), `${script} deve existir`);
 
-      // Validação de sintaxe bash
-      execSync(`bash -n "${scriptPath}"`);
+      // Validação de sintaxe bash se bash estiver disponível no ambiente
+      try {
+        execSync(`bash -n "${scriptPath}"`, { stdio: 'ignore' });
+      } catch (err) {
+        if (err.code !== 'ENOENT' && err.status !== 127) {
+          throw err;
+        }
+      }
 
       const content = fs.readFileSync(scriptPath, 'utf8');
 
@@ -74,7 +80,7 @@ test('Unix Scripts - setup_linux.sh e setup_macos.sh lógica de geração de SES
       );
     }
 
-    // Testar execução isolada da rotina de substituição da chave
+    // Testar execução isolada da rotina de substituição da chave (multiplataforma: Node puro via argumentos)
     const exampleFile = path.join(__dirname, '..', 'credentials.env.example');
     const credFile = path.join(tmpDir, 'credentials.env');
     fs.copyFileSync(exampleFile, credFile);
@@ -87,9 +93,9 @@ test('Unix Scripts - setup_linux.sh e setup_macos.sh lógica de geração de SES
 
     assert.ok(key.length >= 32, 'A chave gerada deve ter pelo menos 32 caracteres');
 
-    // Executar substituição equivalente
+    // Executar substituição equivalente usando process.argv para total compatibilidade multiplataforma (Windows/Linux/macOS)
     execSync(
-      `GEN_KEY="${key}" node -e "const fs=require('fs');const p=require('path').join(process.argv[1],'credentials.env');if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');if(/SESSION_SECRET=\\"\\"/.test(c)){c=c.replace('SESSION_SECRET=\\"\\"','SESSION_SECRET=\\"' + process.env.GEN_KEY + '\\"');fs.writeFileSync(p,c,'utf8');}}" "${tmpDir}"`
+      `node -e "const fs=require('fs');const p=require('path').join(process.argv[1],'credentials.env');if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');if(/SESSION_SECRET=\\"\\"/.test(c)){c=c.replace('SESSION_SECRET=\\"\\"','SESSION_SECRET=\\"' + process.argv[2] + '\\"');fs.writeFileSync(p,c,'utf8');}}" "${tmpDir}" "${key}"`
     );
 
     const updated = fs.readFileSync(credFile, 'utf8');
