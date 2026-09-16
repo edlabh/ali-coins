@@ -68,7 +68,11 @@ async function runCheckin(options = {}) {
     const isImportedSession = Boolean(sessionStatus.isImported);
     sessionData = sessionStatus.sessionData;
     const previousStreakDays =
-      sessionStatus.metaData?.lastStreakDays ?? sessionStatus.previousMeta?.lastStreakDays ?? null;
+      sessionStatus.metaData?.lastStreakDays ??
+      (sessionStatus.previousMeta?.user === userEmail
+        ? sessionStatus.previousMeta?.lastStreakDays
+        : null) ??
+      null;
 
     // 2. Checagem prévia rápida no desktop se já foi coletado hoje
     let earlyDesktopStreak = null;

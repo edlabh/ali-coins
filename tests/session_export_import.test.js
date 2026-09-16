@@ -35,6 +35,10 @@ test('export_session.js - allowlist de localStorage', () => {
 test('export_session & import_session - roundtrip completo criptografado (.enc) at-rest por padrão', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('export-import-enc-');
+  const originalEnvUser2 = process.env.ALI_USER_2;
+  const originalEnvPass2 = process.env.ALI_PASSWORD_2;
+  delete process.env.ALI_USER_2;
+  delete process.env.ALI_PASSWORD_2;
 
   try {
     const sPath = path.join(tmpDir, 'session.json');
@@ -121,6 +125,8 @@ test('export_session & import_session - roundtrip completo criptografado (.enc) 
     assert.ok(restoredMeta.importedAt);
     assert.strictEqual(restoredMeta.user, 'export_test_user@example.com');
   } finally {
+    if (originalEnvUser2 !== undefined) process.env.ALI_USER_2 = originalEnvUser2;
+    if (originalEnvPass2 !== undefined) process.env.ALI_PASSWORD_2 = originalEnvPass2;
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
   }
@@ -217,6 +223,10 @@ test('import_session.js - migração de session.json legado para session.json.en
 test('import_session.js - remoção de session.json legado ao importar nova sessão criptografada', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('import-cleanup-legacy-');
+  const originalEnvUser2 = process.env.ALI_USER_2;
+  const originalEnvPass2 = process.env.ALI_PASSWORD_2;
+  delete process.env.ALI_USER_2;
+  delete process.env.ALI_PASSWORD_2;
 
   try {
     const sPath = path.join(tmpDir, 'session.json');
@@ -264,6 +274,8 @@ test('import_session.js - remoção de session.json legado ao importar nova sess
       cleanupIsolatedTestDir(newDir);
     }
   } finally {
+    if (originalEnvUser2 !== undefined) process.env.ALI_USER_2 = originalEnvUser2;
+    if (originalEnvPass2 !== undefined) process.env.ALI_PASSWORD_2 = originalEnvPass2;
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
   }
@@ -484,6 +496,68 @@ test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote
 
     assert.strictEqual(loaded1.sessionData.cookies[0].value, 'tok1');
     assert.strictEqual(loaded2.sessionData.cookies[0].value, 'tok2');
+  } finally {
+    process.env.ALI_USER = originalEnv.ALI_USER;
+    process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;
+    if (originalEnv.ALI_USER_2 !== undefined) {
+      process.env.ALI_USER_2 = originalEnv.ALI_USER_2;
+    } else {
+      delete process.env.ALI_USER_2;
+    }
+    if (originalEnv.ALI_PASSWORD_2 !== undefined) {
+      process.env.ALI_PASSWORD_2 = originalEnv.ALI_PASSWORD_2;
+    } else {
+      delete process.env.ALI_PASSWORD_2;
+    }
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('import_session.js - Bug 13: lanca ImportSessionError se token nao corresponde a nenhuma conta quando accounts.length > 1', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('import-unmatched-');
+  const originalEnv = {
+    ALI_USER: process.env.ALI_USER,
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    ALI_USER_2: process.env.ALI_USER_2,
+    ALI_PASSWORD_2: process.env.ALI_PASSWORD_2
+  };
+
+  try {
+    process.env.ALI_USER = 'user1@test.com';
+    process.env.ALI_PASSWORD = 'pwd1';
+    process.env.ALI_USER_2 = 'user2@test.com';
+    process.env.ALI_PASSWORD_2 = 'pwd2';
+
+    // Gerar arquivos e token de uma terceira conta inexistente
+    const sPath = path.join(tmpDir, 'session.json');
+    const mPath = path.join(tmpDir, 'session_meta.json');
+    await safeWriteFile(
+      sPath,
+      JSON.stringify({ cookies: [{ name: 'xman_us_t', value: 'token_val' }], origins: [] })
+    );
+    await safeWriteFile(mPath, JSON.stringify({ user: 'unknown_account@test.com' }));
+
+    const exportResult = await exportSession({
+      secret: TEST_SECRET,
+      baseDir: tmpDir
+    });
+
+    await assert.rejects(
+      async () => {
+        await importSession({
+          tokenString: exportResult.token,
+          secret: TEST_SECRET,
+          baseDir: tmpDir
+        });
+      },
+      (err) => {
+        assert.ok(err instanceof ImportSessionError);
+        assert.ok(err.message.includes('não corresponde a nenhuma conta configurada'));
+        return true;
+      }
+    );
   } finally {
     process.env.ALI_USER = originalEnv.ALI_USER;
     process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;

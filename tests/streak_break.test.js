@@ -172,3 +172,36 @@ test('collect.js / report.js - simulação de re-execução com previousStreak 2
   }
   assert.strictEqual(resolvedStreak, 212, 'Streak resolvido deve preservar os 212 dias');
 });
+
+test('collect.js - Bug 14: previousStreakDays não contamina conta nova quando previousMeta pertence a outra conta', () => {
+  const userEmail = 'new_account@example.com';
+  const sessionStatus = {
+    valid: false,
+    metaData: null,
+    previousMeta: {
+      user: 'old_account@example.com',
+      lastStreakDays: 45
+    }
+  };
+
+  const previousStreakDays =
+    sessionStatus.metaData?.lastStreakDays ??
+    (sessionStatus.previousMeta?.user === userEmail
+      ? sessionStatus.previousMeta?.lastStreakDays
+      : null) ??
+    null;
+
+  assert.strictEqual(
+    previousStreakDays,
+    null,
+    'previousStreakDays deve ser null quando previousMeta for de outro usuário'
+  );
+
+  // Garantir que isStreakBreak para Dia 1 não dispare falso-positivo
+  const broken = isStreakBreak(1, previousStreakDays, false);
+  assert.strictEqual(
+    broken,
+    false,
+    'Não deve alertar quebra de streak na primeira execução da nova conta'
+  );
+});

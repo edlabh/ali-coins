@@ -163,7 +163,7 @@ function buildMessage({
   const safeHost = escapeHtml(hostname);
 
   const resolveUser = (rep) => {
-    if (!rep) return process.env.ALI_USER ? maskUser(process.env.ALI_USER) : 'desconhecida';
+    if (!rep || rep.type === 'multi_account_report') return null; // evita falso-atribuir à conta 1
     const raw = rep.user || rep.userEmail || rep.account?.maskedUser || rep.account?.user;
     if (raw) {
       return raw.includes('***') ? raw : maskUser(raw);
@@ -207,7 +207,7 @@ function buildMessage({
       '',
       'Outra instância da automação já está em execução no host. A execução atual foi finalizada para evitar sobreposição.',
       errorDetails ? `ℹ️ <i>${escapeHtml(errorDetails)}</i>` : '',
-      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
       `📅 <b>Data:</b> ${now}`,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`
     ]
@@ -225,10 +225,8 @@ function buildMessage({
     ];
 
     const userDisplay = resolveUser(report);
-    if (userDisplay && userDisplay !== 'desconhecida') {
+    if (userDisplay) {
       lines.push(`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`);
-    } else if (report && (report.user || report.userEmail)) {
-      lines.push(`👤 <b>Conta:</b> <code>${escapeHtml(report.user || report.userEmail)}</code>`);
     }
 
     if (checkIfImportedSessionExpired(error, report)) {
@@ -264,7 +262,7 @@ function buildMessage({
       `🚨 <b>STREAK QUEBRADO</b> — ${now}`,
       '',
       '⚠️ <b>Atenção:</b> A sequência diária de check-in foi interrompida ou resetada!',
-      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `📉 <b>Ontem:</b> ${yesterdayStreak} dias ➔ <b>Hoje:</b> ${todayStreak} dias`,
       `💰 <b>Saldo Atual:</b> ${escapeHtml(balance)}`
@@ -279,7 +277,7 @@ function buildMessage({
     const lines = [
       `🔐 <b>AliExpress Moedas - Verificação 2FA Solicitada</b> — ${now}`,
       '',
-      `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
+      ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       '',
       '⚠️ <b>Execução Não-Interativa (Cron / CI):</b>',
@@ -535,11 +533,12 @@ function buildMessage({
   }
 
   // Fallback padrão genérico
+  const fallbackUser = resolveUser(report);
   return [
     '🔔 <b>AliExpress Moedas - Notificação</b>',
     '',
     `Status: ${escapeHtml(event)}`,
-    `👤 <b>Conta:</b> <code>${escapeHtml(resolveUser(report))}</code>`,
+    ...(fallbackUser ? [`👤 <b>Conta:</b> <code>${escapeHtml(fallbackUser)}</code>`] : []),
     `📅 <b>Data:</b> ${now}`,
     `🖥️ <b>Host:</b> <code>${safeHost}</code>`
   ].join('\n');

@@ -16,7 +16,7 @@ test('security.js - readMasked2FACode falha imediatamente quando process.stdin.i
 
     await assert.rejects(
       async () => {
-        await readMasked2FACode('Prompt: ', 120000);
+        await readMasked2FACode('Prompt: ', 500);
       },
       (err) => {
         assert.ok(err instanceof TwoFactorRequiredNonInteractive);

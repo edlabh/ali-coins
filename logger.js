@@ -47,7 +47,8 @@ function sanitizeSensitiveQueryParams(str) {
 }
 
 const isJsonMode = process.argv.includes('--json');
-const isDev = !process.env.CI && process.env.NODE_ENV !== 'production' && !isJsonMode;
+const isTest = Boolean(process.env.NODE_TEST_CONTEXT) || process.env.NODE_ENV === 'test';
+const isDev = !process.env.CI && process.env.NODE_ENV !== 'production' && !isTest && !isJsonMode;
 
 let destination;
 if (isJsonMode) {

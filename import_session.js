@@ -238,6 +238,12 @@ async function importSession(options = {}) {
     if (matchedAccount) {
       targetSessionPath = matchedAccount.sessionPath;
       targetSessionMetaPath = matchedAccount.sessionMetaPath;
+    } else if (accounts.length > 1) {
+      throw new ImportSessionError(
+        `O e-mail do token ("${tokenUser}") não corresponde a nenhuma conta configurada em ` +
+          `credentials.env/accounts.json. Use --account="${tokenUser}" explicitamente se essa conta ` +
+          `ainda não foi adicionada, ou verifique se o token é o correto.`
+      );
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "ali-coins",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Automação resiliente de check-in diário e tarefas de moedas do AliExpress com Playwright.",
   "main": "all.js",
   "engines": {
@@ -11,8 +11,8 @@
     "all": "node all.js",
     "collect": "node collect.js",
     "tasks": "node do_tasks.js",
-    "test": "node --test --test-concurrency=1",
-    "test:coverage": "node --experimental-test-coverage --test-coverage-lines=80 --test --test-concurrency=1",
+    "test": "node --test --test-concurrency=1 --test-timeout=15000",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-lines=80 --test --test-concurrency=1 --test-timeout=15000",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

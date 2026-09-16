@@ -584,3 +584,23 @@ test('libs/notify.js - Bug 12: Telegram report exibe check-in +0 quando alreadyC
   const msg = buildMessage({ report, event: 'already_collected' });
   assert.ok(msg.includes('🪙 Ganhas hoje: +5 moedas (check-in +0 / tarefas +5)'));
 });
+
+test('libs/notify.js - Bug 15: alertas de multi-conta não atribuem falsamente a Conta 1', () => {
+  const multiReport = {
+    type: 'multi_account_report',
+    accounts: [
+      { user: 'acc1***@gmail.com', checkin: { streakDays: 10 } },
+      { user: 'acc2***@gmail.com', error: 'Streak quebrado' }
+    ]
+  };
+
+  const events = ['streak_break', 'lock_active', 'failure', '2fa_required'];
+  for (const event of events) {
+    const msg = buildMessage({ report: multiReport, event });
+    assert.strictEqual(
+      msg.includes('👤 <b>Conta:</b>'),
+      false,
+      `Evento ${event} em relatório consolidado multi-conta não deve incluir a linha "Conta:"`
+    );
+  }
+});
