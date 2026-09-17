@@ -12,7 +12,8 @@ const {
   safeWriteFile,
   safeChmod600,
   cleanOrphanTmpFiles,
-  APP_SCRYPT_SALT_V1
+  APP_SCRYPT_SALT_V1,
+  SCRYPT_PARAMS_V3
 } = require('../security');
 const {
   createIsolatedTestDir,
@@ -373,5 +374,31 @@ test('security.js - cleanOrphanTmpFiles remove arquivos .tmp-* órfãos antigos 
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('security.js - SCRYPT_PARAMS_V3 suporta customizacao de N via env SCRYPT_N ou setter', () => {
+  const originalEnvN = process.env.SCRYPT_N;
+  try {
+    delete process.env.SCRYPT_N;
+    SCRYPT_PARAMS_V3.N = null;
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, 131072);
+
+    process.env.SCRYPT_N = '32768';
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, 32768);
+
+    SCRYPT_PARAMS_V3.N = 16384;
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, 16384);
+
+    SCRYPT_PARAMS_V3.N = null; // reset setter
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, 32768);
+  } finally {
+    SCRYPT_PARAMS_V3.N = null;
+    if (originalEnvN !== undefined) {
+      process.env.SCRYPT_N = originalEnvN;
+    } else {
+      delete process.env.SCRYPT_N;
+    }
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, 131072);
   }
 });

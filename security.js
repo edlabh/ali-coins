@@ -8,7 +8,20 @@ const logger = require('./logger');
 const APP_SCRYPT_SALT_V1 = Buffer.from('ali-coins-session-encryption-v1-scrypt-salt', 'utf-8');
 
 // Parâmetros scrypt modernos (v3) e legados (v1/v2)
-const SCRYPT_PARAMS_V3 = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }; // 2^17
+let customScryptN = null;
+const SCRYPT_PARAMS_V3 = {
+  get N() {
+    if (customScryptN !== null) return customScryptN;
+    const envN = process.env.SCRYPT_N ? parseInt(process.env.SCRYPT_N, 10) : null;
+    return envN && !isNaN(envN) && envN > 0 ? envN : 131072;
+  },
+  set N(val) {
+    customScryptN = typeof val === 'number' && val > 0 ? val : null;
+  },
+  r: 8,
+  p: 1,
+  maxmem: 256 * 1024 * 1024
+}; // 2^17 (ajustável via SCRYPT_N em ambientes com recursos restritos)
 const SCRYPT_PARAMS_LEGACY = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }; // 2^14
 
 /**
