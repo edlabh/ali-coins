@@ -18,6 +18,49 @@ function escapeHtml(str) {
 }
 
 /**
+ * Coage valor para inteiro >= 0 de forma segura contra injeção e valores exóticos
+ * @param {*} val
+ * @param {number} [defaultVal=0]
+ * @returns {number}
+ */
+function toSafeInt(val, defaultVal = 0) {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) && val >= 0 ? Math.floor(val) : defaultVal;
+  }
+  if (typeof val === 'string') {
+    const clean = val.trim();
+    if (/^\d+$/.test(clean)) {
+      const parsed = parseInt(clean, 10);
+      return !isNaN(parsed) && parsed >= 0 ? parsed : defaultVal;
+    }
+  }
+  return defaultVal;
+}
+
+/**
+ * Normaliza streakDays de forma segura para string 'X dias' ou 'N/D'
+ * @param {*} raw
+ * @returns {string}
+ */
+function toSafeStreak(raw) {
+  if (raw !== null && raw !== undefined) {
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      return `${Math.floor(raw)} dias`;
+    }
+    if (typeof raw === 'string') {
+      const clean = raw.trim();
+      if (/^\d+$/.test(clean)) {
+        const parsed = parseInt(clean, 10);
+        if (parsed > 0) {
+          return `${parsed} dias`;
+        }
+      }
+    }
+  }
+  return 'N/D';
+}
+
+/**
  * Verifica se a falha está associada a uma sessão importada de outro host que expirou
  * @param {Error|object|string} [error]
  * @param {object} [report]
@@ -302,7 +345,7 @@ function buildMessage({
 
     const lines = [
       `${titleEmoji} <b>AliExpress Moedas - Multi-Conta (${statusDesc}) — ${reportDate}</b>`,
-      `📊 <b>Resumo:</b> ${report.meta?.successfulAccounts || 0}/${report.meta?.totalAccounts || 0} contas processadas com sucesso`,
+      `📊 <b>Resumo:</b> ${toSafeInt(report.meta?.successfulAccounts, 0)}/${toSafeInt(report.meta?.totalAccounts, 0)} contas processadas com sucesso`,
       ''
     ];
 
@@ -316,12 +359,13 @@ function buildMessage({
           return;
         }
 
-        const streak = acc.checkin?.streakDays ? `${acc.checkin.streakDays} dias` : 'N/D';
-        const checkinCoins =
+        const streak = toSafeStreak(acc.checkin?.streakDays);
+        const checkinCoins = toSafeInt(
           acc.meta?.checkinCoinsGained ??
-          (acc.checkin?.coinsGainedToday
-            ? parseInt(String(acc.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10) || 0
-            : 0);
+            (acc.checkin?.coinsGainedToday
+              ? parseInt(String(acc.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10) || 0
+              : 0)
+        );
         const balanceAfterCheckin = parseInt(
           String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
           10
@@ -337,15 +381,16 @@ function buildMessage({
             ? Math.max(0, balanceFinal - balanceAfterCheckin)
             : 0;
 
-        const tasksCoins =
-          taskGain > 0 ? taskGain : (acc.meta?.tasksCoinsGained ?? acc.tasks?.coinsGained ?? 0);
-        const totalCoins = acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins;
+        const tasksCoins = toSafeInt(
+          taskGain > 0 ? taskGain : (acc.meta?.tasksCoinsGained ?? acc.tasks?.coinsGained ?? 0)
+        );
+        const totalCoins = toSafeInt(acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins);
         const balance =
           acc.meta?.finalBalance ||
           (acc.checkin?.totalBalance ? `${acc.checkin.totalBalance} moedas` : 'N/D');
 
         lines.push(
-          `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${streak}`
+          `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${escapeHtml(streak)}`
         );
       });
     }
@@ -755,6 +800,8 @@ module.exports = {
   buildMessage,
   extractRelevantErrorMessage,
   escapeHtml,
+  toSafeInt,
+  toSafeStreak,
   truncateMessageIfNeeded,
   checkIfImportedSessionExpired,
   test

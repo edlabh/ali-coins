@@ -433,3 +433,87 @@ test('libs/session.js - validateAndRefresh preserva sessão de outra conta confi
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('config.js - loadAccounts dedup case-insensitive (Foo@x + foo@x preserva original e telegramChatId)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('ali-dedup-case-');
+
+  try {
+    // Cenário 1: ALI_USER primário ("Foo@example.com") e ALI_USER_2 secundário ("foo@example.com")
+    const env1 = {
+      ALI_USER: 'Foo@example.com',
+      ALI_PASSWORD: 'primary_password',
+      ALI_USER_2: 'foo@example.com',
+      ALI_PASSWORD_2: 'secondary_password',
+      TELEGRAM_CHAT_ID_2: '998877'
+    };
+
+    const accounts1 = loadAccounts(env1, tmpDir);
+    assert.strictEqual(accounts1.length, 1, 'Deve desduplicar contas com case diferente');
+    assert.strictEqual(
+      accounts1[0].user,
+      'Foo@example.com',
+      'Preserva o casing original do primeiro cadastro'
+    );
+    assert.strictEqual(
+      accounts1[0].maskedUser,
+      'Fo***@example.com',
+      'Preserva o maskedUser original'
+    );
+    assert.strictEqual(accounts1[0].index, 1, 'Preserva índice 1');
+    assert.strictEqual(accounts1[0].sessionPath, path.join(tmpDir, 'session.json'));
+    assert.strictEqual(
+      accounts1[0].telegramChatId,
+      '998877',
+      'Herda telegramChatId da segunda menção se ausente na primeira'
+    );
+
+    // Cenário 2: accounts.json com duplicata case-insensitive
+    const accountsJsonPath = path.join(tmpDir, 'accounts.json');
+    fs.writeFileSync(
+      accountsJsonPath,
+      JSON.stringify([
+        { user: 'UserOne@domain.com', password: 'pwd1' },
+        { user: 'userone@domain.com', password: 'pwd2', telegramChatId: '12345' },
+        { user: 'OTHER@domain.com', password: 'pwd3' }
+      ]),
+      'utf-8'
+    );
+
+    const accounts2 = loadAccounts({}, tmpDir);
+    assert.strictEqual(
+      accounts2.length,
+      2,
+      'accounts.json deve conter apenas 2 contas desduplicadas'
+    );
+    assert.strictEqual(accounts2[0].user, 'UserOne@domain.com');
+    assert.strictEqual(accounts2[0].maskedUser, 'Us***@domain.com');
+    assert.strictEqual(
+      accounts2[0].telegramChatId,
+      '12345',
+      'Herda telegramChatId se ausente na primeira'
+    );
+    assert.strictEqual(accounts2[1].user, 'OTHER@domain.com');
+
+    // Cenário 3: accounts.json com "First@domain.com" e env ALI_USER com "first@domain.com"
+    fs.writeFileSync(
+      accountsJsonPath,
+      JSON.stringify([{ user: 'First@domain.com', password: 'pwd1' }]),
+      'utf-8'
+    );
+    const accounts3 = loadAccounts(
+      {
+        ALI_USER: 'first@domain.com',
+        ALI_PASSWORD: 'pwd2',
+        TELEGRAM_CHAT_ID: '777'
+      },
+      tmpDir
+    );
+    assert.strictEqual(accounts3.length, 1);
+    assert.strictEqual(accounts3[0].user, 'First@domain.com');
+    assert.strictEqual(accounts3[0].telegramChatId, '777');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

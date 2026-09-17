@@ -456,14 +456,26 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
       if (Array.isArray(raw)) {
         for (const acc of raw) {
           if (acc && acc.user && acc.password) {
-            accounts.push({
-              user: String(acc.user).trim(),
-              password: String(acc.password),
-              telegramChatId:
-                acc.telegramChatId || acc.telegram_chat_id
-                  ? String(acc.telegramChatId || acc.telegram_chat_id).trim()
-                  : null
-            });
+            const trimmedUser = String(acc.user).trim();
+            const chatId =
+              acc.telegramChatId || acc.telegram_chat_id
+                ? String(acc.telegramChatId || acc.telegram_chat_id).trim()
+                : null;
+            // Dedup case-insensitive: preserva o primeiro cadastro do accounts.json e herda telegramChatId
+            const existing = accounts.find(
+              (a) => a.user.toLowerCase() === trimmedUser.toLowerCase()
+            );
+            if (existing) {
+              if (!existing.telegramChatId && chatId) {
+                existing.telegramChatId = chatId;
+              }
+            } else {
+              accounts.push({
+                user: trimmedUser,
+                password: String(acc.password),
+                telegramChatId: chatId
+              });
+            }
           }
         }
       }
@@ -476,7 +488,7 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
   if (env.ALI_USER && env.ALI_PASSWORD) {
     const trimmedUser = env.ALI_USER.trim();
     const primaryChatId = env.TELEGRAM_CHAT_ID_1 || env.TELEGRAM_CHAT_ID || null;
-    const existing = accounts.find((a) => a.user === trimmedUser);
+    const existing = accounts.find((a) => a.user.toLowerCase() === trimmedUser.toLowerCase());
     if (existing) {
       if (!existing.telegramChatId && primaryChatId) {
         existing.telegramChatId = String(primaryChatId).trim();
@@ -497,7 +509,7 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
     const chatId = env[`TELEGRAM_CHAT_ID_${i}`] || null;
     if (u && p) {
       const trimmedUser = u.trim();
-      const existing = accounts.find((a) => a.user === trimmedUser);
+      const existing = accounts.find((a) => a.user.toLowerCase() === trimmedUser.toLowerCase());
       if (existing) {
         if (!existing.telegramChatId && chatId) {
           existing.telegramChatId = String(chatId).trim();
@@ -555,8 +567,10 @@ function syncAccountSessions(accounts, baseDir = __dirname) {
 
     // Se a sessão em session_meta.json não pertence à conta primária (accounts[0]),
     // mas pertence a uma das contas secundárias configuradas (accounts[1..n])
-    if (accounts.length > 1 && accounts[0].user !== meta.user) {
-      const targetAcc = accounts.slice(1).find((a) => a.user === meta.user);
+    if (accounts.length > 1 && accounts[0].user.toLowerCase() !== meta.user.toLowerCase()) {
+      const targetAcc = accounts
+        .slice(1)
+        .find((a) => a.user.toLowerCase() === meta.user.toLowerCase());
       if (targetAcc) {
         const targetEncPath = `${targetAcc.sessionPath}.enc`;
         const targetPlainPath = targetAcc.sessionPath;

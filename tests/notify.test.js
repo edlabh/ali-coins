@@ -6,7 +6,9 @@ const {
   extractRelevantErrorMessage,
   truncateMessageIfNeeded,
   sendTelegram,
-  checkIfImportedSessionExpired
+  checkIfImportedSessionExpired,
+  toSafeInt,
+  toSafeStreak
 } = require('../libs/notify');
 const { configSchema } = require('../config');
 const logger = require('../logger');
@@ -699,4 +701,100 @@ test('libs/notify.js - resolução de duração em notificações unificadas, in
   };
   const multiMsg = buildMessage({ report: multiReport, event: 'success', hostname });
   assert.ok(multiMsg.includes('⏱️ <b>Duração Total:</b> 1m 25s'));
+});
+
+test('libs/notify.js - template multi-conta normalização e proteção contra valores exóticos / injeção HTML', () => {
+  const hostname = 'test-server';
+
+  // 1. Snapshot da linha [1] ... para entrada válida (garante equivalência byte-a-byte com a versão anterior)
+  const validReport = {
+    type: 'multi_account_report',
+    accounts: [
+      {
+        user: 'acc1***@gmail.com',
+        checkin: { streakDays: 10, coinsGainedToday: '10', totalBalance: '100' },
+        tasks: { results: [], coinsGained: 5 },
+        meta: {
+          finalBalance: '105 moedas',
+          totalCoinsGained: 15,
+          checkinCoinsGained: 10,
+          tasksCoinsGained: 5
+        }
+      }
+    ],
+    meta: {
+      totalAccounts: 1,
+      successfulAccounts: 1,
+      totalDuration: '10s'
+    }
+  };
+  const validMsg = buildMessage({ report: validReport, event: 'success', hostname });
+  const expectedLine =
+    '[1] <code>acc1***@gmail.com</code>: 💰 <b>105 moedas</b> | 🪙 +15 (+10/+5) | Streak: 10 dias';
+  assert.ok(
+    validMsg.includes(expectedLine),
+    `A linha de saída deve corresponder exatamente ao snapshot:\nEsperado: ${expectedLine}\nRecebido na msg:\n${validMsg}`
+  );
+
+  // 2. Valores exóticos (streakDays com tag HTML crua, totalCoins e checkinCoins não-numéricos)
+  const exoticReport = {
+    type: 'multi_account_report',
+    accounts: [
+      {
+        user: 'evil<script>***@evil.com',
+        checkin: { streakDays: '12<b>evil', coinsGainedToday: 'invalid' },
+        tasks: { coinsGained: 'undefined' },
+        meta: {
+          finalBalance: '<b>fake</b> moedas',
+          totalCoinsGained: 'abc',
+          checkinCoinsGained: 'corrupted',
+          tasksCoinsGained: null
+        }
+      }
+    ],
+    meta: {
+      totalAccounts: 'NaN',
+      successfulAccounts: -1
+    }
+  };
+
+  let exoticMsg;
+  assert.doesNotThrow(() => {
+    exoticMsg = buildMessage({ report: exoticReport, event: 'success', hostname });
+  });
+
+  // Não deve conter tags cruas perigosas
+  assert.ok(!exoticMsg.includes('<b>evil'));
+  assert.ok(!exoticMsg.includes('<script>'));
+  // Tags escapadas com segurança
+  assert.ok(exoticMsg.includes('&lt;script&gt;'));
+  assert.ok(exoticMsg.includes('&lt;b&gt;fake&lt;/b&gt;'));
+  // Streak inválido coage para N/D
+  assert.ok(exoticMsg.includes('Streak: N/D'));
+  // Moedas inválidas coagem para 0
+  assert.ok(exoticMsg.includes('🪙 +0 (+0/+0)'));
+  // Resumo coage para 0/0
+  assert.ok(exoticMsg.includes('📊 <b>Resumo:</b> 0/0'));
+});
+
+test('libs/notify.js - toSafeInt e toSafeStreak sanitizam valores com segurança', () => {
+  assert.strictEqual(toSafeInt(10), 10);
+  assert.strictEqual(toSafeInt('15'), 15);
+  assert.strictEqual(toSafeInt('0'), 0);
+  assert.strictEqual(toSafeInt(0), 0);
+  assert.strictEqual(toSafeInt(-5), 0);
+  assert.strictEqual(toSafeInt('abc'), 0);
+  assert.strictEqual(toSafeInt(null), 0);
+  assert.strictEqual(toSafeInt(undefined), 0);
+  assert.strictEqual(toSafeInt(NaN), 0);
+  assert.strictEqual(toSafeInt(Infinity), 0);
+
+  assert.strictEqual(toSafeStreak(10), '10 dias');
+  assert.strictEqual(toSafeStreak('15'), '15 dias');
+  assert.strictEqual(toSafeStreak(0), 'N/D');
+  assert.strictEqual(toSafeStreak(-2), 'N/D');
+  assert.strictEqual(toSafeStreak('12<b>evil'), 'N/D');
+  assert.strictEqual(toSafeStreak('abc'), 'N/D');
+  assert.strictEqual(toSafeStreak(null), 'N/D');
+  assert.strictEqual(toSafeStreak(undefined), 'N/D');
 });
