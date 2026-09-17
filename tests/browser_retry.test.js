@@ -179,7 +179,7 @@ test('browser.js - getChromiumEnv não propaga segredos da aplicação ao Chromi
   }
 });
 
-test('browser.js - CHROMIUM_LOW_MEMORY adiciona flags de baixa memória (opt-in)', () => {
+test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out via CHROMIUM_LOW_MEMORY=false)', () => {
   const realFilesSnapshot = snapshotRealFiles();
   const {
     getChromiumArgs,
@@ -188,23 +188,77 @@ test('browser.js - CHROMIUM_LOW_MEMORY adiciona flags de baixa memória (opt-in)
   } = require('../browser');
   const original = process.env.CHROMIUM_LOW_MEMORY;
 
+  const EXPECTED_LOW_MEMORY_FLAGS = [
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--renderer-process-limit=1',
+    '--js-flags=--max-old-space-size=128',
+    '--disk-cache-size=10485760'
+  ];
+
   try {
+    // 1. Padrão (sem env): flags aplicadas
     delete process.env.CHROMIUM_LOW_MEMORY;
-    assert.strictEqual(isLowMemoryModeEnabled(), false);
+    assert.strictEqual(isLowMemoryModeEnabled(), true);
     const defaultArgs = getChromiumArgs();
+    for (const flag of EXPECTED_LOW_MEMORY_FLAGS) {
+      assert.ok(defaultArgs.includes(flag), `Flag de baixo consumo ausente por padrão: ${flag}`);
+    }
+    assert.deepStrictEqual(
+      LOW_MEMORY_CHROMIUM_ARGS,
+      EXPECTED_LOW_MEMORY_FLAGS,
+      'Conjunto de flags de baixo consumo deve ser exatamente o documentado'
+    );
+    assert.ok(defaultArgs.includes('--disable-dev-shm-usage'), 'Flags base devem ser preservadas');
+    assert.ok(
+      defaultArgs.includes('--disable-blink-features=AutomationControlled'),
+      'Flags base devem ser preservadas'
+    );
+    // --no-zygote é exigido pelo Chromium apenas quando o sandbox está desabilitado
     assert.strictEqual(
-      defaultArgs.some((a) => a.startsWith('--renderer-process-limit')),
-      false,
-      'Sem opt-in não deve incluir flags de baixa memória'
+      defaultArgs.includes('--no-zygote'),
+      defaultArgs.includes('--no-sandbox'),
+      '--no-zygote só pode ser usado junto com --no-sandbox'
     );
 
+    // 2. Opt-out explícito: flags omitidas
+    for (const offValue of ['false', '0', 'off']) {
+      process.env.CHROMIUM_LOW_MEMORY = offValue;
+      assert.strictEqual(isLowMemoryModeEnabled(), false, `Valor ${offValue} deve desativar`);
+      const args = getChromiumArgs();
+      assert.strictEqual(
+        args.some((a) => EXPECTED_LOW_MEMORY_FLAGS.includes(a)),
+        false,
+        `Nenhuma flag de baixo consumo deve permanecer com CHROMIUM_LOW_MEMORY=${offValue}`
+      );
+      assert.ok(args.includes('--disable-dev-shm-usage'), 'Flags base permanecem no opt-out');
+    }
+
+    // 3. Opt-in explícito continua funcionando
     process.env.CHROMIUM_LOW_MEMORY = 'true';
-    assert.strictEqual(isLowMemoryModeEnabled(), true);
     const tunedArgs = getChromiumArgs();
-    for (const flag of LOW_MEMORY_CHROMIUM_ARGS) {
+    for (const flag of EXPECTED_LOW_MEMORY_FLAGS) {
       assert.ok(tunedArgs.includes(flag), `Flag esperada ausente: ${flag}`);
     }
-    assert.ok(tunedArgs.includes('--disable-dev-shm-usage'), 'Flags base devem ser preservadas');
+
+    // 4. Com sandbox desabilitado (NO_SANDBOX=true), --no-zygote é aplicado junto de --no-sandbox
+    const originalNoSandbox = process.env.NO_SANDBOX;
+    const originalCI = process.env.CI;
+    try {
+      process.env.NO_SANDBOX = 'true';
+      delete process.env.CI;
+      const noSandboxArgs = getChromiumArgs();
+      assert.ok(noSandboxArgs.includes('--no-sandbox'), '--no-sandbox deve ser aplicado');
+      assert.ok(
+        noSandboxArgs.includes('--no-zygote'),
+        '--no-zygote deve acompanhar --no-sandbox no modo de baixo consumo'
+      );
+    } finally {
+      if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;
+      else delete process.env.NO_SANDBOX;
+      if (originalCI !== undefined) process.env.CI = originalCI;
+      else delete process.env.CI;
+    }
   } finally {
     if (original !== undefined) process.env.CHROMIUM_LOW_MEMORY = original;
     else delete process.env.CHROMIUM_LOW_MEMORY;

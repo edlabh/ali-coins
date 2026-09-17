@@ -29,24 +29,30 @@ function isNoSandboxRequired() {
   };
 }
 
-// Flags de baixa memória para hosts com pouca RAM (ex: VPS de 1 GB).
-// Habilitadas via CHROMIUM_LOW_MEMORY=true|1|on (padrão: desativado).
+// Flags de baixo consumo de memória aplicadas POR PADRÃO (hosts restritos, ex: 1 GB RAM).
+// Podem ser desativadas com CHROMIUM_LOW_MEMORY=false|0|off em hosts folgados/troubleshooting.
+// O stack de navegador do Chromium ocupa ~100-270 MB; estas flags reduzem picos que
+// costumam disparar o OOM Killer (exit 137) em VPS pequenas.
 const LOW_MEMORY_CHROMIUM_ARGS = [
-  '--renderer-process-limit=2',
-  '--js-flags=--max-old-space-size=192',
   '--disable-gpu',
   '--disable-software-rasterizer',
-  '--disable-3d-apis',
-  '--enable-low-end-device-mode',
-  '--disable-features=BackForwardCache'
+  '--renderer-process-limit=1',
+  '--js-flags=--max-old-space-size=128',
+  '--disk-cache-size=10485760'
 ];
 
+// O Chromium recusa iniciar com --no-zygote e sandbox habilitado:
+// "[ERROR] Zygote cannot be disabled if sandbox is enabled. Use --no-zygote together with --no-sandbox"
+// Por isso a flag só é aplicada quando o sandbox já está desabilitado (root/CI/NO_SANDBOX=true).
+const NO_ZYGOTE_ARG = '--no-zygote';
+
 /**
- * Indica se o modo de baixa memória do Chromium está habilitado por ambiente
+ * Indica se o modo de baixo consumo do Chromium está habilitado (padrão: true).
+ * Apenas valores explícitos de desativação (false/0/off) o desligam.
  * @returns {boolean}
  */
 function isLowMemoryModeEnabled() {
-  return /^(1|true|on)$/i.test(process.env.CHROMIUM_LOW_MEMORY || '');
+  return !/^(0|false|off|no)$/i.test(String(process.env.CHROMIUM_LOW_MEMORY || '').trim());
 }
 
 /**
@@ -66,11 +72,15 @@ function getChromiumArgs() {
   }
 
   if (isLowMemoryModeEnabled()) {
-    logger.info(
-      { args: LOW_MEMORY_CHROMIUM_ARGS },
-      'Modo de baixa memória do Chromium habilitado (CHROMIUM_LOW_MEMORY).'
-    );
     args.push(...LOW_MEMORY_CHROMIUM_ARGS);
+    // Requisito do próprio Chromium: --no-zygote somente com sandbox desabilitado
+    if (shouldDisable) {
+      args.push(NO_ZYGOTE_ARG);
+    }
+  } else {
+    logger.info(
+      'Modo de baixo consumo do Chromium desativado explicitamente (CHROMIUM_LOW_MEMORY=false).'
+    );
   }
 
   return args;
@@ -377,6 +387,7 @@ module.exports = {
   getChromiumEnv,
   isLowMemoryModeEnabled,
   LOW_MEMORY_CHROMIUM_ARGS,
+  NO_ZYGOTE_ARG,
   SENSITIVE_ENV_KEY_REGEX,
   SENSITIVE_ENV_KEY_PREFIX_REGEX,
   newMobileContext,

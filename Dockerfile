@@ -44,8 +44,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Modo produção: logs em JSON direto no stdout (sem pino-pretty, que é devDependency)
 ENV NODE_ENV=production
 
-# Teto de heap V8 do processo Node: evita crescimento desnecessário em hosts de 1 GB
-ENV NODE_OPTIONS=--max-old-space-size=256
+# Teto de heap V8 do processo Node: GC mais agressivo antes de pressionar hosts de 1 GB
+ENV NODE_OPTIONS=--max-old-space-size=192
 
 WORKDIR /app
 

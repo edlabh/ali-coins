@@ -222,10 +222,49 @@ Para evitar falhas por memória:
    ```
 
 2. **Verifique se a Swap está ativa:**
+
    ```bash
    free -h
    ```
+
    A linha `Swap:` deve indicar aproximadamente `2.0Gi` disponível.
+
+3. **Limite o container e dimensione o `/dev/shm` na execução Docker:**
+
+   ```bash
+   docker run --rm --init --pids-limit=256 \
+     --shm-size=256m \
+     --memory=768m --memory-swap=1536m \
+     -v "$PWD/credentials.env:/app/credentials.env:ro" \
+     -v "$PWD/scratch:/app/scratch" \
+     ali-coins:latest node all.js
+   ```
+
+   - `--memory=768m --memory-swap=1536m`: o container pode usar até 768 MB de RAM + 768 MB de swap, deixando ~200 MB para o SO — evita que o OOM Killer derrube o processo principal.
+   - `--shm-size=256m`: folga para o `/dev/shm` (a automação já usa `--disable-dev-shm-usage`, então o valor é preventivo).
+   - `--init` e `--pids-limit=256`: evitam acúmulo de processos filhos do Chromium.
+   - Um exemplo pronto de wrapper de cron, com medição de pico de memória, está em
+     [`docker-run.example.sh`](docker-run.example.sh).
+
+4. **Reduza o custo do `scrypt` em hosts de 1 GB:**
+
+   O padrão `SCRYPT_N=131072` (2¹⁷) aloca ~134 MB no pico da derivação de chave. Em VPS
+   pequenas, use `SCRYPT_N=32768` (~33 MB) ou `SCRYPT_N=16384` (~16 MB) no `credentials.env`:
+
+   ```env
+   SCRYPT_N=32768
+   ```
+
+5. **Flags de baixo consumo já vêm ativadas por padrão:**
+
+   O Chromium é iniciado com `--disable-gpu`, `--disable-software-rasterizer`,
+   `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128` e
+   `--disk-cache-size=10485760`. A flag `--no-zygote` é adicionada apenas quando o sandbox
+   está desabilitado (`NO_SANDBOX=true`, root ou CI) — o próprio Chromium recusa a
+   combinação `--no-zygote` + sandbox, então em container com sandbox ativo ela é omitida
+   automaticamente. Para desativar o conjunto (hosts folgados/troubleshooting), defina
+   `CHROMIUM_LOW_MEMORY=false`. Em hosts apertados, `PW_TRACE=off` também reduz CPU/disco
+   durante a execução (os screenshots de falha continuam sendo gerados).
 
 ---
 

@@ -1,4 +1,8 @@
+# Dependências e artefatos de build
 node_modules/
+scratch/
+
+# SEGURANÇA (nunca remover): credenciais, sessões, tokens e metadados
 credentials.env
 credentials.env*
 session.json
@@ -14,10 +18,42 @@ accounts.json
 github_token.env
 sbom.json
 *.bak
+
+# Artefatos de imagem/log
 *.png
 *.log
 *.lock
 ali-coins.lock
-scratch/
+
+# TESTES (não são necessários em runtime)
+tests/
+
+# Arquivos específicos do Windows (a imagem é Linux)
+*.bat
+*.ps1
+setup_windows.*
+generate_secret.*
+
+# Documentação extensa (mantida no repositório, dispensável na imagem)
+INSTALL_*.md
+TELEGRAM.md
+README.md
+README.txt
+CLOUD_SESSIONS.md
+RELEASING.md
+CHANGELOG.md
+
+# Ferramentas de desenvolvimento e CI
+.github/
+.husky/
+eslint.config.js
+.prettierrc
+.prettierignore
+commitlint.config.js
+lint-staged.config.js
+
+# Git e metadados do repositório
 .git
 .gitignore
+.gitattributes
+.gitleaks.toml
