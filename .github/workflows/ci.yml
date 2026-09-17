@@ -114,10 +114,12 @@ jobs:
       - name: Smoke test (dry-run sem arquivos reais)
         run: |
           set -euo pipefail
+          # Segredo gerado em runtime (nunca literal no workflow, que é varrido pelo Gitleaks)
+          SMOKE_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(24).toString("base64"))')"
           docker run --rm \
             -e ALI_USER=ci@example.com \
             -e ALI_PASSWORD=ci_placeholder_password \
-            -e SESSION_SECRET=0123456789abcdef0123456789abcdef \
+            -e SESSION_SECRET="$SMOKE_SECRET" \
             ali-coins:ci node all.js --dry-run --json > /tmp/dry-run.json
           node -e "const j=require('/tmp/dry-run.json'); if(!j.dryRun){process.exit(1)}; console.log('dry-run OK:', j.user)"
 

@@ -14,4 +14,7 @@ description = "Segredos fictícios de testes (valores exatos)"
 regexes = [
   '''secret_key_with_at_least_32_characters_long_12345''',
   '''curta_demais_123''',
+  # Placeholder usado no smoke test do CI na 0.9.7 (commit 28b7507) e removido em seguida;
+  # permanece no histórico apenas como valor fictício documentado.
+  '''0123456789abcdef0123456789abcdef''',
 ]

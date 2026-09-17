@@ -296,19 +296,75 @@ test('browser.js - buildChromiumArgs suporta overrides de fallback (no-sandbox e
   }
 });
 
-test('browser.js - launchBrowser faz fallback progressivo (sandbox indisponível e flags de memória)', async () => {
+test(
+  'browser.js - launchBrowser faz fallback de sandbox quando o kernel/container não o suporta',
+  { skip: typeof process.getuid === 'function' && process.getuid() === 0 },
+  async () => {
+    const realFilesSnapshot = snapshotRealFiles();
+    const playwright = require('playwright');
+    const originalLaunch = playwright.chromium.launch;
+    const originalCI = process.env.CI;
+    const originalNoSandbox = process.env.NO_SANDBOX;
+    const originalLowMemory = process.env.CHROMIUM_LOW_MEMORY;
+    const calls = [];
+
+    try {
+      // Cenário determinístico: sandbox habilitado por padrão e low-memory desligado
+      delete process.env.CI;
+      delete process.env.NO_SANDBOX;
+      process.env.CHROMIUM_LOW_MEMORY = 'false';
+
+      playwright.chromium.launch = async (opts) => {
+        calls.push(opts);
+        if (calls.length === 1) {
+          throw new Error('browserType.launch: No usable sandbox! ...');
+        }
+        return { close: async () => {}, __fake: true };
+      };
+
+      const browser = await launchBrowser({ headless: true });
+      assert.strictEqual(browser.__fake, true);
+      assert.strictEqual(calls.length, 2, 'Deve tentar exatamente duas configurações');
+      assert.strictEqual(
+        calls[0].args.includes('--no-sandbox'),
+        false,
+        'Primeira tentativa mantém o sandbox'
+      );
+      assert.ok(
+        calls[1].args.includes('--no-sandbox'),
+        'Fallback deve desabilitar o sandbox após a falha'
+      );
+    } finally {
+      playwright.chromium.launch = originalLaunch;
+      if (originalCI !== undefined) process.env.CI = originalCI;
+      else delete process.env.CI;
+      if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;
+      else delete process.env.NO_SANDBOX;
+      if (originalLowMemory !== undefined) process.env.CHROMIUM_LOW_MEMORY = originalLowMemory;
+      else delete process.env.CHROMIUM_LOW_MEMORY;
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);
+
+test('browser.js - launchBrowser faz fallback removendo as flags de baixo consumo', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const playwright = require('playwright');
   const originalLaunch = playwright.chromium.launch;
+  const originalCI = process.env.CI;
+  const originalNoSandbox = process.env.NO_SANDBOX;
+  const originalLowMemory = process.env.CHROMIUM_LOW_MEMORY;
   const calls = [];
 
   try {
+    // Sandbox já desabilitado: as tentativas variam apenas o low-memory
+    delete process.env.CI;
+    process.env.NO_SANDBOX = 'true';
+    process.env.CHROMIUM_LOW_MEMORY = 'true';
+
     playwright.chromium.launch = async (opts) => {
       calls.push(opts);
       if (calls.length === 1) {
-        throw new Error('browserType.launch: No usable sandbox! ...');
-      }
-      if (calls.length === 2) {
         throw new Error('browserType.launch: Target page, context or browser has been closed');
       }
       return { close: async () => {}, __fake: true };
@@ -316,28 +372,23 @@ test('browser.js - launchBrowser faz fallback progressivo (sandbox indisponível
 
     const browser = await launchBrowser({ headless: true });
     assert.strictEqual(browser.__fake, true);
-
-    assert.ok(calls.length >= 2, 'Deve tentar mais de uma configuração de launch');
-    assert.ok(
-      calls[0].args.includes('--disable-gpu'),
-      'Primeira tentativa deve usar flags de baixo consumo'
-    );
-    const lastCall = calls[calls.length - 1];
+    assert.strictEqual(calls.length, 2, 'Deve tentar exatamente duas configurações');
+    assert.ok(calls[0].args.includes('--disable-gpu'), 'Primeira tentativa usa low-memory');
+    assert.ok(calls[0].args.includes('--no-sandbox'), 'Sandbox forçado desabilitado');
     assert.strictEqual(
-      lastCall.args.includes('--disable-gpu'),
+      calls[1].args.includes('--disable-gpu'),
       false,
-      'Última tentativa (fallback) deve desativar as flags de baixo consumo'
+      'Fallback deve remover as flags de baixo consumo'
     );
-
-    // Se a primeira tentativa não tinha --no-sandbox, a segunda deve tê-lo (fallback de sandbox)
-    if (!calls[0].args.includes('--no-sandbox')) {
-      assert.ok(
-        calls[1].args.includes('--no-sandbox'),
-        'Segunda tentativa deve desabilitar o sandbox quando o launch falha'
-      );
-    }
+    assert.ok(calls[1].args.includes('--no-sandbox'), 'Fallback mantém o --no-sandbox');
   } finally {
     playwright.chromium.launch = originalLaunch;
+    if (originalCI !== undefined) process.env.CI = originalCI;
+    else delete process.env.CI;
+    if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;
+    else delete process.env.NO_SANDBOX;
+    if (originalLowMemory !== undefined) process.env.CHROMIUM_LOW_MEMORY = originalLowMemory;
+    else delete process.env.CHROMIUM_LOW_MEMORY;
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
