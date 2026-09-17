@@ -4,7 +4,8 @@ const {
   handleDryRun,
   isForce,
   isJson,
-  checkAndDisplayHelp
+  checkAndDisplayHelp,
+  maskUser
 } = require('./config');
 const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
@@ -45,7 +46,7 @@ async function runCheckin(options = {}) {
 
   logger.info('================ CHECK-IN DIÁRIO ================');
   logger.info(`[Dia e Hora]: ${formatDateTime(checkinStartTime)}`);
-  logger.info(`[Login] Usuário: ${userEmail}`);
+  logger.info(`[Login] Usuário: ${maskUser(userEmail)}`);
 
   let browser = options.browser;
   const isInternalBrowser = !browser;

@@ -8,7 +8,8 @@ const {
   sessionMetaPath,
   sessionTokenPath,
   credentialsEnvPath,
-  isShowToken
+  isShowToken,
+  maskUser
 } = require('./config');
 const { encryptSession, safeWriteFile, safeChmod600, validateSession } = require('./security');
 const { flushAndExit } = require('./libs/exit');
@@ -72,6 +73,9 @@ async function exportSession(options = {}) {
     options.sessionTokenPath ||
     (baseDir ? path.join(baseDir, 'session_token.txt') : sessionTokenPath);
 
+  // Conta esperada para validação real (meta.user precisa corresponder à conta alvo)
+  let expectedUser = options.expectedUser || null;
+
   if (options.account) {
     const { loadAccounts } = require('./config');
     const accounts = loadAccounts(process.env, baseDir || __dirname);
@@ -83,6 +87,7 @@ async function exportSession(options = {}) {
         `Conta "${options.account}" não encontrada nas contas configuradas.`
       );
     }
+    expectedUser = target.user;
     sPath = target.sessionPath;
     mPath = target.sessionMetaPath;
     if (!options.sessionTokenPath) {
@@ -120,7 +125,9 @@ async function exportSession(options = {}) {
     meta.user = process.env.ALI_USER;
   }
 
-  const validation = validateSession(session, meta, meta.user);
+  // Valida a conta esperada (quando conhecida); sem alvo explícito, mantém o comportamento
+  // histórico de validar contra o próprio meta.user
+  const validation = validateSession(session, meta, expectedUser || meta.user);
   if (!validation.valid) {
     throw new ExportSessionError(`Sessão inválida para exportação: ${validation.reason}`);
   }
@@ -157,7 +164,7 @@ async function exportSession(options = {}) {
   const fingerprint = crypto.createHash('sha256').update(encryptedBlob).digest('hex').slice(0, 16);
   const blobSize = Buffer.byteLength(encryptedBlob, 'utf-8');
 
-  logger.info(`[OK] Sessão autenticada encontrada para a conta: ${meta.user}`);
+  logger.info(`[OK] Sessão autenticada encontrada para a conta: ${maskUser(meta.user)}`);
   logger.info(`[OK] Cookies de autenticação: VÁLIDOS (${session.cookies.length} cookies)`);
   logger.info(`[OK] Data de exportação: ${exportMeta.exportedAt}`);
   logger.info(`[OK] Expiração estimada: até ${exportMeta.expiresAt} (~90 dias)`);
@@ -224,6 +231,7 @@ async function exportAllSessions(options = {}) {
         sessionPath: acc.sessionPath,
         sessionMetaPath: acc.sessionMetaPath,
         sessionTokenPath: tPath,
+        expectedUser: acc.user,
         showToken: false
       });
       exported.push({

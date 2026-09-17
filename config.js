@@ -14,8 +14,18 @@ const sessionEncPath = path.join(__dirname, 'session.json.enc');
 const sessionMetaPath = path.join(__dirname, 'session_meta.json');
 const sessionTokenPath = path.join(__dirname, 'session_token.txt');
 const scratchDir = path.join(__dirname, 'scratch');
-const lockFilePath =
-  process.platform === 'win32' ? path.join(os.tmpdir(), 'ali-coins.lock') : '/tmp/ali-coins.lock';
+
+// Lockfile isolado por usuário: em hosts multiusuário, impede que outro usuário
+// bloqueie (ou seja bloqueado por) a execução via /tmp/ali-coins.lock compartilhado.
+const lockUserSuffix =
+  typeof process.getuid === 'function'
+    ? `u${process.getuid()}`
+    : crypto
+        .createHash('sha256')
+        .update(os.userInfo().username || 'unknown')
+        .digest('hex')
+        .slice(0, 8);
+const lockFilePath = path.join(os.tmpdir(), `ali-coins-${lockUserSuffix}.lock`);
 
 // Carregar variáveis do arquivo credentials.env se existir
 if (fs.existsSync(credentialsEnvPath)) {

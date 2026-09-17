@@ -3,7 +3,8 @@ const path = require('path');
 const {
   sessionPath: defaultSessionPath,
   sessionMetaPath: defaultSessionMetaPath,
-  scratchDir: defaultScratchDir
+  scratchDir: defaultScratchDir,
+  maskUser
 } = require('../config');
 const {
   validateSession,
@@ -323,7 +324,7 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
         if (isKnownUser) {
           shouldClear = false;
           logger.warn(
-            { activeUser: metaData.user, expectedUser: userEmail },
+            { activeUser: maskUser(metaData.user), expectedUser: maskUser(userEmail) },
             'Sessão em cache pertence a outra conta configurada. Preservando arquivos sem exclusão.'
           );
         }
@@ -426,7 +427,7 @@ async function saveSession(storageState, user, options = {}) {
       await fs.promises.unlink(sPath).catch(() => {});
     }
     logger.info(
-      { user },
+      { user: maskUser(user) },
       'Sessão autenticada criptografada at-rest salva com sucesso (.enc, 0o600).'
     );
   } else {
@@ -436,7 +437,10 @@ async function saveSession(storageState, user, options = {}) {
     if (fs.existsSync(encPath)) {
       await fs.promises.unlink(encPath).catch(() => {});
     }
-    logger.info({ user }, 'Sessão autenticada e metadados salvos com sucesso (permissão 0o600).');
+    logger.info(
+      { user: maskUser(user) },
+      'Sessão autenticada e metadados salvos com sucesso (permissão 0o600).'
+    );
   }
 
   await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
@@ -596,13 +600,18 @@ async function pruneSessionBackups(options = {}) {
     );
   }
 
-  try {
-    const orphanTmp = await cleanOrphanTmpFiles(path.dirname(encPath));
-    if (orphanTmp.length > 0) {
-      pruned.push(...orphanTmp);
+  // Só limpa temporários órfãos do diretório de sessão quando há alvo explícito;
+  // evita tocar o diretório padrão do projeto quando o chamador só passou scratchDir
+  // (ex: poda de diagnósticos).
+  if (options.sessionPath || options.sessionMetaPath) {
+    try {
+      const orphanTmp = await cleanOrphanTmpFiles(path.dirname(encPath));
+      if (orphanTmp.length > 0) {
+        pruned.push(...orphanTmp);
+      }
+    } catch {
+      // Ignora erro ao limpar temporários órfãos
     }
-  } catch {
-    // Ignora erro ao limpar temporários órfãos
   }
 
   return pruned;
@@ -719,7 +728,7 @@ async function rotateSessionSecret(options = {}) {
   await pruneSessionBackups({ ...options, scratchDir: targetScratchDir }).catch(() => {});
 
   logger.info(
-    { user: metaData.user, backupPath },
+    { user: maskUser(metaData.user), backupPath },
     '[ROTAÇÃO] Chave de sessão rotacionada com sucesso.'
   );
   return { success: true, user: metaData.user, backupPath };
@@ -766,7 +775,7 @@ async function migrateLegacySession(options = {}) {
   safeChmod600(mPath);
 
   logger.info(
-    { user: metaData.user },
+    { user: maskUser(metaData.user) },
     'Sessão legada migrada com sucesso para formato criptografado at-rest.'
   );
   return { migrated: true, user: metaData.user };

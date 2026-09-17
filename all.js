@@ -108,6 +108,21 @@ async function main() {
 
   let browser = null;
 
+  // Encerramento com limpeza real: process.exit() não executa o bloco finally,
+  // então fechamos o browser e liberamos o lock antes de sair em QUALQUER caminho.
+  const gracefulExit = async (code) => {
+    if (browser) {
+      await browser.close().catch(() => {});
+      browser = null;
+    }
+    if (releaseSingleLock) {
+      const release = releaseSingleLock;
+      releaseSingleLock = null;
+      await release().catch(() => {});
+    }
+    await flushAndExit(code);
+  };
+
   try {
     // 1 única instância compartilhada do Chromium para a execução
     browser = await launchBrowser({ headless: config.HEADLESS });
@@ -145,7 +160,7 @@ async function main() {
           } catch (tgErr) {
             logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de 2FA.');
           }
-          await flushAndExit(5);
+          await gracefulExit(5);
         }
         if (err.isImportedSessionExpired) {
           logger.error(
@@ -168,7 +183,7 @@ async function main() {
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
         }
-        await flushAndExit(1);
+        await gracefulExit(1);
       }
 
       const step1EndTime = new Date();
@@ -190,7 +205,7 @@ async function main() {
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
         }
-        await flushAndExit(1);
+        await gracefulExit(1);
       }
 
       logger.info(
@@ -311,15 +326,15 @@ async function main() {
           ),
           report: unifiedPayload
         });
-        await flushAndExit(4);
+        await gracefulExit(4);
       }
 
       await sendHeartbeat('success', { config, report: unifiedPayload });
 
       if (!hadNewCheckin && !hadTaskActions) {
-        await flushAndExit(2);
+        await gracefulExit(2);
       }
-      await flushAndExit(0);
+      await gracefulExit(0);
     } else {
       // ----------------- FLUXO MULTI-CONTA SEQUENCIAL -----------------
       const accountReports = [];
@@ -613,7 +628,7 @@ async function main() {
           error: new Error('Todas as contas estavam com lock ativo'),
           report: multiPayload
         });
-        await flushAndExit(3);
+        await gracefulExit(3);
       }
       if (anyAccountStreakBroken) {
         await sendHeartbeat('fail', {
@@ -621,7 +636,7 @@ async function main() {
           error: new Error('Streak quebrado em conta multi-conta'),
           report: multiPayload
         });
-        await flushAndExit(4);
+        await gracefulExit(4);
       }
       if (anyAccount2FARequired && !anyAccountSuccess) {
         await sendHeartbeat('fail', {
@@ -629,7 +644,7 @@ async function main() {
           error: new Error('2FA requerido em ambiente não-interativo'),
           report: multiPayload
         });
-        await flushAndExit(5);
+        await gracefulExit(5);
       }
       if (!anyAccountSuccess) {
         await sendHeartbeat('fail', {
@@ -637,15 +652,15 @@ async function main() {
           error: new Error('Todas as contas falharam na execução'),
           report: multiPayload
         });
-        await flushAndExit(1);
+        await gracefulExit(1);
       }
 
       await sendHeartbeat('success', { config, report: multiPayload });
 
       if (!anyAccountHadNewAction) {
-        await flushAndExit(2);
+        await gracefulExit(2);
       }
-      await flushAndExit(0);
+      await gracefulExit(0);
     }
   } catch (fatalErr) {
     await sendHeartbeat('fail', { config, error: fatalErr });
@@ -663,7 +678,7 @@ async function main() {
           'Falha ao enviar notificação Telegram em erro fatal 2FA.'
         );
       }
-      await flushAndExit(5);
+      await gracefulExit(5);
     }
     if (fatalErr.isImportedSessionExpired) {
       logger.error(
@@ -677,7 +692,7 @@ async function main() {
     } catch (tgErr) {
       logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram em erro fatal.');
     }
-    await flushAndExit(1);
+    await gracefulExit(1);
   } finally {
     if (browser) {
       await browser.close().catch(() => {});

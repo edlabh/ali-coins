@@ -139,3 +139,24 @@ test('config.js - mensagens PT-BR de validação são preservadas no Zod 4 (opç
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('config.js - lockFilePath é isolado por usuário (evita colisão multiusuário em /tmp)', () => {
+  const os = require('os');
+  const path = require('path');
+  const { lockFilePath } = require('../config');
+
+  assert.ok(
+    path.dirname(lockFilePath) === os.tmpdir(),
+    `Lock deve ficar no tmpdir, obtido: ${lockFilePath}`
+  );
+  assert.ok(
+    path.basename(lockFilePath).startsWith('ali-coins-'),
+    `Lock deve ter sufixo de usuário, obtido: ${path.basename(lockFilePath)}`
+  );
+  if (typeof process.getuid === 'function') {
+    assert.ok(
+      lockFilePath.includes(`u${process.getuid()}`),
+      `Lock deve conter o uid do usuário, obtido: ${lockFilePath}`
+    );
+  }
+});

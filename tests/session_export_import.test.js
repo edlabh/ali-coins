@@ -738,3 +738,46 @@ test('export_session.js - rotateAllSessions rotaciona todas as contas (não só 
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('export_session.js - valida que a conta da sessão corresponde à conta alvo (expectedUser)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('export-expected-user-');
+
+  try {
+    const sPath = path.join(tmpDir, 'session.json');
+    const mPath = path.join(tmpDir, 'session_meta.json');
+    await safeWriteFile(
+      sPath,
+      JSON.stringify({ cookies: [{ name: 'xman_us_t', value: 'tok_expected' }], origins: [] })
+    );
+    await safeWriteFile(mPath, JSON.stringify({ user: 'conta_a@example.com' }));
+
+    await assert.rejects(
+      async () => {
+        await exportSession({
+          secret: TEST_SECRET,
+          baseDir: tmpDir,
+          sessionPath: sPath,
+          sessionMetaPath: mPath,
+          expectedUser: 'conta_b@example.com'
+        });
+      },
+      (err) => {
+        assert.ok(err.message.includes('não corresponde'), `Erro inesperado: ${err.message}`);
+        return true;
+      }
+    );
+
+    const ok = await exportSession({
+      secret: TEST_SECRET,
+      baseDir: tmpDir,
+      sessionPath: sPath,
+      sessionMetaPath: mPath,
+      expectedUser: 'conta_a@example.com'
+    });
+    assert.ok(ok.token, 'Exportação com conta correta deve funcionar');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

@@ -45,6 +45,7 @@ PUBLIC_REMOTE="https://github.com/${GITHUB_USER}/${REPO_NAME}.git"
 # Garantir que mesmo em caso de falha o remote nunca contenha tokens
 cleanup() {
   git remote set-url origin "$PUBLIC_REMOTE" 2>/dev/null || true
+  unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 }
 trap cleanup EXIT INT TERM
 
@@ -58,13 +59,18 @@ fi
 
 BASIC_AUTH="$(printf '%s:%s' "$GITHUB_USER" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
 
+# Autenticação via variáveis de ambiente do git (GIT_CONFIG_*): o header NÃO aparece no
+# argv do processo (visível a outros usuários locais via `ps`), apenas no ambiente do próprio git.
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=http.extraHeader
+export GIT_CONFIG_VALUE_0="Authorization: Basic ${BASIC_AUTH}"
+
 echo "Enviando branch 'main'..."
-# Autenticação segura via header HTTP Authorization: Basic sem expor o token na URL do remote.
 # NUNCA repassar "$@" aqui: um --force destinado às tags forçaria a main por acidente.
-git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push -u origin main
+git push -u origin main
 
 echo "Enviando tags de release..."
-git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push origin --tags "$@"
+git push origin --tags "$@"
 
 echo ""
 echo "=========================================================="

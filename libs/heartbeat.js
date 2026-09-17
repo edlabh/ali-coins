@@ -227,9 +227,10 @@ async function pingFail(url, err = null, options = {}) {
   let body = 'AliExpress Coins job encountered a failure';
   if (err) {
     if (err instanceof Error) {
-      body = `${err.name}: ${err.message}\n${err.stack || ''}`;
+      // Não envia stack trace a serviços externos (pode conter caminhos internos e URLs sensíveis)
+      body = `${err.name}: ${err.message}`.slice(0, 2000);
     } else {
-      body = String(err);
+      body = String(err).slice(0, 2000);
     }
   }
 

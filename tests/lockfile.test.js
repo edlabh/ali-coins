@@ -347,3 +347,41 @@ test('lockfile.js - stress concorrente: nenhuma sobreposição de posse por leit
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('lockfile.js - createdAt futuro ou inválido não causa bloqueio permanente (anti-DoS)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-timestamp-');
+  const tmpLockPath = path.join(tmpDir, 'timestamp.lock');
+
+  try {
+    // 1. createdAt no futuro: tratado como stale e substituído imediatamente
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fs.writeFileSync(
+      tmpLockPath,
+      JSON.stringify({ pid: process.pid, createdAt: future, host: os.hostname() })
+    );
+    const releaseFuture = await acquireLock(false, 30000, tmpLockPath);
+    const afterFuture = JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8'));
+    assert.strictEqual(afterFuture.pid, process.pid);
+    assert.notStrictEqual(afterFuture.createdAt, future, 'Timestamp futuro deve ser substituído');
+    await releaseFuture();
+
+    // 2. createdAt inválido: tratado como stale imediatamente
+    fs.writeFileSync(
+      tmpLockPath,
+      JSON.stringify({ pid: process.pid, createdAt: 'data-invalida', host: os.hostname() })
+    );
+    const releaseInvalid = await acquireLock(false, 30000, tmpLockPath);
+    assert.strictEqual(JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8')).pid, process.pid);
+    await releaseInvalid();
+
+    // 3. createdAt ausente: continua sendo stale (comportamento histórico preservado)
+    fs.writeFileSync(tmpLockPath, JSON.stringify({ pid: process.pid, host: os.hostname() }));
+    const releaseMissing = await acquireLock(false, 30000, tmpLockPath);
+    assert.strictEqual(JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8')).pid, process.pid);
+    await releaseMissing();
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

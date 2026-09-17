@@ -4,7 +4,8 @@ const {
   handleDryRun,
   isForce,
   isJson,
-  checkAndDisplayHelp
+  checkAndDisplayHelp,
+  maskUser
 } = require('./config');
 const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
@@ -57,7 +58,7 @@ async function runTasks(options = {}) {
 
   logger.info('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
   logger.info(`[Dia e Hora]: ${formatDateTime(tasksStartTime)}`);
-  logger.info(`[Login] Usuário: ${userEmail}`);
+  logger.info(`[Login] Usuário: ${maskUser(userEmail)}`);
 
   let sessionData = options.sessionData || null;
   const sessionStatus = await validateAndRefresh(userEmail, sessionData, sessionOpts);
@@ -88,7 +89,7 @@ async function runTasks(options = {}) {
     sessionData = sessionStatus.sessionData;
   }
 
-  logger.info(`[Login] Sessão validada para: ${userEmail}`);
+  logger.info(`[Login] Sessão validada para: ${maskUser(userEmail)}`);
 
   let browser = options.browser;
   const isInternalBrowser = !browser;

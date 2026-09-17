@@ -11,6 +11,17 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 - **Rotação Multi-Conta Isolada por `baseDir` (`rotateAllSessions`):** os backups de rotação das contas secundárias passam a ser gravados no `scratch/` do diretório alvo (ex: diretório do projeto sob teste), nunca no `scratch/` real do projeto. Regressão coberta por teste que compara a listagem do scratch real antes/depois.
 - **Compatibilidade Windows do Teste de Env do Chromium:** a asserção de preservação de `PATH` agora compara sem diferenciar maiúsculas/minúsculas (Windows expõe `Path`), mantendo a validação de que variáveis sensíveis não são propagadas.
+- **Anti-DoS do Lockfile por Timestamp Forjado:** locks com `createdAt` no futuro (além de 5 min de tolerância de skew) ou inválido/ausente agora são tratados como stale e substituídos, eliminando bloqueio permanente por lock malicioso/corrompido. O lockfile passou a ser **isolado por usuário** (`ali-coins-<uid>.lock` no tmpdir), impedindo interferência entre usuários em hosts compartilhados.
+- **Encerramento Gracioso no `all.js`:** novo `gracefulExit` fecha o browser Playwright e libera o lockfile antes de sair em todos os caminhos (o `process.exit()` não executa o bloco `finally`), evitando processos do Chromium órfãos e locks presos em falhas.
+- **Marcação de PII em Logs:** e-mails/telefones deixam de ser logados em claro (`[Login] Usuário`, autenticação, salvamento/carga/rotação/migração de sessão, import/export) e passam a usar `maskUser`.
+- **Heartbeat Sem Stack Trace:** `pingFail` envia apenas `Nome: mensagem` (limite de 2000 chars) ao monitor externo, sem caminhos internos/URLs sensíveis da stack.
+- **Poda de Diagnósticos Sem Efeito Colateral:** `pruneSessionBackups({ scratchDir })` não limpa mais temporários do diretório padrão do projeto quando nenhum caminho de sessão explícito foi informado.
+- **Exportação Valida a Conta Alvo:** `exportSession` aceita `expectedUser` (usado por `--account` e `--all`) e falha se o `meta.user` da sessão não corresponder à conta solicitada, em vez de validar contra o próprio metadado (checagem tautológica).
+- **Push Sem Token no `argv`:** `push_to_github.sh` autentica via `GIT_CONFIG_KEY_0=http.extraHeader` em variável de ambiente, evitando que o header Basic/PAT apareça na linha de comando do git (visível a outros usuários locais via `ps`).
+
+### Adicionado
+
+- **Testes (191 no total):** lock com `createdAt` futuro/inválido/ausente, isolamento do lockfile por usuário, heartbeat sem stack, validação de conta alvo na exportação e mascaramento de PII nos logs de sessão. Removidas sobras locais sensíveis (dumps de DOM pré-privacidade, `mobile_body.html`, tokens exportados antigos e `credentials.env.bak`).
 
 ## [0.9.6] - 2026-09-17
 

@@ -3,6 +3,7 @@ const { waitAndClick, trySolveSlider } = require('./navigation');
 const { saveFailureScreenshot } = require('./diagnostics');
 const { saveSession } = require('../session');
 const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../../security');
+const { maskUser } = require('../../config');
 const logger = require('../../logger');
 
 /**
@@ -15,7 +16,7 @@ const logger = require('../../logger');
 async function performMobileLogin(page, context, config, options = {}) {
   const username = (options.account && options.account.user) || config.ALI_USER;
   const password = (options.account && options.account.password) || config.ALI_PASSWORD;
-  logger.info(`[Login] Autenticando com credenciais de "${username}"...`);
+  logger.info(`[Login] Autenticando com credenciais de "${maskUser(username)}"...`);
 
   let loginInput = await page
     .waitForSelector(SELECTORS.login.usernameInput, { timeout: config.SELECTOR_TIMEOUT })

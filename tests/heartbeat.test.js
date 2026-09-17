@@ -83,6 +83,17 @@ test('libs/heartbeat.js - pingStart, pingSuccess e pingFail com mock de fetch', 
     assert.strictEqual(calls[2].url, `${testUrl}/fail`);
     assert.strictEqual(calls[2].method, 'POST');
     assert.ok(calls[2].body.includes('Falha simulada'));
+    // Privacidade: stack trace não deve ser enviado a monitor externo
+    assert.strictEqual(
+      calls[2].body.includes('\n    at '),
+      false,
+      'Body do heartbeat não deve conter stack trace'
+    );
+    assert.strictEqual(
+      calls[2].body.includes('heartbeat.test.js'),
+      false,
+      'Body do heartbeat não deve expor caminhos internos'
+    );
   } finally {
     global.fetch = originalFetch;
   }

@@ -11,6 +11,8 @@ const MAX_ACQUIRE_ATTEMPTS = 5; // Tentativas após remoção de locks órfãos/
 // (fallback em filesystems sem hardlink). Só removemos como "inválido" após esta janela.
 const LOCK_READ_GRACE_MS = 900;
 const LOCK_READ_RETRY_MS = 150;
+// Tolerância de skew de relógio para timestamps de createdAt (acima disso = lock forjado/corrompido)
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
 // Códigos de erro que indicam filesystem sem suporte a hardlink (fallback para 'wx')
 const LINK_UNSUPPORTED_CODES = new Set([
   'EXDEV',
@@ -195,9 +197,16 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
       continue;
     }
 
-    const lockCreatedAt = existingLock.createdAt ? new Date(existingLock.createdAt).getTime() : 0;
-    const lockAge = Date.now() - lockCreatedAt;
-    const isStale = !isNaN(lockAge) && lockAge > staleTimeoutMs;
+    // createdAt não confiável (lock forjado/corrompido): datas inválidas/ausentes ou
+    // "no futuro" além da tolerância de clock são tratadas como stale — impedindo
+    // bloqueio permanente por um lock com timestamp malicioso (o lock agora é por
+    // usuário em diretório temporário local, então não há cenário multihost a preservar).
+    const rawCreatedAt = existingLock.createdAt ? new Date(existingLock.createdAt).getTime() : NaN;
+    const isFutureTimestamp = rawCreatedAt > Date.now() + CLOCK_SKEW_TOLERANCE_MS;
+    const isInvalidTimestamp = Number.isNaN(rawCreatedAt) || isFutureTimestamp;
+    const lockCreatedAt = isInvalidTimestamp ? 0 : rawCreatedAt;
+    const lockAge = Math.max(0, Date.now() - lockCreatedAt);
+    const isStale = isInvalidTimestamp || lockAge > staleTimeoutMs;
     const isSameHost = existingLock.host === os.hostname();
 
     if (isStale) {

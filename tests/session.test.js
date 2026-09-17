@@ -800,3 +800,38 @@ test('libs/session.js - freshLogin limpa marcadores de sessão importada e prese
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/session.js - logs de sessão mascaram o identificador do usuário (PII)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-log-mask-');
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(JSON.stringify(args));
+    };
+
+    const fakeState = {
+      cookies: [{ name: 'xman_us_t', value: 'tok_mask', expires: 0 }],
+      origins: []
+    };
+    await saveSession(fakeState, 'pii_user@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+
+    const joined = messages.join('\n');
+    assert.strictEqual(
+      joined.includes('pii_user@example.com'),
+      false,
+      'E-mail completo não deve aparecer nos logs de sessão'
+    );
+    assert.ok(joined.includes('pi***@example.com'), 'E-mail deve ser mascarado nos logs');
+  } finally {
+    logger.info = originalInfo;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

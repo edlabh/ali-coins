@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
-const { credentialsEnvPath, getFromFile } = require('./config');
+const { credentialsEnvPath, getFromFile, maskUser } = require('./config');
 const {
   decryptSession,
   encryptSession,
@@ -290,7 +290,7 @@ async function importSession(options = {}) {
     }
 
     logger.info(
-      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${metaData.user}"${accountLabel}!`
+      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${maskUser(metaData.user)}"${accountLabel}!`
     );
     if (metaData.exportedAt) {
       logger.info(`[SUCESSO] Data de exportação original: ${metaData.exportedAt}`);
@@ -312,7 +312,7 @@ async function importSession(options = {}) {
     }
 
     logger.info(
-      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${metaData.user}"${accountLabel}!`
+      `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${maskUser(metaData.user)}"${accountLabel}!`
     );
     if (metaData.exportedAt) {
       logger.info(`[SUCESSO] Data de exportação original: ${metaData.exportedAt}`);
@@ -431,7 +431,7 @@ async function importAllSessions(options = {}) {
     logger.info('===================================================================');
     for (const imp of imported) {
       logger.info(
-        ` • [Conta ${imp.accountIndex}] ${imp.user} <- ${imp.tokenFile} (salvo em ${path.basename(imp.sessionPath)})`
+        ` • [Conta ${imp.accountIndex}] ${maskUser(imp.user)} <- ${imp.tokenFile} (salvo em ${path.basename(imp.sessionPath)})`
       );
     }
     logger.info('===================================================================');
