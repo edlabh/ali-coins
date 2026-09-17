@@ -10,7 +10,7 @@ GitHub Releases e os preparativos para a **1.0.0**.
 - A **1.0.0** congela o contrato público: CLI, exit codes `0–6`, formato de
   `session*.json(.enc)`, token `v3:N:r:p:...`, variáveis de ambiente e relatórios `--json`.
 
-## Fluxo de release (a partir da 0.9.7)
+## Fluxo de release (a partir da 1.0.0)
 
 1. **Acumule as mudanças** em `main`, registrando cada item na seção `## [Unreleased]`
    do `CHANGELOG.md` (categorias `Adicionado`, `Corrigido`, `Alterado`, `Removido`,

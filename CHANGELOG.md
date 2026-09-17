@@ -7,9 +7,34 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [Unreleased]
 
-> Alterações destinadas à **1.0.0** devem ser registradas aqui e migradas para a seção
-> `## [1.0.0] - AAAA-MM-DD` no momento do release. O processo completo está em
-> [RELEASING.md](RELEASING.md).
+> Alterações destinadas às próximas versões (1.0.x / 1.1.0) devem ser registradas aqui e
+> migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
+> completo está em [RELEASING.md](RELEASING.md).
+
+## [1.0.0] - 2026-09-17
+
+> **Notas de migração (0.9.x → 1.0.0):** o contrato público está congelado — CLI e exit
+> codes `0–6`, formato de `session*.json(.enc)`, tokens `v3:N:r:p:...` (com leitura
+> transparente de `v1`/`v2`), variáveis de ambiente e relatórios `--json`. Mudanças de
+> comportamento relevantes:
+>
+> - **Lockfile no diretório do projeto** (`ali-coins-<uid>.lock`), não mais em `/tmp`;
+>   execuções nativas e via Docker **não compartilham** o lock (evite rodá-las juntas).
+> - **Flags de baixo consumo do Chromium ativas por padrão** (opt-out
+>   `CHROMIUM_LOW_MEMORY=false`; heap ajustável via `CHROMIUM_JS_HEAP_MB`, 64–2048 MB).
+>   `--no-zygote` só é aplicado com sandbox desabilitado; há fallback automático de
+>   sandbox apenas quando o erro indica sandbox indisponível.
+> - **Importação em lote remove `session_token*.txt` após o sucesso** — use
+>   `--keep-tokens` (ou `KEEP_SESSION_TOKENS=true`) para preservá-los.
+> - **Logs mascaram PII e segredos em query strings** (tokens/apikeys em URLs deixam de
+>   aparecer em claro no `cron.log`).
+> - **`SCRYPT_N` com piso 16384 e teto 1048576**; parâmetros embutidos em tokens `v3` são
+>   sanitizados na decifragem.
+> - **`PW_SCREENSHOT` passou a ser aplicado de fato** (captura automática em falha ou
+>   sempre, conforme configuração).
+> - **Node.js >= 22** é obrigatório.
+> - Sessões e tokens existentes continuam válidos; a rotação de chaves agora cobre todas
+>   as contas (`export_session.js --rotate`).
 
 ### Corrigido
 
