@@ -1,10 +1,15 @@
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const { z } = require('zod');
 const logger = require('./logger');
 
 // Salt fixo legado para compatibilidade com tokens v1
 const APP_SCRYPT_SALT_V1 = Buffer.from('ali-coins-session-encryption-v1-scrypt-salt', 'utf-8');
+
+// Parâmetros scrypt modernos (v3) e legados (v1/v2)
+const SCRYPT_PARAMS_V3 = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }; // 2^17
+const SCRYPT_PARAMS_LEGACY = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }; // 2^14
 
 /**
  * Ajusta permissões do arquivo para 0o600 de forma segura entre plataformas
@@ -21,36 +26,106 @@ function safeChmod600(filePath) {
 }
 
 /**
- * Escrita segura e assíncrona de arquivo com permissão 0o600
- * @param {string} filePath
- * @param {string|Buffer} data
- * @param {string} [encoding='utf-8']
+ * Escrita segura e atômica de arquivo com permissão 0o600.
+ * Grava em arquivo temporário (destino.tmp-<pid>-<rand>), força fsync físico no disco,
+ * e renomeia atomicamente para o destino final.
+ * Em caso de falha durante a escrita, o arquivo de destino original permanece 100% íntegro
+ * e o arquivo temporário incompleto é removido.
+ * @param {string} filePath Caminho do arquivo de destino
+ * @param {string|Buffer} data Conteúdo a gravar
+ * @param {string} [encoding='utf-8'] Codificação dos dados se string
  */
 async function safeWriteFile(filePath, data, encoding = 'utf-8') {
-  await fs.promises.writeFile(filePath, data, { encoding, mode: 0o600 });
+  const rand = crypto.randomBytes(6).toString('hex');
+  const tmpPath = `${filePath}.tmp-${process.pid}-${rand}`;
+  let handle = null;
+
   try {
-    await fs.promises.chmod(filePath, 0o600);
-  } catch {
-    // Ignorado em plataformas que não suportam chmod
+    handle = await fs.promises.open(tmpPath, 'w', 0o600);
+    if (Buffer.isBuffer(data)) {
+      await handle.write(data);
+    } else {
+      await handle.writeFile(data, encoding);
+    }
+    await handle.sync();
+    await handle.close();
+    handle = null;
+
+    await fs.promises.rename(tmpPath, filePath);
+    safeChmod600(filePath);
+  } catch (err) {
+    if (handle) {
+      try {
+        await handle.close();
+      } catch {
+        // Ignora erro ao fechar handle
+      }
+    }
+    try {
+      await fs.promises.unlink(tmpPath);
+    } catch {
+      // Ignora erro se o arquivo temporário já não existir
+    }
+    throw err;
   }
 }
 
 /**
- * Criptografa o payload da sessão usando scrypt + aes-256-gcm com salt aleatório (v2)
+ * Remove arquivos temporários órfãos (.tmp-<pid>-<rand>) deixados por crashes repentinos (kill/OOM)
+ * @param {string} [dir=process.cwd()] Diretório onde procurar arquivos temporários
+ * @param {number} [maxAgeMs=300000] Idade mínima em ms para considerar órfão (default: 5 minutos)
+ * @returns {Promise<Array<string>>} Lista de arquivos removidos
+ */
+async function cleanOrphanTmpFiles(dir = process.cwd(), maxAgeMs = 300000) {
+  const removed = [];
+  try {
+    if (!fs.existsSync(dir)) return removed;
+    const files = await fs.promises.readdir(dir);
+    const now = Date.now();
+    for (const file of files) {
+      if (/\.tmp-\d+-[a-f0-9]+$/i.test(file)) {
+        const fullPath = path.join(dir, file);
+        try {
+          const stat = await fs.promises.stat(fullPath);
+          if (now - stat.mtimeMs >= maxAgeMs) {
+            await fs.promises.unlink(fullPath);
+            removed.push(fullPath);
+          }
+        } catch {
+          // Ignorado se removido concorrentemente
+        }
+      }
+    }
+  } catch {
+    // Ignora erro de leitura do diretório
+  }
+  return removed;
+}
+
+/**
+ * Criptografa o payload da sessão usando scrypt + aes-256-gcm com salt aleatório (v3)
  * @param {string} payloadJson
  * @param {string} secret
- * @returns {string} Token no formato v2:salt:iv:tag:ciphertext:base64
+ * @param {object} [options={}] Opções adicionais de criptografia ({ version: 'v2'|'v3', N, r, p })
+ * @returns {string} Token no formato v3:N:r:p:salt:iv:tag:ciphertext:base64 (ou v2:salt:iv:tag:ciphertext:base64)
  */
-function encryptSession(payloadJson, secret) {
+function encryptSession(payloadJson, secret, options = {}) {
   if (!secret || typeof secret !== 'string' || secret.length < 32) {
     throw new Error(
       'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para criptografia segura.'
     );
   }
 
+  const requestedVersion = options.version === 'v2' ? 'v2' : 'v3';
   const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 });
   const iv = crypto.randomBytes(12);
+
+  const N = requestedVersion === 'v2' ? SCRYPT_PARAMS_LEGACY.N : options.N || SCRYPT_PARAMS_V3.N;
+  const r = requestedVersion === 'v2' ? SCRYPT_PARAMS_LEGACY.r : options.r || SCRYPT_PARAMS_V3.r;
+  const p = requestedVersion === 'v2' ? SCRYPT_PARAMS_LEGACY.p : options.p || SCRYPT_PARAMS_V3.p;
+  const maxmem = Math.max(256 * 1024 * 1024, 128 * N * r * 2);
+
+  const key = crypto.scryptSync(secret, salt, 32, { N, r, p, maxmem });
 
   let ciphertext;
   let tag;
@@ -69,12 +144,17 @@ function encryptSession(payloadJson, secret) {
   const tagB64 = tag.toString('base64');
   const cipherB64 = ciphertext.toString('base64');
 
-  return `v2:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
+  if (requestedVersion === 'v2') {
+    return `v2:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
+  }
+
+  return `v3:${N}:${r}:${p}:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
 }
 
 /**
  * Descriptografa o token de sessão usando scrypt + aes-256-gcm.
- * Compatível com tokens legados v1 (salt fixo) e tokens modernos v2 (salt dinâmico).
+ * Compatível com tokens modernos v3 (marcador de parâmetros e N=2^17), v2 (salt dinâmico, N=16384)
+ * e tokens legados v1 (salt fixo, N=16384).
  * @param {string} tokenString
  * @param {string} secret
  * @returns {string} Payload JSON descriptografado
@@ -98,13 +178,46 @@ function decryptSession(tokenString, secret) {
   let iv;
   let tag;
   let ciphertext;
+  let scryptParams = SCRYPT_PARAMS_LEGACY;
 
-  if (version === 'v2') {
+  if (version === 'v3') {
+    if (parts.length >= 8) {
+      // Formato moderno com marcadores de parâmetros: v3:N:r:p:salt:iv:tag:ciphertext:base64
+      const parsedN = parseInt(parts[1], 10);
+      const parsedR = parseInt(parts[2], 10);
+      const parsedP = parseInt(parts[3], 10);
+      const N = !isNaN(parsedN) && parsedN > 0 ? parsedN : SCRYPT_PARAMS_V3.N;
+      const r = !isNaN(parsedR) && parsedR > 0 ? parsedR : SCRYPT_PARAMS_V3.r;
+      const p = !isNaN(parsedP) && parsedP > 0 ? parsedP : SCRYPT_PARAMS_V3.p;
+      scryptParams = {
+        N,
+        r,
+        p,
+        maxmem: Math.max(256 * 1024 * 1024, 128 * N * r * 2)
+      };
+      salt = Buffer.from(parts[4], 'base64');
+      iv = Buffer.from(parts[5], 'base64');
+      tag = Buffer.from(parts[6], 'base64');
+      ciphertext = Buffer.from(parts[7], 'base64');
+    } else if (parts.length >= 5) {
+      // Formato v3 compacto: v3:salt:iv:tag:ciphertext:base64
+      scryptParams = SCRYPT_PARAMS_V3;
+      salt = Buffer.from(parts[1], 'base64');
+      iv = Buffer.from(parts[2], 'base64');
+      tag = Buffer.from(parts[3], 'base64');
+      ciphertext = Buffer.from(parts[4], 'base64');
+    } else {
+      throw new Error(
+        'Formato de token v3 inválido. O token deve possuir blocos v3:N:r:p:salt:iv:tag:ciphertext:base64.'
+      );
+    }
+  } else if (version === 'v2') {
     if (parts.length < 5) {
       throw new Error(
         'Formato de token v2 inválido. O token deve possuir blocos v2:salt:iv:tag:ciphertext:base64.'
       );
     }
+    scryptParams = SCRYPT_PARAMS_LEGACY;
     salt = Buffer.from(parts[1], 'base64');
     iv = Buffer.from(parts[2], 'base64');
     tag = Buffer.from(parts[3], 'base64');
@@ -115,17 +228,18 @@ function decryptSession(tokenString, secret) {
         'Formato de token v1 inválido. O token deve possuir blocos v1:iv:tag:ciphertext:base64.'
       );
     }
+    scryptParams = SCRYPT_PARAMS_LEGACY;
     salt = APP_SCRYPT_SALT_V1;
     iv = Buffer.from(parts[1], 'base64');
     tag = Buffer.from(parts[2], 'base64');
     ciphertext = Buffer.from(parts[3], 'base64');
   } else {
     throw new Error(
-      'Formato de token de sessão inválido. O token deve iniciar com "v1:" ou "v2:".'
+      'Formato de token de sessão inválido. O token deve iniciar com "v1:", "v2:" ou "v3:".'
     );
   }
 
-  const key = crypto.scryptSync(secret, salt, 32, { N: 16384, r: 8, p: 1 });
+  const key = crypto.scryptSync(secret, salt, 32, scryptParams);
   let decryptedStr = null;
 
   try {
@@ -375,8 +489,11 @@ function readMasked2FACode(
 
 module.exports = {
   APP_SCRYPT_SALT_V1,
+  SCRYPT_PARAMS_V3,
+  SCRYPT_PARAMS_LEGACY,
   safeChmod600,
   safeWriteFile,
+  cleanOrphanTmpFiles,
   encryptSession,
   decryptSession,
   validateSessionPayload,

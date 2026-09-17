@@ -52,14 +52,15 @@ A CLI suporta as seguintes flags unificadas (via `commander`):
 
 Os scripts retornam códigos de saída padronizados para integração contínua e automação via Cron/Task Scheduler:
 
-| Código  | Significado            | Descrição                                                                         |
-| :-----: | :--------------------- | :-------------------------------------------------------------------------------- |
-| **`0`** | Sucesso                | Check-in ou tarefas executadas com novas moedas coletadas com sucesso.            |
-| **`1`** | Falha                  | Erro crítico de execução, credenciais inválidas ou falha de autenticação.         |
-| **`2`** | Sem Ação / Já Coletado | O check-in já havia sido realizado hoje e não há tarefas pendentes.               |
-| **`3`** | Lock Ativo             | Outra instância da automação já está em execução no momento (evita sobreposição). |
-| **`4`** | Streak Quebrado        | Alerta crítico: sequência de check-in foi interrompida/resetada (ontem → hoje).   |
-| **`5`** | 2FA Não-Interativo     | Interrupção rápida (<5s) em cron/CI quando o AliExpress solicita 2FA (sem TTY).   |
+| Código  | Significado            | Descrição                                                                             |
+| :-----: | :--------------------- | :------------------------------------------------------------------------------------ |
+| **`0`** | Sucesso                | Check-in ou tarefas executadas com novas moedas coletadas com sucesso.                |
+| **`1`** | Falha                  | Erro crítico de execução, credenciais inválidas ou falha de autenticação.             |
+| **`2`** | Sem Ação / Já Coletado | O check-in já havia sido realizado hoje e não há tarefas pendentes.                   |
+| **`3`** | Lock Ativo             | Outra instância da automação já está em execução no momento (evita sobreposição).     |
+| **`4`** | Streak Quebrado        | Alerta crítico: sequência de check-in foi interrompida/resetada (ontem → hoje).       |
+| **`5`** | 2FA Não-Interativo     | Interrupção rápida (<5s) em cron/CI quando o AliExpress solicita 2FA (sem TTY).       |
+| **`6`** | Falha Global           | Erro não capturado ou Promise rejeitada (`uncaughtException` / `unhandledRejection`). |
 
 ---
 

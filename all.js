@@ -20,7 +20,17 @@ const {
 const { sendTelegram } = require('./libs/notify');
 const { sendHeartbeat } = require('./libs/heartbeat');
 const { startAccountTimer } = require('./libs/timing');
+const { setupGlobalCrashHandler } = require('./libs/crash');
 const logger = require('./logger');
+
+let currentConfig = null;
+let currentAccount = null;
+
+setupGlobalCrashHandler(() => ({
+  config: currentConfig,
+  account: currentAccount,
+  scriptName: 'all.js'
+}));
 
 async function main() {
   if (checkAndDisplayHelp()) {
@@ -90,6 +100,7 @@ async function main() {
   logger.info('===============================================================\n');
 
   const config = loadConfig(true);
+  currentConfig = config;
 
   // Dead man's switch: sinal de início
   await sendHeartbeat('start', { config });
@@ -103,6 +114,7 @@ async function main() {
     if (!isMulti) {
       // ----------------- FLUXO CONTA ÚNICA -----------------
       const account = accounts[0] || null;
+      currentAccount = account;
 
       // ETAPA 1: Check-in diário
       const step1StartTime = new Date();
@@ -319,6 +331,7 @@ async function main() {
 
       for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
+        currentAccount = account;
         logger.info(
           `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser}`
         );

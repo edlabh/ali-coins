@@ -422,6 +422,10 @@ async function runCheckin(options = {}) {
 }
 
 if (require.main === module) {
+  const { setupGlobalCrashHandler } = require('./libs/crash');
+  let cfg = null;
+  setupGlobalCrashHandler(() => ({ config: cfg, scriptName: 'collect.js' }));
+
   if (checkAndDisplayHelp()) {
     process.exit(0);
   }
@@ -433,7 +437,6 @@ if (require.main === module) {
 
     const { sendTelegram } = require('./libs/notify');
     let releaseLock = null;
-    let cfg = null;
     try {
       cfg = loadConfig(true);
     } catch {

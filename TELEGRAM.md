@@ -259,6 +259,22 @@ Ao agendar tarefas automatizadas no servidor via `crontab`, você pode alternar 
 
 ---
 
+## 🚦 Códigos de Saída e Eventos Notificados
+
+O bot do Telegram reporta os principais eventos associados aos códigos de saída do sistema:
+
+| Código  | Evento no Telegram       | Descrição                                                                          |
+| :-----: | :----------------------- | :--------------------------------------------------------------------------------- |
+| **`0`** | `success`                | Execução concluída com sucesso e moedas adicionadas.                               |
+| **`1`** | `failure`                | Falha crítica de execução ou autenticação.                                         |
+| **`2`** | `already_collected`      | Execução idempotente: moedas já coletadas e sem tarefas pendentes.                 |
+| **`3`** | `lock_active`            | Execução bloqueada: outra instância ativa no host.                                 |
+| **`4`** | `streak_break`           | Alerta crítico: sequência diária interrompida.                                     |
+| **`5`** | `2fa_required`           | Alerta de 2FA solicitado em ambiente não-interativo (cron/CI).                     |
+| **`6`** | `failure` (Crash Global) | Notificação de emergência enviada por `uncaughtException` ou `unhandledRejection`. |
+
+---
+
 ## 🛑 Como Desativar
 
 Para desativar as notificações permanentemente, basta definir no seu `credentials.env`:

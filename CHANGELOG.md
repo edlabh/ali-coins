@@ -5,6 +5,19 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.3] - 2026-09-17
+
+### Corrigido
+
+- **Escrita Atômica de Sessões (`safeWriteFile`):** Eliminação do risco de arquivos de sessão e tokens truncados por encerramento abrupto do processo (`SIGKILL`, exit 137 / OOM em ambientes com pouca memória). O método agora grava inicialmente em arquivo temporário com permissão `0o600` (`<destino>.tmp-<pid>-<rand>`), realiza `fsync` físico e conclui a operação através de substituição atômica (`fs.promises.rename`). Em caso de falha, o arquivo de destino permanece 100% íntegro e temporários órfãos são removidos automaticamente no boot.
+- **Handler Global de Falhas e Crash Handler (`setupGlobalCrashHandler`):** Tratamento global para exceções não capturadas (`uncaughtException`) e promessas rejeitadas sem captura (`unhandledRejection`) em `all.js`, `collect.js` e `do_tasks.js`. O handler registra log em nível `fatal`, efetua despacho best-effort de notificação parcial ao Telegram e sinal de falha no heartbeat, finalizando o processo com o novo código de saída padronizado **`6`** (com timeout de segurança de 5s para prevenir qualquer possibilidade de travamento).
+
+### Adicionado
+
+- **Criptografia com Marcador de Parâmetros e Suporte v3:** Novos tokens de sessão gerados no formato versionado `v3:N:r:p:salt:iv:tag:ciphertext:base64` com parâmetros robustos (`scrypt N=131072` / 2¹⁷, `r=8`, `p=1`). O deserializador (`decryptSession`) oferece suporte transparente e retrocompatibilidade cruzada total entre versões `v3`, `v2` e `v1`.
+- **Sincronização de Variáveis no `credentials.env.example`:** Documentação detalhada com exemplos e explicações para as variáveis `DIAGNOSTICS_RETENTION_DAYS` (retenção de artefatos e traces em `scratch/`, padrão 7 dias) e `NOTIFY_HOST_LABEL` (customização do rótulo do host nas mensagens do Telegram).
+- **Documentação de Race em Reuso de PIDs no Lockfile:** Análise de segurança no código de `lockfile.js` documentando o comportamento fail-safe em eventuais reciclagem de PIDs pelo sistema operacional e a mitigação definitiva via `staleTimeoutMs` (30 min).
+
 ## [0.9.2] - 2026-09-17
 
 ### Corrigido

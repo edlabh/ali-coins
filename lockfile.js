@@ -60,6 +60,23 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
         );
         await fs.promises.unlink(targetLockPath).catch(() => {});
       } else if (isSameHost) {
+        // [ANÁLISE DE SEGURANÇA - RACE DE REUSO DE PID]:
+        // Em sistemas operacionais (Linux/macOS/Windows), os números de PID são finitos e eventualmente
+        // reciclados pelo kernel. Se um processo anterior morrer abruptamente sem remover o lockfile e o
+        // kernel posteriormente atribuir o mesmo PID a outro processo aleatório do sistema (ex: editor, banco),
+        // `process.kill(pid, 0)` retornará true para esse processo alheio.
+        //
+        // POR QUE A DIREÇÃO É FAIL-SAFE:
+        // A consequência de uma colisão de PID é um falso-positivo (o script assume defensivamente que o lock
+        // está ocupado e adia sua própria execução). Essa decisão é estritamente segura (fail-safe): é preferível
+        // pular uma rodada do que arriscar duas instâncias simultâneas corrompendo contextos do navegador, cookies
+        // e sessões ativas do AliExpress.
+        //
+        // COMO O STALE-TIMEOUT MITIGA O CENÁRIO:
+        // Caso um PID reciclado permaneça ativo por longo período, a condição anterior `isStale`
+        // (baseada no tempo de criação do lock vs `staleTimeoutMs`, default 30 min) age como teto máximo de vida.
+        // Ao atingir 30 minutos, o lock é considerado expirado e limpo independentemente do estado do PID,
+        // garantindo que o sistema nunca entre em deadlock permanente.
         let isProcessAlive = false;
         try {
           // process.kill com sinal 0 apenas verifica se o processo existe

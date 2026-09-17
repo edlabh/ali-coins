@@ -8,6 +8,7 @@ const {
 const {
   validateSession,
   safeWriteFile,
+  cleanOrphanTmpFiles,
   safeChmod600,
   encryptSession,
   decryptSession
@@ -470,6 +471,11 @@ function isPrunableArtifact(file) {
     return true;
   }
 
+  // 6. Arquivos temporários órfãos de escritas atômicas interrompidas
+  if (file.includes('.tmp-')) {
+    return true;
+  }
+
   return false;
 }
 
@@ -482,7 +488,7 @@ function isPrunableArtifact(file) {
  * @returns {Promise<Array<string>>} Lista de caminhos de arquivos removidos (ou que seriam)
  */
 async function pruneSessionBackups(options = {}) {
-  const { scratchDir: defaultScratchDir } = resolveSessionPaths(options);
+  const { scratchDir: defaultScratchDir, encPath } = resolveSessionPaths(options);
   const targetScratchDir = options.scratchDir || defaultScratchDir;
   const envDays = Number(
     process.env.DIAGNOSTICS_RETENTION_DAYS || process.env.SESSION_BACKUP_RETENTION_DAYS
@@ -537,6 +543,15 @@ async function pruneSessionBackups(options = {}) {
       { err: err.message },
       'Falha ao inspecionar diretório para limpeza de backups e diagnósticos.'
     );
+  }
+
+  try {
+    const orphanTmp = await cleanOrphanTmpFiles(path.dirname(encPath));
+    if (orphanTmp.length > 0) {
+      pruned.push(...orphanTmp);
+    }
+  } catch {
+    // Ignora erro ao limpar temporários órfãos
   }
 
   return pruned;

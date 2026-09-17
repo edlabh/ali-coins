@@ -98,7 +98,10 @@ test('libs/session.js - criptografia at-rest (.enc) roundtrip completo em ambien
     assert.ok(!fs.existsSync(plainFile), 'session.json puro NÃO deve existir');
 
     const encRaw = fs.readFileSync(encFile, 'utf-8');
-    assert.ok(encRaw.startsWith('v2:'), 'Payload salvo deve ser token AES-256-GCM v2');
+    assert.ok(
+      encRaw.startsWith('v2:') || encRaw.startsWith('v3:'),
+      'Payload salvo deve ser token AES-256-GCM v2 ou v3'
+    );
     assert.ok(
       !encRaw.includes('secret_token_val'),
       'Token bruto não deve conter segredos em claro'
@@ -234,7 +237,10 @@ test('libs/session.js - clearSession gera backup versionado em scratch/ antes de
       .filter((f) => f.startsWith('session.bak-') && f.endsWith('.json.enc'));
     assert.strictEqual(backups.length, 1, 'Deve existir exatamente 1 arquivo de backup');
     const bakContent = fs.readFileSync(path.join(scratchPath, backups[0]), 'utf-8');
-    assert.ok(bakContent.startsWith('v2:'), 'Backup deve estar devidamente criptografado');
+    assert.ok(
+      bakContent.startsWith('v2:') || bakContent.startsWith('v3:'),
+      'Backup deve estar devidamente criptografado'
+    );
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);

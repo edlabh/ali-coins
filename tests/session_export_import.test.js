@@ -78,7 +78,7 @@ test('export_session & import_session - roundtrip completo criptografado (.enc) 
       showToken: false,
       baseDir: tmpDir
     });
-    assert.ok(exportRes.token.startsWith('v2:'));
+    assert.ok(exportRes.token.startsWith('v2:') || exportRes.token.startsWith('v3:'));
     assert.strictEqual(exportRes.user, 'export_test_user@example.com');
     assert.ok(fs.existsSync(tPath));
 
@@ -106,7 +106,10 @@ test('export_session & import_session - roundtrip completo criptografado (.enc) 
 
     // 2. Verificar que o conteúdo de session.json.enc é um token criptografado válido
     const encContent = await fs.promises.readFile(encPath, 'utf-8');
-    assert.ok(encContent.startsWith('v2:'), 'Conteúdo gravado deve iniciar com v2:');
+    assert.ok(
+      encContent.startsWith('v2:') || encContent.startsWith('v3:'),
+      'Conteúdo gravado deve iniciar com v2: ou v3:'
+    );
 
     // 3. Verificar que o loader nativo (loadSessionFiles) carrega e descriptografa transparentemente
     const loaded = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET });

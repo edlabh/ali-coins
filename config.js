@@ -236,7 +236,20 @@ function createCliProgram() {
       'Especifica o índice (1, 2) ou e-mail da conta (export_session / import_session)'
     )
     .allowUnknownOption(true)
-    .helpOption('-h, --help', 'Exibe esta ajuda com a lista de opções');
+    .helpOption('-h, --help', 'Exibe esta ajuda com a lista de opções')
+    .addHelpText(
+      'after',
+      `
+Códigos de Saída (Exit Codes):
+  0  Sucesso (novas moedas coletadas com sucesso)
+  1  Falha crítica de execução ou autenticação
+  2  Sem Ação / Já Coletado (check-in já realizado e sem tarefas pendentes)
+  3  Lock Ativo (outra instância já em execução no host)
+  4  Streak Quebrado (sequência de check-in foi interrompida)
+  5  2FA Não-Interativo (solicitação de 2FA em ambiente sem TTY)
+  6  Falha Global Não Tratada (uncaughtException / unhandledRejection)
+`
+    );
 
   return program;
 }
