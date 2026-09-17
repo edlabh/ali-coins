@@ -17,4 +17,8 @@ regexes = [
   # Placeholder usado no smoke test do CI na 0.9.7 (commit 28b7507) e removido em seguida;
   # permanece no histórico apenas como valor fictício documentado.
   '''0123456789abcdef0123456789abcdef''',
+  # Valores fictícios usados em testes de sanitização de URL (removidos do fonte em 1c96eeb);
+  # permanecem apenas no histórico como exemplos de token/apikey falsos.
+  '''SUPERSECRET123456''',
+  '''SECRETKEY987654321''',
 ]

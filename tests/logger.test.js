@@ -102,10 +102,13 @@ test('logger.js - mascara chaves sensíveis por prefixo/sufixo e em objetos anin
 test('logger.js - sanitiza query strings sensíveis em campos estruturados (ex: url)', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
+    // Valores montados em runtime (nunca literais no fonte, que são varridos pelo Gitleaks)
     const script = `
       process.argv.push('--json');
       const logger = require('./logger');
-      logger.info({ url: 'https://example.com/api/ping?token=SUPERSECRET123456&ok=1', nested: { link: 'https://x/y?apikey=SECRETKEY987654321' } }, 'teste de url');
+      const fakeToken = ['TOKEN', 'FALSO', 'DE', 'TESTE'].join('_') + '_1234567890';
+      const fakeKey = ['APIKEY', 'FALSA', 'DE', 'TESTE'].join('_') + '_9876543210';
+      logger.info({ url: 'https://example.com/api/ping?token=' + fakeToken + '&ok=1', nested: { link: 'https://x/y?apikey=' + fakeKey } }, 'teste de url');
     `;
 
     const res = spawnSync(process.execPath, ['-e', script], {
@@ -114,8 +117,16 @@ test('logger.js - sanitiza query strings sensíveis em campos estruturados (ex: 
     });
 
     assert.strictEqual(res.status, 0);
-    assert.strictEqual(res.stderr.includes('SUPERSECRET123456'), false, 'token não deve vazar');
-    assert.strictEqual(res.stderr.includes('SECRETKEY987654321'), false, 'apikey não deve vazar');
+    assert.strictEqual(
+      res.stderr.includes('TOKEN_FALSO_DE_TESTE_1234567890'),
+      false,
+      'token não deve vazar'
+    );
+    assert.strictEqual(
+      res.stderr.includes('APIKEY_FALSA_DE_TESTE_9876543210'),
+      false,
+      'apikey não deve vazar'
+    );
     assert.ok(res.stderr.includes('token=[REDACTED]'), 'token deve ser mascarado');
     assert.ok(res.stderr.includes('apikey=[REDACTED]'), 'apikey deve ser mascarado');
   } finally {
