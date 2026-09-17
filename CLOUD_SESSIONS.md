@@ -245,6 +245,10 @@ Para evitar falhas por memória:
    - `--init` e `--pids-limit=256`: evitam acúmulo de processos filhos do Chromium.
    - Um exemplo pronto de wrapper de cron, com medição de pico de memória, está em
      [`docker-run.example.sh`](docker-run.example.sh).
+   - **Lockfile por ambiente:** o lock fica no diretório do projeto (`ali-coins-<uid>.lock`).
+     Dentro do container ele vive em `/app` (efêmero), portanto **execuções nativas no host
+     e execuções via Docker não compartilham o mesmo lock** — evite rodar as duas
+     simultaneamente para a mesma conta.
 
 4. **Reduza o custo do `scrypt` em hosts de 1 GB:**
 

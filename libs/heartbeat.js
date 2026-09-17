@@ -32,6 +32,18 @@ function maskHeartbeatUrl(url) {
       }
       parsed.pathname = '/' + pathParts.join('/');
     }
+    // Mascara valores de query string (tokens/apikeys enviados como parâmetro)
+    if (parsed.searchParams.size > 0) {
+      for (const [key, value] of parsed.searchParams) {
+        parsed.searchParams.set(
+          key,
+          value.length > 8 ? `${value.slice(0, 4)}***${value.slice(-4)}` : '***'
+        );
+      }
+    }
+    if (parsed.hash) {
+      parsed.hash = '';
+    }
     return parsed.toString();
   } catch {
     return url.length > 12 ? `${url.slice(0, 8)}***${url.slice(-4)}` : '***';

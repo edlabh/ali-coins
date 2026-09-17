@@ -157,9 +157,14 @@ async function extractTasksFromDrawer(optionsOrPage) {
       if (totalRounds !== null && completedRounds !== null) {
         isDone = completedRounds >= totalRounds && !isClaimable;
       } else {
-        const isDisabledStyle = btnStyle.includes('opacity: 0.5') || btnStyle.includes('cover');
+        // Apenas 'opacity: 0.5' como sinal visual de desabilitado. A heurística textual
+        // 'cover' foi removida por poder marcar como concluída uma tarefa ativa
+        // (ex: botão com background-size: cover).
+        const isDisabledStyle = btnStyle.includes('opacity: 0.5');
         const isDoneText = Boolean(btnText.match(/^(DONE|CONCLU[IÍ]DO|COMPLETED)$/i));
-        isDone = (isDisabledStyle || isDoneText || (!isActionable && !isClaimable)) && !isClaimable;
+        // Somente sinais POSITIVOS de conclusão: a ausência de rótulos conhecidos não
+        // marca mais a tarefa como concluída (evita pular tarefas com botões novos/A-B).
+        isDone = !isClaimable && (isDisabledStyle || isDoneText);
       }
 
       const groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';

@@ -385,3 +385,35 @@ test('lockfile.js - createdAt futuro ou inválido não causa bloqueio permanente
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('lockfile.js - falha rápida e clara quando o caminho do lock é um diretório', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-dir-');
+  const tmpLockPath = path.join(tmpDir, 'dir.lock');
+
+  try {
+    fs.mkdirSync(tmpLockPath);
+
+    const t0 = Date.now();
+    await assert.rejects(
+      async () => {
+        await acquireLock(false, 60000, tmpLockPath);
+      },
+      (err) => {
+        assert.ok(
+          /não foi possível remover/i.test(err.message),
+          `Erro deve ser claro sobre caminho não removível: ${err.message}`
+        );
+        return true;
+      }
+    );
+    const elapsed = Date.now() - t0;
+    assert.ok(
+      elapsed < 3000,
+      `Falha deve ser rápida (sem 5 rodadas de carência), levou ${elapsed}ms`
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

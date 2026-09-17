@@ -358,10 +358,13 @@ function decryptSession(tokenString, secret) {
     );
   }
 
-  const key = crypto.scryptSync(secret, salt, 32, scryptParams);
+  let key = null;
   let decryptedStr = null;
 
   try {
+    // scryptSync dentro do try: parâmetros inválidos (ex: token compacto + SCRYPT_N alto)
+    // são reportados como falha de autenticação, não como erro cru de parâmetros
+    key = crypto.scryptSync(secret, salt, 32, scryptParams);
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     const decryptedBuf = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
@@ -373,7 +376,9 @@ function decryptSession(tokenString, secret) {
     );
   } finally {
     // Zerar buffers da memória imediatamente após o uso
-    key.fill(0);
+    if (key) {
+      key.fill(0);
+    }
     if (salt !== APP_SCRYPT_SALT_V1) {
       salt.fill(0);
     }

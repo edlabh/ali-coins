@@ -535,3 +535,23 @@ test('security.js - SCRYPT_MAX_N exposto e coherente com o piso', () => {
   assert.strictEqual(typeof SCRYPT_MAX_N, 'number');
   assert.ok(SCRYPT_MAX_N > SCRYPT_DEFAULT_N, 'Teto deve ser maior que o default');
 });
+
+test('security.js - token v3 compacto com SCRYPT_N alto falha como erro de autenticação (sem erro cru)', () => {
+  const secret = 'z'.repeat(40);
+  const full = encryptSession(JSON.stringify({ ok: true }), secret);
+  const parts = full.split(':');
+  // v3:N:r:p:salt:iv:tag:cipher:base64 -> compacto v3:salt:iv:tag:cipher:base64
+  const compact = ['v3', parts[4], parts[5], parts[6], parts[7], parts[8]].join(':');
+
+  const originalN = SCRYPT_PARAMS_V3.N;
+  try {
+    SCRYPT_PARAMS_V3.N = 1048576; // 2^20: exigiria ~1GB, acima do maxmem fixo do formato compacto
+    assert.throws(
+      () => decryptSession(compact, secret),
+      /Falha na autenticação\/descriptografia/,
+      'Erro de parâmetros do scrypt deve ser reportado como falha de autenticação'
+    );
+  } finally {
+    SCRYPT_PARAMS_V3.N = originalN;
+  }
+});

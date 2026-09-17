@@ -84,6 +84,33 @@ function scrubSensitiveFields(value, depth = 0, seen = new WeakSet()) {
 }
 
 /**
+ * Aplica a sanitização de query params sensíveis a TODOS os valores string do objeto,
+ * cobrindo campos estruturados como { url } que não passam pelo hook de msg/err.
+ * @param {*} value
+ * @param {number} [depth=0]
+ * @param {WeakSet} [seen]
+ * @returns {*}
+ */
+function sanitizeLogStrings(value, depth = 0, seen = new WeakSet()) {
+  if (typeof value === 'string') return sanitizeSensitiveQueryParams(value);
+  if (depth > 4 || value === null || typeof value !== 'object') return value;
+  if (value instanceof Error || Buffer.isBuffer(value)) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeLogStrings(item, depth + 1, seen));
+  }
+  if (!isPlainObject(value)) return value;
+
+  const result = {};
+  for (const [key, val] of Object.entries(value)) {
+    result[key] = sanitizeLogStrings(val, depth + 1, seen);
+  }
+  return result;
+}
+
+/**
  * Mascara parâmetros de consulta sensíveis em strings/URLs e tokens de bot Telegram
  * @param {string} str
  * @returns {string}
@@ -91,7 +118,10 @@ function scrubSensitiveFields(value, depth = 0, seen = new WeakSet()) {
 function sanitizeSensitiveQueryParams(str) {
   if (typeof str !== 'string') return str;
   return str
-    .replace(/([?&](?:token|code|ticket|password|passwd|secret)=)[^&#\s]+/gi, '$1[REDACTED]')
+    .replace(
+      /([?&](?:access_token|api[_-]?key|apikey|auth|authorization|code|password|passwd|secret|session|ticket|token)=)[^&#\s]+/gi,
+      '$1[REDACTED]'
+    )
     .replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]');
 }
 
@@ -153,7 +183,7 @@ const logger = pino(
         if (typeof sanitized.err === 'string') {
           sanitized.err = sanitizeSensitiveQueryParams(sanitized.err);
         }
-        return scrubSensitiveFields(sanitized);
+        return sanitizeLogStrings(scrubSensitiveFields(sanitized));
       }
     },
     base: { pid: process.pid },

@@ -39,13 +39,34 @@ function isNoSandboxRequired() {
 // Podem ser desativadas com CHROMIUM_LOW_MEMORY=false|0|off em hosts folgados/troubleshooting.
 // O stack de navegador do Chromium ocupa ~100-270 MB; estas flags reduzem picos que
 // costumam disparar o OOM Killer (exit 137) em VPS pequenas.
-const LOW_MEMORY_CHROMIUM_ARGS = [
-  '--disable-gpu',
-  '--disable-software-rasterizer',
-  '--renderer-process-limit=1',
-  '--js-flags=--max-old-space-size=128',
-  '--disk-cache-size=10485760'
-];
+const DEFAULT_JS_HEAP_MB = 128;
+const MIN_JS_HEAP_MB = 64;
+const MAX_JS_HEAP_MB = 2048;
+
+/**
+ * Heap máximo do V8 no Chromium (MB), ajustável via CHROMIUM_JS_HEAP_MB.
+ * Valores inválidos voltam ao padrão e o resultado é limitado a [64, 2048] MB.
+ * @returns {number}
+ */
+function getChromiumJsHeapMb() {
+  const raw = Number(process.env.CHROMIUM_JS_HEAP_MB);
+  if (!Number.isInteger(raw) || raw <= 0) return DEFAULT_JS_HEAP_MB;
+  return Math.min(Math.max(raw, MIN_JS_HEAP_MB), MAX_JS_HEAP_MB);
+}
+
+/**
+ * Monta as flags de baixo consumo (heap configurável em runtime)
+ * @returns {string[]}
+ */
+function getLowMemoryChromiumArgs() {
+  return [
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--renderer-process-limit=1',
+    `--js-flags=--max-old-space-size=${getChromiumJsHeapMb()}`,
+    '--disk-cache-size=10485760'
+  ];
+}
 
 // O Chromium recusa iniciar com --no-zygote e sandbox habilitado:
 // "[ERROR] Zygote cannot be disabled if sandbox is enabled. Use --no-zygote together with --no-sandbox"
@@ -83,7 +104,7 @@ function buildChromiumArgs({ forceNoSandbox = false, lowMemory } = {}) {
   }
 
   if (useLowMemory) {
-    args.push(...LOW_MEMORY_CHROMIUM_ARGS);
+    args.push(...getLowMemoryChromiumArgs());
     // Requisito do próprio Chromium: --no-zygote somente com sandbox desabilitado
     if (shouldDisable) {
       args.push(NO_ZYGOTE_ARG);
@@ -152,21 +173,34 @@ async function launchBrowser(options = {}) {
   };
 
   // Sequência de tentativas de launch, da mais restrita à mais permissiva.
-  // Cobre: sandbox indisponível no kernel/container (userns bloqueado) e falha
-  // causada pelas flags de baixo consumo (heap 128MB/renderer único).
+  // - `requiresSandboxError`: só é tentada quando o erro indica sandbox indisponível
+  //   (kernel/container sem user namespaces) — nunca desabilita o sandbox por falhas
+  //   genéricas/transitórias (preserva a postura de segurança).
+  // - Fallback de memória: repete sem as flags de baixo consumo mantendo o sandbox.
   const candidates = [{ lowMemory: lowMemoryEnabled, noSandbox: false }];
   if (sandboxDefault) {
-    candidates.push({ lowMemory: lowMemoryEnabled, noSandbox: true });
+    candidates.push({ lowMemory: lowMemoryEnabled, noSandbox: true, requiresSandboxError: true });
   }
   if (lowMemoryEnabled) {
-    candidates.push({ lowMemory: false, noSandbox: sandboxDefault });
+    candidates.push({ lowMemory: false, noSandbox: false });
+    if (sandboxDefault) {
+      candidates.push({
+        lowMemory: false,
+        noSandbox: true,
+        requiresSandboxError: true
+      });
+    }
   }
 
   const seen = new Set();
   let lastError = null;
+  let firstError = null;
+  let sawSandboxError = false;
 
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i];
+    if (candidate.requiresSandboxError && !sawSandboxError) continue;
+
     const key = `${candidate.lowMemory}:${candidate.noSandbox}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -186,16 +220,27 @@ async function launchBrowser(options = {}) {
     try {
       return await chromium.launch(launchOptions);
     } catch (err) {
+      if (!firstError) firstError = err;
       lastError = err;
-      if (i < candidates.length - 1) {
-        logger.warn(
-          { attempt: i + 1, reason: String(err && err.message).split('\n')[0] },
-          'Falha ao iniciar o Chromium; tentando configuração de launch mais permissiva...'
-        );
+      const reason = String((err && err.message) || '');
+      if (/sandbox|zygote/i.test(reason)) {
+        sawSandboxError = true;
       }
+      logger.warn(
+        { attempt: i + 1, reason: reason.split('\n')[0] },
+        'Falha ao iniciar o Chromium; avaliando próxima configuração de launch...'
+      );
     }
   }
 
+  // Preserva o erro original (1ª tentativa) como causa para diagnóstico completo
+  if (lastError && firstError && lastError !== firstError && !lastError.cause) {
+    try {
+      lastError.cause = firstError;
+    } catch {
+      // Erros congelados/exóticos: ignora
+    }
+  }
   throw lastError;
 }
 
@@ -451,7 +496,9 @@ module.exports = {
   buildChromiumArgs,
   getChromiumEnv,
   isLowMemoryModeEnabled,
-  LOW_MEMORY_CHROMIUM_ARGS,
+  getLowMemoryChromiumArgs,
+  getChromiumJsHeapMb,
+  DEFAULT_JS_HEAP_MB,
   NO_ZYGOTE_ARG,
   SENSITIVE_ENV_KEY_REGEX,
   SENSITIVE_ENV_KEY_PREFIX_REGEX,

@@ -835,3 +835,33 @@ test('libs/session.js - logs de sessão mascaram o identificador do usuário (PI
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/session.js - metadados são gravados antes da sessão (falha de sessão não os descarta)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-meta-first-');
+
+  try {
+    // Obstrui a escrita do session.json (diretório no lugar do arquivo)
+    fs.mkdirSync(path.join(tmpDir, 'session.json'));
+
+    const fakeState = {
+      cookies: [{ name: 'xman_us_t', value: 'tok_meta_first', expires: 0 }],
+      origins: []
+    };
+
+    await assert.rejects(async () => {
+      await saveSession(fakeState, 'meta.first@example.com', {
+        baseDir: tmpDir,
+        encryptLocalSession: false
+      });
+    });
+
+    const metaPath = path.join(tmpDir, 'session_meta.json');
+    assert.ok(fs.existsSync(metaPath), 'Meta deve ser gravado antes da sessão');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    assert.strictEqual(meta.user, 'meta.first@example.com');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

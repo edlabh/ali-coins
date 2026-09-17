@@ -11,22 +11,6 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > `## [1.0.0] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
-### Adicionado
-
-- **Flags de Baixo Consumo do Chromium (padrão):** `getChromiumArgs()` agora aplica
-  `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`,
-  `--js-flags=--max-old-space-size=128` e `--disk-cache-size=10485760` para reduzir a
-  pegada de RAM e o pico que costuma disparar o OOM Killer (exit 137). O conjunto é
-  desativável via `CHROMIUM_LOW_MEMORY=false`. A flag `--no-zygote` é aplicada apenas
-  quando o sandbox está desabilitado (`NO_SANDBOX=true`/root/CI), pois o próprio Chromium
-  recusa `--no-zygote` com sandbox ativo. Documentado no `credentials.env.example`.
-- **`docker-run.example.sh`:** wrapper de cron recomendado para hosts pequenos, com
-  `--init`, `--pids-limit=256`, limites `--memory`/`--memory-swap`, rotação de log e
-  registro do **pico real** de memória/PIDs de cada execução.
-- **Guia de host com 1 GB RAM:** `README.md` e `CLOUD_SESSIONS.md` passam a recomendar
-  swap de 1–2 GB, `SCRYPT_N=32768` (~33 MB de pico em vez de ~134 MB) e as flags
-  `--shm-size=256m --memory=768m --memory-swap=1536m` no `docker run`.
-
 ### Corrigido
 
 - **Lockfile em diretório privado do projeto:** o lock (primário e secundários) saiu de
@@ -42,10 +26,30 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Encerramento nunca trava no flush (`libs/exit.js`):** teto de 5s para stdout/stderr e
   flush síncrono do destino do pino (`--json`), garantindo que os últimos logs não se
   percam nem travem a saída.
-- **Fallback progressivo de launch do Chromium:** se o sandbox for indisponível
-  (container/kernel sem user namespaces), o `launchBrowser` repete automaticamente com
-  `--no-sandbox`; se as flags de baixo consumo causarem falha, repete sem elas. O
-  `NO_SANDBOX=true` manual deixa de ser obrigatório.
+- **Fallback de launch não desabilita o sandbox por falha genérica:** a tentativa sem
+  `--no-sandbox` só ocorre quando o erro indica sandbox/zygote indisponível; falhas
+  transitórias repetem apenas sem as flags de baixo consumo, preservando o sandbox.
+- **Segredos em query string não vazam mais nos logs:** `maskHeartbeatUrl` passa a
+  mascarar valores de `searchParams`/fragmento, e o logger sanitiza **todos os valores
+  string** de campos estruturados (ex: `{ url }`), não apenas `msg`/`err`.
+- **Botão de tarefa desconhecido não é mais tratado como “Concluída”:** a conclusão exige
+  sinais positivos (estilo desabilitado ou texto DONE/CONCLUÍDO/COMPLETED); rótulos novos
+  (A/B test) ficam como `Requer verificação manual (botão "X" não reconhecido)` em vez de
+  serem pulados silenciosamente. Rótulos explícitos de conclusão são excluídos desse aviso.
+- **Heurística textual `cover` removida da detecção de botão desabilitado:** um estilo com
+  `background-size: cover` podia marcar uma tarefa **ativa** como concluída; agora apenas
+  `opacity: 0.5` (e rounds completos/texto DONE) indicam conclusão.
+- **`decryptSession` reporta parâmetros scrypt inválidos como falha de autenticação:**
+  o `scryptSync` foi movido para dentro do bloco protegido (com limpeza segura da chave),
+  cobrindo o caso de token compacto + `SCRYPT_N` alto sem vazar erro cru de parâmetros.
+- **`saveSession` grava metadados antes da sessão:** uma falha de escrita da sessão não
+  deixa metadados órfãos nem descarta uma sessão válida no próximo ciclo.
+- **Screenshot automático sem duplicação:** páginas que já tiveram print manual de falha
+  não recebem captura automática duplicada em `closeContextWithDiagnostics`.
+- **Erro final do launch preserva a causa original** (1ª tentativa) para diagnóstico.
+- **`CHROMIUM_JS_HEAP_MB` com clamp em `[64, 2048]` MB** — typos não geram flags absurdas.
+- **Telegram:** `streakDays`, saldo e durações agora passam por `escapeHtml`.
+- **Crash handler faz flush dos logs** antes do `exit 6` (não perde as últimas linhas fatais).
 - **`os.userInfo()` protegido:** containers com `--user` sem entrada em `/etc/passwd` não
   quebram mais o boot (tratado como não-root).
 - **Exportação tolerante a caixa da conta:** `expectedUser` e `meta.user` são comparados
@@ -56,13 +60,33 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Adicionado
 
+- **Flags de baixo consumo do Chromium (padrão) e `CHROMIUM_JS_HEAP_MB` configurável:**
+  `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`,
+  `--js-flags=--max-old-space-size=128` (ajustável, valores inválidos voltam ao padrão) e
+  `--disk-cache-size=10485760`; desativável via `CHROMIUM_LOW_MEMORY=false`. `--no-zygote`
+  só é aplicado com sandbox desabilitado (exigência do Chromium). Documentado no
+  `credentials.env.example`.
 - **Job `Docker Build & Smoke` no CI:** build da imagem, validação dos padrões de
   segurança do `.dockerignore`, `--dry-run` e launch do `chrome-headless-shell` dentro do
   container — pega regressões de Dockerfile/.dockerignore antes do merge.
 - **Allowlist `files` no `package.json`:** evita publicar acidentalmente arquivos de
   sessão/credenciais em um eventual `npm pack/publish`.
-- **Novos testes:** `.dockerignore` (padrões de segurança e runtime), `PW_SCREENSHOT`,
-  overrides de `buildChromiumArgs` e fallback progressivo de `launchBrowser`.
+- **`docker-run.example.sh`:** wrapper de cron recomendado para hosts pequenos, com
+  `--init`, `--pids-limit=256`, limites `--memory`/`--memory-swap`, rotação de log e
+  registro do **pico real** de memória/PIDs de cada execução.
+- **Guia de host com 1 GB RAM:** `README.md` e `CLOUD_SESSIONS.md` passam a recomendar
+  swap de 1–2 GB, `SCRYPT_N=32768` (~33 MB de pico em vez de ~134 MB) e as flags
+  `--shm-size=256m --memory=768m --memory-swap=1536m` no `docker run`. O guia também
+  documenta que execuções nativas e via Docker **não compartilham o lockfile**.
+- **Workflow `Release` testável manualmente:** `workflow_dispatch` com input `tag`
+  (checkout no ref informado), permitindo ensaiar/republicar releases sem criar tag nova.
+- **Novos testes (215 no total):** `.dockerignore`, `PW_SCREENSHOT` (incluindo
+  deduplicação), fallback progressivo (sandbox e memória), falha genérica sem desabilitar
+  sandbox, heap configurável com clamp e erro com `cause`, segredos em query string
+  (logger e heartbeat), escape do Telegram, crash/flush, `positiveInt` estrito,
+  `exportSession` case-insensitive, falha rápida do lock em diretório, ausência de chave
+  no `argv` dos setups, rótulo DONE vs. botão desconhecido, estilo `cover` não conclui
+  tarefa, metadados antes da sessão e token compacto com `SCRYPT_N` alto.
 
 ### Alterado
 

@@ -78,6 +78,17 @@ test('Unix Scripts - setup_linux.sh e setup_macos.sh lógica de geração de SES
         content.includes('A chave SESSION_SECRET já foi gerada e configurada com 32 caracteres'),
         `${script} deve informar na mensagem final que a chave já foi gerada`
       );
+
+      // A chave NUNCA pode ser passada via argv (visível em ps); deve ir por env
+      assert.ok(
+        content.includes('GEN_KEY="$GEN_KEY" node -e'),
+        `${script} deve passar a chave SESSION_SECRET por variável de ambiente`
+      );
+      assert.strictEqual(
+        content.includes('process.argv[2]'),
+        false,
+        `${script} não deve passar a chave SESSION_SECRET via argumento`
+      );
     }
 
     // Testar execução isolada da rotina de substituição da chave (multiplataforma: Node puro via argumentos)

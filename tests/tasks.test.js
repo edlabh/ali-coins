@@ -1133,3 +1133,116 @@ test('tasks - executeTaskAction com signal já abortado retorna sem acionar o br
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - botão desconhecido não é marcado como concluído nem executado às cegas', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { extractTasksFromDrawer } = require('../libs/tasks/verifier');
+    const { classifyTaskStatus, findNextPendingTask } = require('../libs/tasks/state');
+
+    const mockPage = {
+      $$eval: async (_sel, fn) =>
+        fn([
+          {
+            querySelector: (s) => {
+              if (s.includes('title')) return { innerText: 'Nova tarefa A/B' };
+              if (s.includes('secondTitle')) return { innerText: '' };
+              if (s.includes('btn')) return { innerText: 'VIEW', getAttribute: () => '' };
+              if (s.includes('statusText')) return { innerText: '' };
+              return null;
+            },
+            innerText: 'Nova tarefa A/B +5 moedas'
+          }
+        ])
+    };
+
+    const tasks = await extractTasksFromDrawer(mockPage);
+    assert.strictEqual(tasks.length, 1);
+    assert.strictEqual(tasks[0].btnText, 'VIEW');
+    assert.strictEqual(
+      tasks[0].isDone,
+      false,
+      'Botão desconhecido não pode ser considerado concluído'
+    );
+
+    const status = classifyTaskStatus(tasks[0]);
+    assert.ok(
+      /não reconhecido|verificação manual/i.test(status),
+      `Status deve indicar verificação manual, obtido: ${status}`
+    );
+
+    assert.strictEqual(
+      findNextPendingTask(tasks, {}, 3),
+      null,
+      'Tarefa com botão desconhecido não deve ser executada às cegas'
+    );
+
+    // Regressão: botões DONE/desabilitados continuam sendo tratados como concluídos
+    assert.strictEqual(
+      classifyTaskStatus({
+        isDone: true,
+        btnText: 'DONE',
+        isActionable: false,
+        isClaimable: false
+      }),
+      'Concluída'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - estilo "cover" não marca mais tarefa ativa como concluída (regressão)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { extractTasksFromDrawer } = require('../libs/tasks/verifier');
+
+    const buildMock = (btnText, style) => ({
+      $$eval: async (_sel, fn) =>
+        fn([
+          {
+            querySelector: (s) => {
+              if (s.includes('title')) return { innerText: 'Tarefa ativa' };
+              if (s.includes('secondTitle')) return { innerText: '' };
+              if (s.includes('btn')) return { innerText: btnText, getAttribute: () => style };
+              if (s.includes('statusText')) return { innerText: '' };
+              return null;
+            },
+            innerText: 'Tarefa ativa +5 moedas'
+          }
+        ])
+    });
+
+    const coverTask = (await extractTasksFromDrawer(buildMock('GO', 'background-size: cover')))[0];
+    assert.strictEqual(
+      coverTask.isDone,
+      false,
+      'Estilo com "cover" não pode marcar tarefa ativa como concluída'
+    );
+
+    const disabledTask = (await extractTasksFromDrawer(buildMock('GO', 'opacity: 0.5')))[0];
+    assert.strictEqual(
+      disabledTask.isDone,
+      true,
+      'Botão com opacity: 0.5 continua sendo considerado concluído'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - rótulo explícito de conclusão não cai no aviso de botão desconhecido', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { classifyTaskStatus } = require('../libs/tasks/state');
+    const status = classifyTaskStatus({
+      isDone: false,
+      btnText: 'DONE',
+      isActionable: false,
+      isClaimable: false
+    });
+    assert.strictEqual(status, 'Pendente', `DONE não é "desconhecido": ${status}`);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

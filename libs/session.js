@@ -418,6 +418,11 @@ async function saveSession(storageState, user, options = {}) {
 
   const payloadStr = JSON.stringify(storageState, null, 2);
 
+  // Metadados são gravados ANTES da sessão: se a escrita da sessão falhar, o meta novo
+  // não "órfã" a sessão (uma sessão sem meta seria descartada no próximo run).
+  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
+  safeChmod600(mPath);
+
   if (shouldEncrypt) {
     const encryptedToken = encryptSession(payloadStr, secret);
     await safeWriteFile(encPath, encryptedToken, 'utf-8');
@@ -442,9 +447,6 @@ async function saveSession(storageState, user, options = {}) {
       'Sessão autenticada e metadados salvos com sucesso (permissão 0o600).'
     );
   }
-
-  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
-  safeChmod600(mPath);
 
   // Limpeza de backups antigos segundo retenção
   await pruneSessionBackups(options).catch(() => {});

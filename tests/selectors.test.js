@@ -234,3 +234,65 @@ test('libs/ui/diagnostics.js - PW_SCREENSHOT captura screenshot automático apen
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/ui/diagnostics.js - não duplica screenshot automático quando a página já teve print manual', async () => {
+  const fs = require('node:fs');
+  const { closeContextWithDiagnostics, saveFailureScreenshot } = require('../libs/ui');
+  const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
+
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('pw-screenshot-dedupe-');
+  const prevOut = process.env.PW_OUTPUT_DIR;
+  const prevShot = process.env.PW_SCREENSHOT;
+  const prevTrace = process.env.PW_TRACE;
+
+  const shots = [];
+  const page = {
+    screenshot: async ({ path: filePath }) => {
+      shots.push(filePath);
+      fs.writeFileSync(filePath, 'fake-png');
+    }
+  };
+
+  try {
+    process.env.PW_OUTPUT_DIR = tmpDir;
+    process.env.PW_TRACE = 'off';
+    process.env.PW_SCREENSHOT = 'only-on-failure';
+
+    await saveFailureScreenshot(page, 'manual-print');
+    assert.strictEqual(shots.length, 1, 'Print manual deve ser salvo');
+
+    await closeContextWithDiagnostics(
+      { pages: () => [page], tracing: { stop: async () => {} }, close: async () => {} },
+      { failed: true, name: 'ctx-com-print-manual' }
+    );
+    assert.strictEqual(
+      shots.length,
+      1,
+      'Screenshot automático não deve duplicar o print manual da mesma página'
+    );
+
+    // Página sem print manual continua recebendo captura automática
+    const otherShots = [];
+    const otherPage = {
+      screenshot: async ({ path: filePath }) => {
+        otherShots.push(filePath);
+        fs.writeFileSync(filePath, 'fake-png');
+      }
+    };
+    await closeContextWithDiagnostics(
+      { pages: () => [otherPage], tracing: { stop: async () => {} }, close: async () => {} },
+      { failed: true, name: 'ctx-sem-print' }
+    );
+    assert.strictEqual(otherShots.length, 1, 'Página sem print manual deve ser capturada');
+  } finally {
+    if (prevOut !== undefined) process.env.PW_OUTPUT_DIR = prevOut;
+    else delete process.env.PW_OUTPUT_DIR;
+    if (prevShot !== undefined) process.env.PW_SCREENSHOT = prevShot;
+    else delete process.env.PW_SCREENSHOT;
+    if (prevTrace !== undefined) process.env.PW_TRACE = prevTrace;
+    else delete process.env.PW_TRACE;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

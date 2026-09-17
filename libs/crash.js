@@ -1,4 +1,5 @@
 const logger = require('../logger');
+const { flushAndExit } = require('./exit');
 const { sendTelegram } = require('./notify');
 const { sendHeartbeat } = require('./heartbeat');
 
@@ -58,7 +59,8 @@ function setupGlobalCrashHandler(getContext = () => ({})) {
         'Aviso: falha durante notificação de emergência no crash handler.'
       );
     } finally {
-      process.exit(6);
+      // Flush best-effort (com teto) para não perder as últimas linhas do log fatal
+      await flushAndExit(6);
     }
   };
 

@@ -63,16 +63,19 @@ async function startContextTracing(context) {
  * @param {boolean} [options.failed=false]
  * @param {string} [options.name='context']
  */
+// Páginas que já tiveram screenshot manual de falha: evita captura automática duplicada
+const pagesWithManualScreenshot = new WeakSet();
+
 async function closeContextWithDiagnostics(context, { failed = false, name = 'context' } = {}) {
   if (!context) return;
   const pwTrace = process.env.PW_TRACE || 'retain-on-failure';
   const pwScreenshot = process.env.PW_SCREENSHOT || 'only-on-failure';
   const outDir = getDiagnosticsDir();
 
-  // PW_SCREENSHOT: captura automática no encerramento (além dos prints manuais de falha)
+  // PW_SCREENSHOT: captura automática no encerramento (sem duplicar prints manuais da mesma página)
   if ((failed && pwScreenshot === 'only-on-failure') || pwScreenshot === 'on') {
     const pages = typeof context.pages === 'function' ? context.pages() : [];
-    const page = pages[0];
+    const page = pages.find((p) => !pagesWithManualScreenshot.has(p));
     if (page && typeof page.screenshot === 'function') {
       const filePath = path.join(outDir, `${name}-screenshot-${Date.now()}.png`);
       try {
@@ -123,6 +126,7 @@ async function saveFailureScreenshot(page, name = 'failure') {
   try {
     await page.screenshot({ path: filePath, fullPage: true });
     safeChmod600(filePath);
+    pagesWithManualScreenshot.add(page);
     logger.info({ filePath }, `Screenshot de diagnóstico salva: ${path.basename(filePath)}`);
 
     // Disparar poda defensiva em background

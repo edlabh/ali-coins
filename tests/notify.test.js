@@ -833,3 +833,33 @@ test('libs/notify.js - sendTelegram trunca erros longos antes de enviar (limite 
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/notify.js - escapa campos dinâmicos (streak/saldo/duração) no HTML do Telegram', () => {
+  const report = {
+    type: 'unified_report',
+    user: 'us***@example.com',
+    checkin: {
+      alreadyCollected: false,
+      coinsGainedToday: '10',
+      streakDays: '<b>7</b>',
+      totalBalance: '<i>100</i>',
+      duration: '1s'
+    },
+    tasks: null,
+    meta: {
+      finalBalance: '<script>alert(1)</script>',
+      totalCoinsGained: 10,
+      checkinCoinsGained: 10,
+      tasksCoinsGained: 0,
+      totalDuration: '<x>1s</x>'
+    }
+  };
+
+  const msg = buildMessage({ report, event: 'success', hostname: 'host-teste' });
+
+  assert.strictEqual(msg.includes('<b>7</b>'), false, 'streakDays deve ser escapado');
+  assert.ok(msg.includes('&lt;b&gt;7&lt;/b&gt;'), 'streakDays escapado deve aparecer');
+  assert.strictEqual(msg.includes('<script>'), false, 'saldo não deve injetar HTML');
+  assert.strictEqual(msg.includes('<i>100</i>'), false, 'saldo deve ser escapado');
+  assert.strictEqual(msg.includes('<x>1s</x>'), false, 'duração deve ser escapada');
+});

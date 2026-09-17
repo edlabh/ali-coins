@@ -5,6 +5,13 @@ on:
     tags:
       - 'v[0-9]*.[0-9]*.[0-9]*'
       - '[0-9]*.[0-9]*.[0-9]*'
+  # Permite testar/republicar uma tag existente manualmente (Actions > Release > Run workflow)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag existente (ex: v1.0.0-rc.1)'
+        required: true
+        type: string
 
 # Necessário para criar/editar a GitHub Release e marcar como latest
 permissions:
@@ -25,13 +32,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.tag || github.ref_name }}
           persist-credentials: false
 
       - name: Validate semver tag and package.json version
         id: version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
 
           if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
@@ -111,7 +120,7 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
           HAS_NOTES: ${{ steps.notes.outputs.has_notes }}
-          TRIGGER_TAG: ${{ github.ref_name }}
+          TRIGGER_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
 

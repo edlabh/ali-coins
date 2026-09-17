@@ -90,3 +90,26 @@ test('libs/exit.js - flushStdStreams resolve mesmo com streams já encerrados', 
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/exit.js - flushStream respeita o teto de tempo com stream travado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { flushStream } = require('../libs/exit');
+  try {
+    // Stream que nunca chama o callback de write (simula pipe entupido)
+    const stuckStream = {
+      writableLength: 10,
+      destroyed: false,
+      writableEnded: false,
+      write: () => {}
+    };
+
+    const t0 = Date.now();
+    await flushStream(stuckStream, 200);
+    const elapsed = Date.now() - t0;
+
+    assert.ok(elapsed >= 180, `Deveria aguardar o teto (~200ms), levou ${elapsed}ms`);
+    assert.ok(elapsed < 2000, `Não pode travar indefinidamente, levou ${elapsed}ms`);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

@@ -98,3 +98,27 @@ test('logger.js - mascara chaves sensíveis por prefixo/sufixo e em objetos anin
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('logger.js - sanitiza query strings sensíveis em campos estruturados (ex: url)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const script = `
+      process.argv.push('--json');
+      const logger = require('./logger');
+      logger.info({ url: 'https://example.com/api/ping?token=SUPERSECRET123456&ok=1', nested: { link: 'https://x/y?apikey=SECRETKEY987654321' } }, 'teste de url');
+    `;
+
+    const res = spawnSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8'
+    });
+
+    assert.strictEqual(res.status, 0);
+    assert.strictEqual(res.stderr.includes('SUPERSECRET123456'), false, 'token não deve vazar');
+    assert.strictEqual(res.stderr.includes('SECRETKEY987654321'), false, 'apikey não deve vazar');
+    assert.ok(res.stderr.includes('token=[REDACTED]'), 'token deve ser mascarado');
+    assert.ok(res.stderr.includes('apikey=[REDACTED]'), 'apikey deve ser mascarado');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

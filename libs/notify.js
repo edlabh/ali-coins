@@ -527,9 +527,9 @@ function buildMessage({
       `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${totalCoins} moedas (check-in +${checkinCoins} / tarefas +${tasksCoins})`,
-      `📅 Sequência: ${streakDays} dias`,
-      `💰 Saldo: ${saldoDisplay}`,
-      `⏱️ Duração: ${totalDuration}`
+      `📅 Sequência: ${escapeHtml(streakDays)} dias`,
+      `💰 Saldo: ${escapeHtml(saldoDisplay)}`,
+      `⏱️ Duração: ${escapeHtml(totalDuration)}`
     ];
 
     return lines.join('\n');
@@ -578,9 +578,9 @@ function buildMessage({
       `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${checkinCoins} moedas (check-in +${checkinCoins} / tarefas +0)`,
-      `📅 Sequência: ${streakDays} dias`,
-      `💰 Saldo: ${saldoDisplay}`,
-      `⏱️ Duração: ${duration}`
+      `📅 Sequência: ${escapeHtml(streakDays)} dias`,
+      `💰 Saldo: ${escapeHtml(saldoDisplay)}`,
+      `⏱️ Duração: ${escapeHtml(duration)}`
     ];
 
     return lines.join('\n');
@@ -618,8 +618,8 @@ function buildMessage({
       `👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${tasksCoins} moedas (check-in +0 / tarefas +${tasksCoins})`,
-      `💰 Saldo: ${saldoDisplay}`,
-      `⏱️ Duração: ${duration}`
+      `💰 Saldo: ${escapeHtml(saldoDisplay)}`,
+      `⏱️ Duração: ${escapeHtml(duration)}`
     ];
 
     return lines.join('\n');

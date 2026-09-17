@@ -3,7 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { retry, resolveStorageState, launchBrowser, buildChromiumArgs } = require('../browser');
+const {
+  retry,
+  resolveStorageState,
+  launchBrowser,
+  buildChromiumArgs,
+  getLowMemoryChromiumArgs
+} = require('../browser');
 const { encryptSession } = require('../security');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
@@ -184,9 +190,10 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
   const {
     getChromiumArgs,
     isLowMemoryModeEnabled,
-    LOW_MEMORY_CHROMIUM_ARGS
+    getLowMemoryChromiumArgs
   } = require('../browser');
   const original = process.env.CHROMIUM_LOW_MEMORY;
+  const originalHeap = process.env.CHROMIUM_JS_HEAP_MB;
 
   const EXPECTED_LOW_MEMORY_FLAGS = [
     '--disable-gpu',
@@ -205,7 +212,7 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
       assert.ok(defaultArgs.includes(flag), `Flag de baixo consumo ausente por padrão: ${flag}`);
     }
     assert.deepStrictEqual(
-      LOW_MEMORY_CHROMIUM_ARGS,
+      getLowMemoryChromiumArgs(),
       EXPECTED_LOW_MEMORY_FLAGS,
       'Conjunto de flags de baixo consumo deve ser exatamente o documentado'
     );
@@ -259,9 +266,23 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
       if (originalCI !== undefined) process.env.CI = originalCI;
       else delete process.env.CI;
     }
+
+    // 5. CHROMIUM_JS_HEAP_MB ajusta o heap do V8 do Chromium
+    process.env.CHROMIUM_JS_HEAP_MB = '256';
+    assert.ok(
+      getLowMemoryChromiumArgs().includes('--js-flags=--max-old-space-size=256'),
+      'Heap configurável via CHROMIUM_JS_HEAP_MB'
+    );
+    process.env.CHROMIUM_JS_HEAP_MB = 'invalido';
+    assert.ok(
+      getLowMemoryChromiumArgs().includes('--js-flags=--max-old-space-size=128'),
+      'Valor inválido deve voltar ao padrão de 128MB'
+    );
   } finally {
     if (original !== undefined) process.env.CHROMIUM_LOW_MEMORY = original;
     else delete process.env.CHROMIUM_LOW_MEMORY;
+    if (originalHeap !== undefined) process.env.CHROMIUM_JS_HEAP_MB = originalHeap;
+    else delete process.env.CHROMIUM_JS_HEAP_MB;
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
@@ -383,6 +404,117 @@ test('browser.js - launchBrowser faz fallback removendo as flags de baixo consum
     assert.ok(calls[1].args.includes('--no-sandbox'), 'Fallback mantém o --no-sandbox');
   } finally {
     playwright.chromium.launch = originalLaunch;
+    if (originalCI !== undefined) process.env.CI = originalCI;
+    else delete process.env.CI;
+    if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;
+    else delete process.env.NO_SANDBOX;
+    if (originalLowMemory !== undefined) process.env.CHROMIUM_LOW_MEMORY = originalLowMemory;
+    else delete process.env.CHROMIUM_LOW_MEMORY;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test(
+  'browser.js - falha genérica NÃO desabilita o sandbox (só erro de sandbox o faz)',
+  { skip: typeof process.getuid === 'function' && process.getuid() === 0 },
+  async () => {
+    const realFilesSnapshot = snapshotRealFiles();
+    const playwright = require('playwright');
+    const originalLaunch = playwright.chromium.launch;
+    const originalCI = process.env.CI;
+    const originalNoSandbox = process.env.NO_SANDBOX;
+    const originalLowMemory = process.env.CHROMIUM_LOW_MEMORY;
+    const calls = [];
+
+    try {
+      delete process.env.CI;
+      delete process.env.NO_SANDBOX;
+      process.env.CHROMIUM_LOW_MEMORY = 'true';
+
+      playwright.chromium.launch = async (opts) => {
+        calls.push(opts);
+        if (calls.length === 1) {
+          throw new Error('browserType.launch: Target page, context or browser has been closed');
+        }
+        return { close: async () => {}, __fake: true };
+      };
+
+      const browser = await launchBrowser({ headless: true });
+      assert.strictEqual(browser.__fake, true);
+      assert.strictEqual(calls.length, 2, 'Deve tentar exatamente duas configurações');
+      assert.ok(calls[0].args.includes('--disable-gpu'), 'Primeira tentativa usa low-memory');
+
+      // O fallback por falha genérica apenas remove o low-memory; sandbox permanece ativo
+      assert.strictEqual(
+        calls[1].args.includes('--no-sandbox'),
+        false,
+        'Falha genérica não pode desabilitar o sandbox'
+      );
+      assert.strictEqual(
+        calls[1].args.includes('--disable-gpu'),
+        false,
+        'Fallback remove as flags de baixo consumo'
+      );
+      assert.strictEqual(calls[1].chromiumSandbox, true, 'Sandbox deve seguir habilitado');
+    } finally {
+      playwright.chromium.launch = originalLaunch;
+      if (originalCI !== undefined) process.env.CI = originalCI;
+      else delete process.env.CI;
+      if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;
+      else delete process.env.NO_SANDBOX;
+      if (originalLowMemory !== undefined) process.env.CHROMIUM_LOW_MEMORY = originalLowMemory;
+      else delete process.env.CHROMIUM_LOW_MEMORY;
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);
+
+test('browser.js - heap do Chromium é limitado a [64, 2048] MB e erro final preserva a causa', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalHeap = process.env.CHROMIUM_JS_HEAP_MB;
+  const playwright = require('playwright');
+  const originalLaunch = playwright.chromium.launch;
+  const originalCI = process.env.CI;
+  const originalNoSandbox = process.env.NO_SANDBOX;
+  const originalLowMemory = process.env.CHROMIUM_LOW_MEMORY;
+
+  try {
+    // Clamp superior e inferior
+    process.env.CHROMIUM_JS_HEAP_MB = '999999';
+    assert.ok(
+      getLowMemoryChromiumArgs().includes('--js-flags=--max-old-space-size=2048'),
+      'Valor absurdo deve ser limitado a 2048MB'
+    );
+    process.env.CHROMIUM_JS_HEAP_MB = '1';
+    assert.ok(
+      getLowMemoryChromiumArgs().includes('--js-flags=--max-old-space-size=64'),
+      'Valor muito baixo deve ser elevado ao mínimo de 64MB'
+    );
+
+    // Erro final do launch carrega a causa (1ª tentativa) quando há mais de uma
+    delete process.env.CI;
+    delete process.env.NO_SANDBOX;
+    process.env.CHROMIUM_LOW_MEMORY = 'false';
+    const firstError = new Error('browserType.launch: No usable sandbox! ...');
+    let calls = 0;
+    playwright.chromium.launch = async () => {
+      calls++;
+      if (calls === 1) throw firstError;
+      throw new Error('browserType.launch: segundo erro');
+    };
+
+    await assert.rejects(
+      () => launchBrowser({ headless: true }),
+      (err) => {
+        assert.ok(/segundo erro/.test(err.message), `Erro final inesperado: ${err.message}`);
+        assert.strictEqual(err.cause, firstError, 'A causa original deve ser preservada');
+        return true;
+      }
+    );
+  } finally {
+    playwright.chromium.launch = originalLaunch;
+    if (originalHeap !== undefined) process.env.CHROMIUM_JS_HEAP_MB = originalHeap;
+    else delete process.env.CHROMIUM_JS_HEAP_MB;
     if (originalCI !== undefined) process.env.CI = originalCI;
     else delete process.env.CI;
     if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;

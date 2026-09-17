@@ -212,3 +212,29 @@ test('config.js - locks de contas secundárias também ficam no diretório do pr
     }
   }
 });
+
+test('config.js - positiveInt rejeita valores não numéricos e aceita strings numéricas', () => {
+  const ok = configSchema.safeParse({
+    ALI_USER: 'u@example.com',
+    ALI_PASSWORD: 'pwd',
+    NAV_TIMEOUT: '25000'
+  });
+  assert.strictEqual(ok.success, true);
+  assert.strictEqual(ok.data.NAV_TIMEOUT, 25000);
+
+  const garbage = configSchema.safeParse({
+    ALI_USER: 'u@example.com',
+    ALI_PASSWORD: 'pwd',
+    NAV_TIMEOUT: '10abc'
+  });
+  assert.strictEqual(garbage.success, true);
+  assert.strictEqual(garbage.data.NAV_TIMEOUT, 35000, "'10abc' deve cair no default");
+
+  const zero = configSchema.safeParse({
+    ALI_USER: 'u@example.com',
+    ALI_PASSWORD: 'pwd',
+    TASK_MAX_ACTIONS: '0'
+  });
+  assert.strictEqual(zero.success, true);
+  assert.strictEqual(zero.data.TASK_MAX_ACTIONS, 25, 'Zero deve cair no default');
+});

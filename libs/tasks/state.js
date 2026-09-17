@@ -247,6 +247,18 @@ function classifyTaskStatus(task, options = {}) {
     return 'Exclusiva do App AliExpress (requer rega no app móvel)';
   }
 
+  // Botão de ação não reconhecido (ex: rótulo novo/A-B test): não executamos às cegas
+  // nem reportamos como concluída — sinaliza verificação manual. Rótulos explícitos
+  // de conclusão (DONE/CONCLUÍDO/COMPLETED) não entram aqui.
+  if (
+    task.btnText &&
+    !task.isActionable &&
+    !task.isClaimable &&
+    !/^(DONE|CONCLU[IÍ]DO|COMPLETED)$/i.test(task.btnText)
+  ) {
+    return `Requer verificação manual (botão "${task.btnText}" não reconhecido)`;
+  }
+
   if (task.statusText) {
     return `Executada parcialmente (${task.statusText})`;
   }

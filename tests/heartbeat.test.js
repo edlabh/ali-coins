@@ -214,3 +214,25 @@ test('config.js - validações Zod e CLI de heartbeat', () => {
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/heartbeat.js - maskHeartbeatUrl mascara tokens em query string', () => {
+  const { maskHeartbeatUrl } = require('../libs/heartbeat');
+
+  const masked = maskHeartbeatUrl(
+    'https://example.com/api/ping?token=SUPERSECRET_TOKEN_VALUE_123456&x=1'
+  );
+  assert.strictEqual(
+    masked.includes('SUPERSECRET_TOKEN_VALUE_123456'),
+    false,
+    'Token não deve vazar'
+  );
+  assert.ok(masked.includes('token=SUPE***3456'), `Token deve ser mascarado: ${masked}`);
+  assert.ok(masked.includes('x=***'), 'Valores curtos devem ser totalmente mascarados');
+
+  const maskedHash = maskHeartbeatUrl('https://example.com/ping#fragmento-secreto');
+  assert.strictEqual(
+    maskedHash.includes('fragmento-secreto'),
+    false,
+    'Fragmento deve ser removido'
+  );
+});

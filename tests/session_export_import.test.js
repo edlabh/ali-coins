@@ -781,3 +781,30 @@ test('export_session.js - valida que a conta da sessão corresponde à conta alv
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('export_session.js - expectedUser aceita divergência apenas de caixa no mesmo identificador', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('export-case-insensitive-');
+
+  try {
+    const sPath = path.join(tmpDir, 'session.json');
+    const mPath = path.join(tmpDir, 'session_meta.json');
+    await safeWriteFile(
+      sPath,
+      JSON.stringify({ cookies: [{ name: 'xman_us_t', value: 'tok_case' }], origins: [] })
+    );
+    await safeWriteFile(mPath, JSON.stringify({ user: 'Case.User@Example.com' }));
+
+    const res = await exportSession({
+      secret: TEST_SECRET,
+      baseDir: tmpDir,
+      sessionPath: sPath,
+      sessionMetaPath: mPath,
+      expectedUser: 'case.user@example.com'
+    });
+    assert.ok(res.token, 'Exportação deve funcionar quando difere apenas a caixa');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
