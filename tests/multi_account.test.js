@@ -16,7 +16,9 @@ const {
 test('config.js - maskUser formata emails e identificadores com segurança', () => {
   assert.strictEqual(maskUser('usuario@example.com'), 'us***@example.com');
   assert.strictEqual(maskUser('joao.silva@empresa.com.br'), 'jo***@empresa.com.br');
-  assert.strictEqual(maskUser('11999887766'), '11***66');
+  // Telefones/IDs não devem vazar os dígitos finais
+  assert.strictEqual(maskUser('11999887766'), '11***');
+  assert.strictEqual(maskUser('12345'), '12***');
   assert.strictEqual(maskUser('abc'), '***');
   assert.strictEqual(maskUser(''), '***');
   assert.strictEqual(maskUser(null), '***');

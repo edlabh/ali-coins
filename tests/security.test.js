@@ -13,8 +13,13 @@ const {
   safeChmod600,
   cleanOrphanTmpFiles,
   APP_SCRYPT_SALT_V1,
-  SCRYPT_PARAMS_V3
+  SCRYPT_PARAMS_V3,
+  SCRYPT_MIN_N,
+  SCRYPT_DEFAULT_N,
+  SCRYPT_MAX_N,
+  sanitizeScryptParams
 } = require('../security');
+const logger = require('../logger');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -377,21 +382,87 @@ test('security.js - cleanOrphanTmpFiles remove arquivos .tmp-* órfãos antigos 
   }
 });
 
-test('security.js - SCRYPT_PARAMS_V3 suporta customizacao de N via env SCRYPT_N ou setter', () => {
+test('security.js - SCRYPT_PARAMS_V3 piso de seguranca (N >= 16384), warning e clamp defensivo', () => {
   const originalEnvN = process.env.SCRYPT_N;
   try {
+    assert.strictEqual(SCRYPT_MIN_N, 16384);
+    assert.strictEqual(SCRYPT_DEFAULT_N, 131072);
+
     delete process.env.SCRYPT_N;
     SCRYPT_PARAMS_V3.N = null;
-    assert.strictEqual(SCRYPT_PARAMS_V3.N, 131072);
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, SCRYPT_DEFAULT_N);
 
+    // 1. SCRYPT_N=32768 -> respeita valor acima do piso
     process.env.SCRYPT_N = '32768';
     assert.strictEqual(SCRYPT_PARAMS_V3.N, 32768);
 
-    SCRYPT_PARAMS_V3.N = 16384;
-    assert.strictEqual(SCRYPT_PARAMS_V3.N, 16384);
+    // 2. SCRYPT_N=16 -> abaixo do piso (16384): emite warn e clampeia para 131072
+    let warned = false;
+    let warnPayload = null;
+    const originalWarn = logger.warn;
+    logger.warn = (obj, msg) => {
+      warned = true;
+      warnPayload = { obj, msg };
+    };
+    try {
+      process.env.SCRYPT_N = '16';
+      assert.strictEqual(SCRYPT_PARAMS_V3.N, SCRYPT_DEFAULT_N);
+      assert.strictEqual(warned, true, 'Deve emitir warning ao ler SCRYPT_N abaixo de 16384');
+      assert.ok(warnPayload.msg.includes('abaixo do piso'));
+    } finally {
+      logger.warn = originalWarn;
+    }
 
-    SCRYPT_PARAMS_V3.N = null; // reset setter
-    assert.strictEqual(SCRYPT_PARAMS_V3.N, 32768);
+    // 3. Setter customScryptN válido (>= 16384)
+    delete process.env.SCRYPT_N;
+    SCRYPT_PARAMS_V3.N = SCRYPT_MIN_N;
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, SCRYPT_MIN_N);
+
+    // 4. Setter customScryptN inválido (< 16384 ou não-numérico) -> reseta para null/default
+    SCRYPT_PARAMS_V3.N = 16;
+    assert.strictEqual(
+      SCRYPT_PARAMS_V3.N,
+      SCRYPT_DEFAULT_N,
+      'Setter com N < 16384 deve resetar para default'
+    );
+
+    SCRYPT_PARAMS_V3.N = -500;
+    assert.strictEqual(
+      SCRYPT_PARAMS_V3.N,
+      SCRYPT_DEFAULT_N,
+      'Setter com N negativo deve resetar para default'
+    );
+
+    SCRYPT_PARAMS_V3.N = 'invalido';
+    assert.strictEqual(
+      SCRYPT_PARAMS_V3.N,
+      SCRYPT_DEFAULT_N,
+      'Setter não-numérico deve resetar para default'
+    );
+
+    SCRYPT_PARAMS_V3.N = NaN;
+    assert.strictEqual(
+      SCRYPT_PARAMS_V3.N,
+      SCRYPT_DEFAULT_N,
+      'Setter NaN deve resetar para default'
+    );
+
+    // 5. options.N em encryptSession abaixo de 16384 -> emite warn e usa 131072
+    let encryptWarned = false;
+    logger.warn = () => {
+      encryptWarned = true;
+    };
+    try {
+      const payload = JSON.stringify({ test: 'floor' });
+      const enc = encryptSession(payload, VALID_SECRET, { N: 16 });
+      assert.ok(
+        enc.startsWith(`v3:${SCRYPT_DEFAULT_N}:8:1:`),
+        'Token v3 deve ter N clampeado para default'
+      );
+      assert.strictEqual(encryptWarned, true, 'Deve emitir warning para options.N < 16384');
+    } finally {
+      logger.warn = originalWarn;
+    }
   } finally {
     SCRYPT_PARAMS_V3.N = null;
     if (originalEnvN !== undefined) {
@@ -399,6 +470,68 @@ test('security.js - SCRYPT_PARAMS_V3 suporta customizacao de N via env SCRYPT_N 
     } else {
       delete process.env.SCRYPT_N;
     }
-    assert.strictEqual(SCRYPT_PARAMS_V3.N, 131072);
+    assert.strictEqual(SCRYPT_PARAMS_V3.N, SCRYPT_DEFAULT_N);
   }
+});
+
+test('security.js - sanitizeScryptParams aplica piso, tetos e limite de memoria combinada', () => {
+  // Entradas válidas dentro dos limites são preservadas
+  const ok = sanitizeScryptParams(32768, 8, 1);
+  assert.strictEqual(ok.N, 32768);
+  assert.strictEqual(ok.r, 8);
+  assert.strictEqual(ok.p, 1);
+
+  // N abaixo do piso -> fallback (default), nunca valor inseguro
+  assert.strictEqual(sanitizeScryptParams(16, 8, 1).N, SCRYPT_DEFAULT_N);
+  // N/r/p inválidos -> fallback seguro
+  assert.strictEqual(sanitizeScryptParams(NaN, 8, 1).N, SCRYPT_DEFAULT_N);
+  assert.strictEqual(sanitizeScryptParams(131072, 0, 1).r, 8);
+  assert.strictEqual(sanitizeScryptParams(131072, 8, -5).p, 1);
+
+  // Token forjado com N gigantesco não pode forçar alocação desproporcional:
+  // a memória combinada (128*N*r) deve ficar limitada mesmo no pior caso.
+  const huge = sanitizeScryptParams(1073741824, 16, 16);
+  assert.ok(128 * huge.N * huge.r <= 256 * 1024 * 1024, 'Deve limitar 128*N*r a <= 256MB');
+  assert.ok(huge.N >= SCRYPT_MIN_N, 'N nunca abaixo do piso após clamp');
+  assert.ok(128 * huge.N * huge.r <= 256 * 1024 * 1024);
+});
+
+test('security.js - decryptSession clampa N/r/p vindos de token v3 nao confiavel', () => {
+  const secret = 'x'.repeat(40);
+  const b64 = (n) => Buffer.alloc(n).toString('base64');
+  // Token forjado: N=2^30, r/p absurdos. Deve falhar (auth) rapidamente sem estourar memória.
+  const forged =
+    'v3:1073741824:999:999:' +
+    b64(16) +
+    ':' +
+    b64(12) +
+    ':' +
+    b64(16) +
+    ':' +
+    Buffer.from('dummy').toString('base64') +
+    ':base64';
+  const start = Date.now();
+  assert.throws(() => decryptSession(forged, secret), /Falha na autenticação\/descriptografia/);
+  // O clamp deve tornar a tentativa limitada; bem abaixo de um minuto mesmo em host lento
+  assert.ok(Date.now() - start < 60000, 'Decifragem de token forjado deve ser limitada no tempo');
+});
+
+test('security.js - encryptSession aceita N numerico em string e mantem roundtrip', () => {
+  const secret = 'y'.repeat(40);
+  const token = encryptSession(JSON.stringify({ n: 'string' }), secret, { N: '16384' });
+  assert.ok(
+    token.startsWith('v3:16384:8:1:'),
+    'String numérica de N deve ser coagida e preservada'
+  );
+  assert.deepStrictEqual(JSON.parse(decryptSession(token, secret)), { n: 'string' });
+
+  // N acima do teto de memória deve ser clampeado de forma decifrável (encrypt e decrypt consistentes)
+  const big = encryptSession(JSON.stringify({ n: 'big' }), secret, { N: 1073741824 });
+  assert.ok(!big.startsWith('v3:1073741824:'), 'N gigante deve ser clampeado na geração');
+  assert.deepStrictEqual(JSON.parse(decryptSession(big, secret)), { n: 'big' });
+});
+
+test('security.js - SCRYPT_MAX_N exposto e coherente com o piso', () => {
+  assert.strictEqual(typeof SCRYPT_MAX_N, 'number');
+  assert.ok(SCRYPT_MAX_N > SCRYPT_DEFAULT_N, 'Teto deve ser maior que o default');
 });

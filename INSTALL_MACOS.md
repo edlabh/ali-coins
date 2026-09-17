@@ -161,6 +161,8 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
 
    ```env
    # Credenciais do AliExpress (obrigatórias)
+   # Mantenha sempre entre aspas duplas. Senhas com #, espaços ou ! sem aspas
+   # são truncadas silenciosamente. Ex.: ALI_PASSWORD="abc#123!"
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
 

@@ -193,6 +193,8 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
 
    ```env
    # Credenciais do AliExpress
+   # Mantenha sempre entre aspas duplas. Senhas com #, espacos ou ! sem aspas
+   # sao truncadas silenciosamente. Ex.: ALI_PASSWORD="abc#123!"
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha"
 

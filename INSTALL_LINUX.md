@@ -230,6 +230,8 @@ Se o comando imprimir `✅ Chromium iniciado com sucesso no Linux!`, seu ambient
 
    ```env
    # Credenciais do AliExpress (obrigatórias)
+   # Mantenha sempre entre aspas duplas. Senhas com #, espaços ou ! sem aspas
+   # são truncadas silenciosamente. Ex.: ALI_PASSWORD="abc#123!"
    ALI_USER="seu_email_ou_telefone"
    ALI_PASSWORD="sua_senha_do_aliexpress"
 

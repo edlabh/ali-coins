@@ -313,3 +313,10 @@ docker run --rm \
 - **Criptografia AES-256-GCM v2:** Exportações e repouso usam derivação de chave via `scrypt` com salt aleatório dinâmico de 16 bytes e `SESSION_SECRET` (mínimo 32 caracteres).
 - **Isolamento do Navegador:** A flag `--no-sandbox` do Chromium é restrita exclusivamente para execução como root (UID 0) ou CI, mantendo a sandbox ativada para usuários comuns.
 - **Redação de Logs:** Logs estruturados via `pino` redigem senhas, tokens, cookies e parâmetros de URL sensíveis automaticamente.
+
+---
+
+## Proteção de Branch e Integração Contínua (CI)
+
+- **Validação Obrigatória:** A branch `main` exige que todos os testes em Linux, macOS e Windows bem como verificação de formatação e linter passem com sucesso no workflow `CI` antes de qualquer merge.
+- **Gate de Supply-Chain no Dependabot:** PRs automatizados de dependências (patch/minor) contam com gate de segurança que aguarda a conclusão bem-sucedida do workflow `CI` no SHA do commit antes de autorizar o auto-merge (`squash`).

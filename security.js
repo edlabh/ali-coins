@@ -8,21 +8,105 @@ const logger = require('./logger');
 const APP_SCRYPT_SALT_V1 = Buffer.from('ali-coins-session-encryption-v1-scrypt-salt', 'utf-8');
 
 // Parâmetros scrypt modernos (v3) e legados (v1/v2)
+const SCRYPT_MIN_N = 16384; // 2^14 piso mínimo aceitável de segurança criptográfica
+const SCRYPT_DEFAULT_N = 131072; // 2^17 default seguro moderno
+const SCRYPT_MAX_N = 1048576; // 2^20 teto individual defensivo (tokens não confiáveis)
+const SCRYPT_MAX_R = 16;
+const SCRYPT_MAX_P = 16;
+// Teto de memória combinada do scrypt (~128 * N * r bytes) contra esgotamento de recursos.
+// 256 MB cobre com folga o default (N=2^17, r=8 => 128 MB) e permanece seguro em hosts de 1 GB.
+const SCRYPT_MEMORY_CAP_BYTES = 256 * 1024 * 1024;
+
+// Validação do piso criptográfico no boot/carregamento do módulo
+if (process.env.SCRYPT_N) {
+  const parsedEnvN = parseInt(process.env.SCRYPT_N, 10);
+  if (!isNaN(parsedEnvN) && parsedEnvN > 0 && parsedEnvN < SCRYPT_MIN_N) {
+    logger.warn(
+      { n: parsedEnvN, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
+      'Variável SCRYPT_N abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
+    );
+  }
+}
+
 let customScryptN = null;
 const SCRYPT_PARAMS_V3 = {
   get N() {
-    if (customScryptN !== null) return customScryptN;
-    const envN = process.env.SCRYPT_N ? parseInt(process.env.SCRYPT_N, 10) : null;
-    return envN && !isNaN(envN) && envN > 0 ? envN : 131072;
+    if (customScryptN !== null) {
+      if (customScryptN < SCRYPT_MIN_N) {
+        logger.warn(
+          { n: customScryptN, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
+          'Valor de customScryptN abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
+        );
+        return SCRYPT_DEFAULT_N;
+      }
+      return customScryptN;
+    }
+    if (process.env.SCRYPT_N) {
+      const envN = parseInt(process.env.SCRYPT_N, 10);
+      if (!isNaN(envN) && envN > 0) {
+        if (envN < SCRYPT_MIN_N) {
+          logger.warn(
+            { n: envN, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
+            'Variável SCRYPT_N abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
+          );
+          return SCRYPT_DEFAULT_N;
+        }
+        return envN;
+      }
+    }
+    return SCRYPT_DEFAULT_N;
   },
   set N(val) {
-    customScryptN = typeof val === 'number' && val > 0 ? val : null;
+    if (typeof val === 'number' && Number.isFinite(val) && val >= SCRYPT_MIN_N) {
+      customScryptN = Math.floor(val);
+    } else {
+      customScryptN = null;
+    }
   },
   r: 8,
   p: 1,
   maxmem: 256 * 1024 * 1024
-}; // 2^17 (ajustável via SCRYPT_N em ambientes com recursos restritos)
+}; // 2^17 (ajustável via SCRYPT_N em ambientes com recursos restritos, piso mínimo 16384)
 const SCRYPT_PARAMS_LEGACY = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }; // 2^14
+
+/**
+ * Sanitiza parâmetros scrypt provenientes de tokens não confiáveis (v3 embute N:r:p).
+ * Aplica piso (N >= 16384) e tetos defensivos (N <= 2^20, r/p <= 16), impedindo
+ * esgotamento de memória/CPU a partir de um token forjado ou corrompido.
+ * Valores fora dos limites são clampeados; entradas inválidas caem no fallback.
+ * @param {number} rawN
+ * @param {number} rawR
+ * @param {number} rawP
+ * @param {object} [fallback=SCRYPT_PARAMS_V3]
+ * @returns {{ N: number, r: number, p: number, maxmem: number }}
+ */
+function sanitizeScryptParams(rawN, rawR, rawP, fallback = SCRYPT_PARAMS_V3) {
+  const fallbackN = fallback && fallback.N ? fallback.N : SCRYPT_DEFAULT_N;
+  const fallbackR = fallback && fallback.r ? fallback.r : 8;
+  const fallbackP = fallback && fallback.p ? fallback.p : 1;
+
+  const clampInt = (value, min, max, defaultValue) => {
+    if (!Number.isInteger(value) || value <= 0) return defaultValue;
+    if (value < min) return defaultValue;
+    return Math.min(value, max);
+  };
+
+  let N = clampInt(rawN, SCRYPT_MIN_N, SCRYPT_MAX_N, fallbackN);
+  let r = clampInt(rawR, 1, SCRYPT_MAX_R, fallbackR);
+  const p = clampInt(rawP, 1, SCRYPT_MAX_P, fallbackP);
+
+  // Aplica teto de memória combinada (128*N*r). Reduz N à metade até caber no limite;
+  // se ainda exceder com N no piso, cai para parâmetros mínimos seguros.
+  while (N > SCRYPT_MIN_N && 128 * N * r > SCRYPT_MEMORY_CAP_BYTES) {
+    N = N >> 1;
+  }
+  if (128 * N * r > SCRYPT_MEMORY_CAP_BYTES) {
+    N = SCRYPT_MIN_N;
+    r = 1;
+  }
+
+  return { N, r, p, maxmem: Math.max(SCRYPT_MEMORY_CAP_BYTES, 128 * N * r * 2) };
+}
 
 /**
  * Ajusta permissões do arquivo para 0o600 de forma segura entre plataformas
@@ -133,12 +217,32 @@ function encryptSession(payloadJson, secret, options = {}) {
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);
 
-  const N = requestedVersion === 'v2' ? SCRYPT_PARAMS_LEGACY.N : options.N || SCRYPT_PARAMS_V3.N;
-  const r = requestedVersion === 'v2' ? SCRYPT_PARAMS_LEGACY.r : options.r || SCRYPT_PARAMS_V3.r;
-  const p = requestedVersion === 'v2' ? SCRYPT_PARAMS_LEGACY.p : options.p || SCRYPT_PARAMS_V3.p;
-  const maxmem = Math.max(256 * 1024 * 1024, 128 * N * r * 2);
+  let params;
+  if (requestedVersion === 'v2') {
+    params = { ...SCRYPT_PARAMS_LEGACY };
+  } else {
+    // Coage strings numéricas (ex: options.N = '16384') antes de aplicar piso/teto
+    const coercedN =
+      options.N !== undefined && options.N !== null ? Number(options.N) : SCRYPT_PARAMS_V3.N;
+    if (
+      options.N !== undefined &&
+      options.N !== null &&
+      (!Number.isInteger(coercedN) || coercedN < SCRYPT_MIN_N)
+    ) {
+      logger.warn(
+        { n: options.N, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
+        'options.N inválido ou abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
+      );
+    }
+    const rawR =
+      options.r !== undefined && options.r !== null ? Number(options.r) : SCRYPT_PARAMS_V3.r;
+    const rawP =
+      options.p !== undefined && options.p !== null ? Number(options.p) : SCRYPT_PARAMS_V3.p;
+    // Mesma sanitização usada na decifragem garante que o token gerado seja decifrável
+    params = sanitizeScryptParams(coercedN, rawR, rawP, SCRYPT_PARAMS_V3);
+  }
 
-  const key = crypto.scryptSync(secret, salt, 32, { N, r, p, maxmem });
+  const key = crypto.scryptSync(secret, salt, 32, params);
 
   let ciphertext;
   let tag;
@@ -161,7 +265,7 @@ function encryptSession(payloadJson, secret, options = {}) {
     return `v2:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
   }
 
-  return `v3:${N}:${r}:${p}:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
+  return `v3:${params.N}:${params.r}:${params.p}:${saltB64}:${ivB64}:${tagB64}:${cipherB64}:base64`;
 }
 
 /**
@@ -199,15 +303,8 @@ function decryptSession(tokenString, secret) {
       const parsedN = parseInt(parts[1], 10);
       const parsedR = parseInt(parts[2], 10);
       const parsedP = parseInt(parts[3], 10);
-      const N = !isNaN(parsedN) && parsedN > 0 ? parsedN : SCRYPT_PARAMS_V3.N;
-      const r = !isNaN(parsedR) && parsedR > 0 ? parsedR : SCRYPT_PARAMS_V3.r;
-      const p = !isNaN(parsedP) && parsedP > 0 ? parsedP : SCRYPT_PARAMS_V3.p;
-      scryptParams = {
-        N,
-        r,
-        p,
-        maxmem: Math.max(256 * 1024 * 1024, 128 * N * r * 2)
-      };
+      // Sanitização defensiva: token é entrada não confiável (pode ser forjado/corrompido)
+      scryptParams = sanitizeScryptParams(parsedN, parsedR, parsedP, SCRYPT_PARAMS_V3);
       salt = Buffer.from(parts[4], 'base64');
       iv = Buffer.from(parts[5], 'base64');
       tag = Buffer.from(parts[6], 'base64');
@@ -502,6 +599,12 @@ function readMasked2FACode(
 
 module.exports = {
   APP_SCRYPT_SALT_V1,
+  SCRYPT_MIN_N,
+  SCRYPT_DEFAULT_N,
+  SCRYPT_MAX_N,
+  SCRYPT_MAX_R,
+  SCRYPT_MAX_P,
+  sanitizeScryptParams,
   SCRYPT_PARAMS_V3,
   SCRYPT_PARAMS_LEGACY,
   safeChmod600,

@@ -437,7 +437,8 @@ function maskUser(user) {
   if (user.includes('@')) {
     return user.replace(/(.{2})(.*)(@.*)/, '$1***$3');
   }
-  return user.length > 4 ? user.slice(0, 2) + '***' + user.slice(-2) : '***';
+  // Telefones/IDs sem '@': expõe apenas os 2 primeiros caracteres, sem vazar os dígitos finais
+  return user.length > 4 ? user.slice(0, 2) + '***' : '***';
 }
 
 /**

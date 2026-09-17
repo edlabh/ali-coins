@@ -17,6 +17,51 @@ jobs:
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
 
+      # Gate de segurança de supply-chain: aguarda o workflow 'CI' (testes e linter)
+      # concluir com sucesso no SHA exato do PR antes de permitir auto-merge.
+      # O polling via 'gh api' foca exclusivamente no workflow 'CI', prevenindo
+      # qualquer possibilidade de deadlock circular com a execução deste próprio job.
+      - name: Wait for CI workflow to succeed
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          echo "Aguardando o workflow 'CI' concluir com sucesso no commit $HEAD_SHA..."
+          TIMEOUT_SECONDS=1200 # 20 minutos
+          INTERVAL_SECONDS=15
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT_SECONDS" ]; do
+            RUN_INFO=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${HEAD_SHA}" \
+              --jq '[ .workflow_runs[] | select(.name == "CI") ] | sort_by(.created_at) | last // empty | "\(.status) \(.conclusion)"')
+
+            if [ -n "$RUN_INFO" ]; then
+              STATUS=$(echo "$RUN_INFO" | awk '{print $1}')
+              CONCLUSION=$(echo "$RUN_INFO" | awk '{print $2}')
+
+              echo "[$ELAPSED s] Workflow 'CI': status=$STATUS, conclusion=$CONCLUSION"
+
+              if [ "$STATUS" = "completed" ]; then
+                if [ "$CONCLUSION" = "success" ]; then
+                  echo "✅ Workflow 'CI' concluiu com sucesso!"
+                  exit 0
+                else
+                  echo "❌ Workflow 'CI' falhou com conclusão: $CONCLUSION"
+                  exit 1
+                fi
+              fi
+            else
+              echo "[$ELAPSED s] Aguardando início do workflow 'CI' para o commit $HEAD_SHA..."
+            fi
+
+            sleep "$INTERVAL_SECONDS"
+            ELAPSED=$((ELAPSED + INTERVAL_SECONDS))
+          done
+
+          echo "❌ Timeout de ${TIMEOUT_SECONDS}s excedido aguardando o workflow 'CI'."
+          exit 1
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Enable auto-merge for Dependabot PRs (patch and minor)
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr merge --auto --squash "$PR_URL"
