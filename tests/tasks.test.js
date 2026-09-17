@@ -1246,3 +1246,24 @@ test('tasks - rótulo explícito de conclusão não cai no aviso de botão desco
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - statusText de progresso tem prioridade sobre aviso de botão desconhecido', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { classifyTaskStatus } = require('../libs/tasks/state');
+    const status = classifyTaskStatus({
+      isDone: false,
+      btnText: 'VIEW',
+      isActionable: false,
+      isClaimable: false,
+      statusText: '1/3'
+    });
+    assert.strictEqual(
+      status,
+      'Executada parcialmente (1/3)',
+      `Progresso deve prevalecer sobre botão desconhecido: ${status}`
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

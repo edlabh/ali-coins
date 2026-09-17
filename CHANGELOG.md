@@ -7,17 +7,6 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [Unreleased]
 
-### Corrigido
-
-- **Race de liberação do lockfile (detectada no CI Windows):** o arquivo ganhou um
-  `lockId` de geração e o `release()` só remove o lock se o `lockId` ainda for o nosso,
-  eliminando a janela em que uma liberação atrasada apagava o lock de outra instância
-  recém-adquirida (causava sobreposição sob concorrência real).
-- **Erro transitório de I/O no lockfile tratado como lock ativo:** falhas de leitura
-  (`EBUSY`/`EPERM`/`EACCES`, comuns com antivírus/indexador no Windows) não removem mais
-  o arquivo; a execução é adiada de forma fail-safe (`LOCK_ACTIVE`) em vez de arriscar
-  duas instâncias simultâneas. Diretório no caminho continua com falha rápida e clara.
-
 > Alterações destinadas às próximas versões (1.0.x / 1.1.0) devem ser registradas aqui e
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
@@ -54,38 +43,59 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   usuários (diretório no caminho do lock, symlink ou timestamp forjado). Se o caminho
   estiver ocupado por item não removível, a falha agora é imediata e explícita (antes
   repetia 5 rodadas de carência até falhar).
+- **Race de liberação do lockfile (detectada no CI Windows):** o arquivo ganhou um
+  `lockId` de geração e o `release()` só remove o lock se o `lockId` ainda for o nosso,
+  eliminando a janela em que uma liberação atrasada apagava o lock de outra instância
+  recém-adquirida.
+- **Erro transitório de I/O no lockfile tratado como lock ativo:** falhas de leitura
+  (`EBUSY`/`EPERM`/`EACCES`, comuns com antivírus/indexador no Windows) não removem mais o
+  arquivo; a execução é adiada de forma fail-safe (`LOCK_ACTIVE`). Diretório no caminho
+  continua com falha rápida e clara.
+- **Valor fantasma de check-in no relatório multi-conta
+  (`buildMultiAccountReportPayload`):** `alreadyCollected: true` voltou a ser respeitado —
+  o `coinsGainedToday` é apenas eco informativo do check-in já feito e não infla mais
+  `checkinCoinsGained`/`totalCoinsGained` na notificação de contas secundárias (mesma
+  correção aplicada ao caminho unificado na 0.9.1).
+- **Cálculo de moedas centralizado:** `computeCheckinCoinsGained`, `computeTasksCoinsGained`
+  e `computeFinalBalance` (`libs/report.js`) são a fonte única usada pelos payloads e pelos
+  fallbacks do Telegram (`libs/notify.js`), eliminando a divergência por cópia de código.
+  `computeTasksCoinsGained` ignora `NaN`/`Infinity` e `computeFinalBalance` retorna `N/D`
+  (em vez de `"undefined moedas"`) quando o saldo não foi lido.
+- **`notify.js` multi-conta sem `meta`:** o fallback local também não contabiliza mais o
+  check-in quando `alreadyCollected` é true.
 - **`setup_linux.sh`/`setup_macos.sh` não expõem mais o `SESSION_SECRET` gerado no `argv`**
   (visível via `ps`): a chave é passada por variável de ambiente ao processo Node.
 - **Sinais propagados nos scripts de execução:** `run.sh`/`run_tasks.sh` usam `exec` e o
   `run_all.sh` encaminha `TERM`/`INT` ao Node filho, evitando Node/Chromium órfãos em
   `kill`/stop do systemd.
 - **Encerramento nunca trava no flush (`libs/exit.js`):** teto de 5s para stdout/stderr e
-  flush síncrono do destino do pino (`--json`), garantindo que os últimos logs não se
-  percam nem travem a saída.
+  flush síncrono do destino do pino (`--json`).
 - **Fallback de launch não desabilita o sandbox por falha genérica:** a tentativa sem
   `--no-sandbox` só ocorre quando o erro indica sandbox/zygote indisponível; falhas
-  transitórias repetem apenas sem as flags de baixo consumo, preservando o sandbox.
-- **Segredos em query string não vazam mais nos logs:** `maskHeartbeatUrl` passa a
-  mascarar valores de `searchParams`/fragmento, e o logger sanitiza **todos os valores
-  string** de campos estruturados (ex: `{ url }`), não apenas `msg`/`err`.
+  transitórias repetem apenas sem as flags de baixo consumo, preservando o sandbox. O erro
+  final preserva a causa original (1ª tentativa).
+- **Segredos em URLs não vazam mais nos logs:** `maskHeartbeatUrl` mascara token em
+  segmento intermediário do path, limpa credenciais embutidas (`user:senha@host`) e remove
+  fragmento; o logger sanitiza **todos os valores string** de campos estruturados (ex:
+  `{ url }`), não apenas `msg`/`err`.
+- **PII com local part curto:** `maskUser('a@b.co')` passa a retornar `***@b.co` (antes o
+  e-mail inteiro vazava por a regex exigir 2 caracteres antes do `@`).
 - **Botão de tarefa desconhecido não é mais tratado como “Concluída”:** a conclusão exige
   sinais positivos (estilo desabilitado ou texto DONE/CONCLUÍDO/COMPLETED); rótulos novos
-  (A/B test) ficam como `Requer verificação manual (botão "X" não reconhecido)` em vez de
-  serem pulados silenciosamente. Rótulos explícitos de conclusão são excluídos desse aviso.
+  (A/B test) ficam como `Requer verificação manual (botão "X" não reconhecido)`, e o
+  progresso informado (`statusText`, ex: `1/3`) tem prioridade na classificação.
 - **Heurística textual `cover` removida da detecção de botão desabilitado:** um estilo com
   `background-size: cover` podia marcar uma tarefa **ativa** como concluída; agora apenas
   `opacity: 0.5` (e rounds completos/texto DONE) indicam conclusão.
-- **`decryptSession` reporta parâmetros scrypt inválidos como falha de autenticação:**
-  o `scryptSync` foi movido para dentro do bloco protegido (com limpeza segura da chave),
-  cobrindo o caso de token compacto + `SCRYPT_N` alto sem vazar erro cru de parâmetros.
+- **`decryptSession` reporta parâmetros scrypt inválidos como falha de autenticação:** o
+  `scryptSync` foi movido para dentro do bloco protegido (com limpeza segura da chave).
 - **`saveSession` grava metadados antes da sessão:** uma falha de escrita da sessão não
   deixa metadados órfãos nem descarta uma sessão válida no próximo ciclo.
 - **Screenshot automático sem duplicação:** páginas que já tiveram print manual de falha
   não recebem captura automática duplicada em `closeContextWithDiagnostics`.
-- **Erro final do launch preserva a causa original** (1ª tentativa) para diagnóstico.
 - **`CHROMIUM_JS_HEAP_MB` com clamp em `[64, 2048]` MB** — typos não geram flags absurdas.
 - **Telegram:** `streakDays`, saldo e durações agora passam por `escapeHtml`.
-- **Crash handler faz flush dos logs** antes do `exit 6` (não perde as últimas linhas fatais).
+- **Crash handler faz flush dos logs** antes do `exit 6`.
 - **`os.userInfo()` protegido:** containers com `--user` sem entrada em `/etc/passwd` não
   quebram mais o boot (tratado como não-root).
 - **Exportação tolerante a caixa da conta:** `expectedUser` e `meta.user` são comparados
@@ -108,21 +118,23 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Allowlist `files` no `package.json`:** evita publicar acidentalmente arquivos de
   sessão/credenciais em um eventual `npm pack/publish`.
 - **`docker-run.example.sh`:** wrapper de cron recomendado para hosts pequenos, com
-  `--init`, `--pids-limit=256`, limites `--memory`/`--memory-swap`, rotação de log e
-  registro do **pico real** de memória/PIDs de cada execução.
+  `--init`, `--pids-limit=256`, limites `--memory`/`--memory-swap` (768m/1536m), rotação de
+  log e registro do **pico real** de memória/PIDs de cada execução.
 - **Guia de host com 1 GB RAM:** `README.md` e `CLOUD_SESSIONS.md` passam a recomendar
   swap de 1–2 GB, `SCRYPT_N=32768` (~33 MB de pico em vez de ~134 MB) e as flags
   `--shm-size=256m --memory=768m --memory-swap=1536m` no `docker run`. O guia também
   documenta que execuções nativas e via Docker **não compartilham o lockfile**.
 - **Workflow `Release` testável manualmente:** `workflow_dispatch` com input `tag`
   (checkout no ref informado), permitindo ensaiar/republicar releases sem criar tag nova.
-- **Novos testes (215 no total):** `.dockerignore`, `PW_SCREENSHOT` (incluindo
-  deduplicação), fallback progressivo (sandbox e memória), falha genérica sem desabilitar
-  sandbox, heap configurável com clamp e erro com `cause`, segredos em query string
-  (logger e heartbeat), escape do Telegram, crash/flush, `positiveInt` estrito,
-  `exportSession` case-insensitive, falha rápida do lock em diretório, ausência de chave
-  no `argv` dos setups, rótulo DONE vs. botão desconhecido, estilo `cover` não conclui
-  tarefa, metadados antes da sessão e token compacto com `SCRYPT_N` alto.
+- **Novos testes (226 no total):** `.dockerignore`, `PW_SCREENSHOT` (deduplicação),
+  fallback progressivo (sandbox e memória), falha genérica sem desabilitar sandbox, heap
+  configurável com clamp e erro com `cause`, segredos em URL/query string (logger e
+  heartbeat, incluindo token no meio do path e credenciais), escape do Telegram,
+  crash/flush, `positiveInt` estrito, `exportSession` case-insensitive, falha rápida do
+  lock em diretório, release por `lockId` e I/O fail-safe, rótulo DONE vs. botão
+  desconhecido, prioridade de `statusText`, estilo `cover` não conclui tarefa, metadados
+  antes da sessão, token compacto com `SCRYPT_N` alto, valor fantasma de check-in nos três
+  caminhos, `maskUser` com local part curto e saldo ausente/N/D.
 
 ### Alterado
 

@@ -247,6 +247,12 @@ function classifyTaskStatus(task, options = {}) {
     return 'Exclusiva do App AliExpress (requer rega no app móvel)';
   }
 
+  // Progresso informado pela página (ex: rodadas "1/3") é mais útil que o aviso de
+  // botão desconhecido — reporta primeiro.
+  if (task.statusText) {
+    return `Executada parcialmente (${task.statusText})`;
+  }
+
   // Botão de ação não reconhecido (ex: rótulo novo/A-B test): não executamos às cegas
   // nem reportamos como concluída — sinaliza verificação manual. Rótulos explícitos
   // de conclusão (DONE/CONCLUÍDO/COMPLETED) não entram aqui.
@@ -257,10 +263,6 @@ function classifyTaskStatus(task, options = {}) {
     !/^(DONE|CONCLU[IÍ]DO|COMPLETED)$/i.test(task.btnText)
   ) {
     return `Requer verificação manual (botão "${task.btnText}" não reconhecido)`;
-  }
-
-  if (task.statusText) {
-    return `Executada parcialmente (${task.statusText})`;
   }
 
   return 'Pendente';

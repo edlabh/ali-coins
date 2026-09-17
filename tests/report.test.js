@@ -219,7 +219,14 @@ test('libs/report.js - buildMultiAccountReportPayload e validação com multiAcc
     const parsed = multiAccountReportSchema.parse(payload);
     assert.strictEqual(parsed.type, 'multi_account_report');
     assert.strictEqual(parsed.accounts.length, 2);
-    assert.strictEqual(parsed.accounts[0].meta.totalCoinsGained, 10);
+    // Conta 1 está com alreadyCollected=true: coinsGainedToday é eco informativo,
+    // não ganho desta execução (mesma regra do relatório unificado desde a 0.9.1)
+    assert.strictEqual(
+      parsed.accounts[0].meta.checkinCoinsGained,
+      0,
+      'alreadyCollected=true não pode contabilizar moedas fantasmas'
+    );
+    assert.strictEqual(parsed.accounts[0].meta.totalCoinsGained, 0);
 
     renderMultiAccountReport(accountResults, meta, { json: true });
     assert.ok(capturedOutput.includes('"type": "multi_account_report"'));
@@ -553,6 +560,140 @@ test('report.js - renderUnifiedReport mascara o e-mail do usuário no log (PII)'
     assert.ok(joined.includes('pi***@example.com'), 'E-mail deve ser mascarado no relatório');
   } finally {
     logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - computeCheckinCoinsGained ignora valor fantasma quando alreadyCollected=true', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { computeCheckinCoinsGained } = require('../libs/report');
+
+    // Bug reportado: eco informativo do check-in já feito não pode contar como ganho
+    assert.strictEqual(
+      computeCheckinCoinsGained({ alreadyCollected: true, coinsGainedToday: '70' }),
+      0,
+      'alreadyCollected=true não pode somar coinsGainedToday'
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({ alreadyCollected: false, coinsGainedToday: '70' }),
+      70,
+      'alreadyCollected=false deve somar o valor'
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({ alreadyCollected: false, coinsGainedToday: 15 }),
+      15,
+      'Valores numéricos devem ser aceitos'
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({ coinsGainedToday: '10' }),
+      0,
+      'Flag ausente = 0'
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({ alreadyCollected: false, coinsGainedToday: 'N/D' }),
+      0
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({ alreadyCollected: false, coinsGainedToday: 'abc' }),
+      0
+    );
+    assert.strictEqual(computeCheckinCoinsGained(null), 0);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - payload multi-conta não infla checkinCoinsGained quando alreadyCollected=true', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { buildMultiAccountReportPayload } = require('../libs/report');
+
+    const payload = buildMultiAccountReportPayload([
+      {
+        account: { maskedUser: 'co***@example.com', user: 'conta1@example.com' },
+        checkinResult: {
+          alreadyCollected: true,
+          coinsGainedToday: '70',
+          streakDays: 212,
+          totalBalance: '1000',
+          duration: '1m'
+        },
+        tasksResult: { coinsGained: 5, finalCoins: '1000 moedas', results: [], duration: '1m' },
+        duration: '2m'
+      }
+    ]);
+
+    assert.strictEqual(payload.accounts[0].meta.checkinCoinsGained, 0, 'Check-in já feito = 0');
+    assert.strictEqual(payload.accounts[0].meta.tasksCoinsGained, 5);
+    assert.strictEqual(payload.accounts[0].meta.totalCoinsGained, 5, 'Total não pode ser inflado');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - payload unificado mantém a mesma regra (regressão simétrica)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { buildUnifiedReportPayload } = require('../libs/report');
+
+    const already = buildUnifiedReportPayload(
+      {
+        alreadyCollected: true,
+        coinsGainedToday: '70',
+        streakDays: 30,
+        totalBalance: '1000',
+        duration: '1m'
+      },
+      { coinsGained: 5, finalCoins: '1000 moedas', results: [], duration: '1m' }
+    );
+    assert.strictEqual(already.meta.checkinCoinsGained, 0);
+    assert.strictEqual(already.meta.totalCoinsGained, 5);
+
+    const fresh = buildUnifiedReportPayload(
+      {
+        alreadyCollected: false,
+        coinsGainedToday: '10',
+        streakDays: 31,
+        totalBalance: '1010',
+        duration: '1m'
+      },
+      { coinsGained: 5, finalCoins: '1015 moedas', results: [], duration: '1m' }
+    );
+    assert.strictEqual(fresh.meta.checkinCoinsGained, 10);
+    assert.strictEqual(fresh.meta.totalCoinsGained, 15);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - computeTasksCoinsGained ignora NaN/Infinity e tipos não numéricos', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { computeTasksCoinsGained } = require('../libs/report');
+    assert.strictEqual(computeTasksCoinsGained({ coinsGained: 7 }), 7);
+    assert.strictEqual(computeTasksCoinsGained({ coinsGained: NaN }), 0);
+    assert.strictEqual(computeTasksCoinsGained({ coinsGained: Infinity }), 0);
+    assert.strictEqual(computeTasksCoinsGained({ coinsGained: '7' }), 0);
+    assert.strictEqual(computeTasksCoinsGained(null), 0);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - computeFinalBalance trata saldo ausente ou N/D como N/D (sem "undefined moedas")', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { computeFinalBalance } = require('../libs/report');
+    assert.strictEqual(computeFinalBalance({}, null), 'N/D');
+    assert.strictEqual(computeFinalBalance({ totalBalance: 'N/D' }, null), 'N/D');
+    assert.strictEqual(computeFinalBalance({ totalBalance: '250' }, null), '250 moedas');
+    assert.strictEqual(
+      computeFinalBalance({ totalBalance: '250' }, { finalCoins: '300 moedas' }),
+      '300 moedas'
+    );
+    assert.strictEqual(computeFinalBalance(null, null), 'N/D');
+  } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });

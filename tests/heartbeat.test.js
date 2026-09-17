@@ -232,3 +232,26 @@ test('libs/heartbeat.js - maskHeartbeatUrl mascara tokens em query string', () =
     'Fragmento deve ser removido'
   );
 });
+
+test('libs/heartbeat.js - maskHeartbeatUrl mascara token no meio do path e credenciais da URL', () => {
+  const { maskHeartbeatUrl } = require('../libs/heartbeat');
+
+  // Token em segmento intermediário (ex: /api/<token>/ping)
+  const middle = maskHeartbeatUrl('https://hc.example.com/api/TELEGRAMSECRETTOKEN123/ping');
+  assert.strictEqual(
+    middle.includes('TELEGRAMSECRETTOKEN123'),
+    false,
+    'Token no meio do path não pode vazar'
+  );
+  assert.ok(middle.includes('TELE***N123'), `Token do meio deve ser mascarado: ${middle}`);
+
+  // Credenciais embutidas (user:senha@host)
+  const creds = maskHeartbeatUrl('https://usuario:SENHA_SECRETA@example.com/ping');
+  assert.strictEqual(creds.includes('SENHA_SECRETA'), false, 'Senha da URL não pode vazar');
+  assert.strictEqual(creds.includes('usuario:'), false, 'Usuário da URL não pode vazar');
+
+  // Ação final continua preservada e o token anterior mascarado
+  const withAction = maskHeartbeatUrl('https://hc-ping.com/a1b2c3d4-e5f6-7890-abcd/start');
+  assert.ok(withAction.endsWith('/start'));
+  assert.strictEqual(withAction.includes('e5f6-7890-abcd'), false);
+});

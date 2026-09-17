@@ -295,7 +295,7 @@ docker run --rm \
     -e NOTIFY_HOST_LABEL="meu-servidor" \
     ali-coins
   ```
-- **Persistência At-Rest (`session.json.enc`):** Com `ENCRYPT_LOCAL_SESSION=true` (padrão v0.8+), o AliExpress salva a sessão criptografada em `session.json.enc` e os metadados em `session_meta.json`. A montagem desses arquivos garante que a sessão seja persistida entre execuções do container efêmero (`--rm`).
+- **Persistência At-Rest (`session.json.enc`):** Com `ENCRYPT_LOCAL_SESSION=true` (padrão desde a 0.8), o AliExpress salva a sessão criptografada em `session.json.enc` e os metadados em `session_meta.json`. A montagem desses arquivos garante que a sessão seja persistida entre execuções do container efêmero (`--rm`).
 - **Identificação do Host no Telegram (`NOTIFY_HOST_LABEL`):** Em containers descartáveis, o hostname padrão é o ID aleatório do container. Passe `-e NOTIFY_HOST_LABEL="meu-servidor"` ou a flag `--hostname meu-servidor` para que as notificações identifiquem corretamente o seu servidor.
 - A variável `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` garante o compartilhamento e cache dos navegadores.
 

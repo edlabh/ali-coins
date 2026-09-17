@@ -519,3 +519,16 @@ test('config.js - loadAccounts dedup case-insensitive (Foo@x + foo@x preserva or
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('config.js - maskUser mascara e-mails com local part curto (não vaza PII)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    assert.strictEqual(maskUser('a@b.co'), '***@b.co');
+    assert.strictEqual(maskUser('ab@c.co'), 'ab***@c.co');
+    assert.strictEqual(maskUser('a'), '***');
+    assert.strictEqual(maskUser('@dominio.com'), '***@dominio.com');
+    assert.strictEqual(maskUser('agiler@gmail.com'), 'ag***@gmail.com');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

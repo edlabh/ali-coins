@@ -13,22 +13,24 @@ function maskHeartbeatUrl(url) {
   if (!url || typeof url !== 'string') return '';
   try {
     const parsed = new URL(url);
+    // Nunca expõe credenciais embutidas na URL (https://user:senha@host/...)
+    parsed.username = '';
+    parsed.password = '';
+
     const pathParts = parsed.pathname.split('/').filter(Boolean);
     if (pathParts.length > 0) {
       const lastIndex = pathParts.length - 1;
-      const last = pathParts[lastIndex];
-      // Se for ação /start ou /fail no final, pega a parte anterior
-      if ((last === 'start' || last === 'fail') && pathParts.length > 1) {
-        const token = pathParts[lastIndex - 1];
-        if (token.length > 8) {
-          pathParts[lastIndex - 1] = `${token.slice(0, 4)}***${token.slice(-4)}`;
-        } else {
-          pathParts[lastIndex - 1] = '***';
+      for (let i = 0; i <= lastIndex; i++) {
+        const part = pathParts[i];
+        const isAction = i === lastIndex && (part === 'start' || part === 'fail');
+        if (isAction) continue; // ação não é segredo
+        if (i === lastIndex) {
+          // Último segmento: sempre mascarado (token) — preserva o comportamento histórico
+          pathParts[i] = part.length > 8 ? `${part.slice(0, 4)}***${part.slice(-4)}` : '***';
+        } else if (part.length > 8) {
+          // Segmentos intermediários longos também são tokens (ex: /api/<token>/ping)
+          pathParts[i] = `${part.slice(0, 4)}***${part.slice(-4)}`;
         }
-      } else if (last.length > 8) {
-        pathParts[lastIndex] = `${last.slice(0, 4)}***${last.slice(-4)}`;
-      } else {
-        pathParts[lastIndex] = '***';
       }
       parsed.pathname = '/' + pathParts.join('/');
     }

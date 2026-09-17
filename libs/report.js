@@ -147,6 +147,55 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
 }
 
 /**
+ * Calcula as moedas ganhas no check-in para os relatórios.
+ * IMPORTANTE: quando `alreadyCollected` é true, `coinsGainedToday` é apenas um eco
+ * informativo do check-in já realizado (não é ganho desta execução) e deve ser ignorado.
+ * Esta função é compartilhada entre os caminhos unificado e multi-conta para que o
+ * cálculo não volte a divergir por cópia de código.
+ * @param {object|null} checkin
+ * @returns {number}
+ */
+function computeCheckinCoinsGained(checkin) {
+  if (
+    !checkin ||
+    !checkin.coinsGainedToday ||
+    checkin.coinsGainedToday === 'N/D' ||
+    checkin.alreadyCollected !== false
+  ) {
+    return 0;
+  }
+  const parsed = parseInt(String(checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
+  return !isNaN(parsed) ? parsed : 0;
+}
+
+/**
+ * Calcula as moedas ganhas pelas tarefas (somente valores numéricos válidos)
+ * @param {object|null} tasks
+ * @returns {number}
+ */
+function computeTasksCoinsGained(tasks) {
+  return tasks && typeof tasks.coinsGained === 'number' && Number.isFinite(tasks.coinsGained)
+    ? tasks.coinsGained
+    : 0;
+}
+
+/**
+ * Resolve o saldo final consolidado (tarefas > check-in > 'N/D')
+ * @param {object|null} checkin
+ * @param {object|null} tasks
+ * @returns {string}
+ */
+function computeFinalBalance(checkin, tasks) {
+  if (tasks && tasks.finalCoins && tasks.finalCoins !== 'N/D') {
+    return tasks.finalCoins;
+  }
+  if (checkin && checkin.totalBalance && checkin.totalBalance !== 'N/D') {
+    return `${checkin.totalBalance} moedas`;
+  }
+  return 'N/D';
+}
+
+/**
  * Constrói o objeto estruturado do relatório unificado
  * @param {object} checkinResult
  * @param {object} tasksResult
@@ -154,28 +203,9 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
  * @returns {object}
  */
 function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
-  const finalBalance =
-    tasksResult && tasksResult.finalCoins && tasksResult.finalCoins !== 'N/D'
-      ? tasksResult.finalCoins
-      : checkinResult
-        ? `${checkinResult.totalBalance} moedas`
-        : 'N/D';
-
-  let checkinCoinsGained = 0;
-  if (
-    checkinResult?.coinsGainedToday &&
-    checkinResult.coinsGainedToday !== 'N/D' &&
-    checkinResult.alreadyCollected === false
-  ) {
-    const parsed = parseInt(String(checkinResult.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
-    if (!isNaN(parsed)) checkinCoinsGained = parsed;
-  }
-
-  let tasksCoinsGained = 0;
-  if (tasksResult && typeof tasksResult.coinsGained === 'number') {
-    tasksCoinsGained = tasksResult.coinsGained;
-  }
-
+  const finalBalance = computeFinalBalance(checkinResult, tasksResult);
+  const checkinCoinsGained = computeCheckinCoinsGained(checkinResult);
+  const tasksCoinsGained = computeTasksCoinsGained(tasksResult);
   const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
 
   let totalDuration = meta.totalDuration;
@@ -503,24 +533,10 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
   const accounts = accountResults.map((item) => {
     const checkin = item.checkinResult;
     const tasks = item.tasksResult;
-    const finalBalance =
-      tasks && tasks.finalCoins && tasks.finalCoins !== 'N/D'
-        ? tasks.finalCoins
-        : checkin
-          ? `${checkin.totalBalance} moedas`
-          : 'N/D';
-
-    let checkinCoinsGained = 0;
-    if (checkin?.coinsGainedToday && checkin.coinsGainedToday !== 'N/D') {
-      const parsed = parseInt(String(checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
-      if (!isNaN(parsed)) checkinCoinsGained = parsed;
-    }
-
-    let tasksCoinsGained = 0;
-    if (tasks && typeof tasks.coinsGained === 'number') {
-      tasksCoinsGained = tasks.coinsGained;
-    }
-
+    const finalBalance = computeFinalBalance(checkin, tasks);
+    // Mesmo cálculo compartilhado do relatório unificado: respeita alreadyCollected
+    const checkinCoinsGained = computeCheckinCoinsGained(checkin);
+    const tasksCoinsGained = computeTasksCoinsGained(tasks);
     const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
 
     let accountDuration = item.duration;
@@ -675,6 +691,9 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
 module.exports = {
   unifiedReportSchema,
   multiAccountReportSchema,
+  computeCheckinCoinsGained,
+  computeTasksCoinsGained,
+  computeFinalBalance,
   buildUnifiedReportPayload,
   buildMultiAccountReportPayload,
   sendWebhookNotification,

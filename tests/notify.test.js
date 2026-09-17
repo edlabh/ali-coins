@@ -541,6 +541,7 @@ test('libs/notify.js - cálculo de moedas das tarefas por diferença de saldo qu
   const rawReport = {
     type: 'unified_report',
     checkin: {
+      alreadyCollected: false,
       coinsGainedToday: '70',
       totalBalance: '3135',
       streakDays: 33
@@ -862,4 +863,28 @@ test('libs/notify.js - escapa campos dinâmicos (streak/saldo/duração) no HTML
   assert.strictEqual(msg.includes('<script>'), false, 'saldo não deve injetar HTML');
   assert.strictEqual(msg.includes('<i>100</i>'), false, 'saldo deve ser escapado');
   assert.strictEqual(msg.includes('<x>1s</x>'), false, 'duração deve ser escapada');
+});
+
+test('libs/notify.js - multi-conta sem meta não conta check-in fantasma (alreadyCollected=true)', () => {
+  const report = {
+    type: 'multi_account_report',
+    accounts: [
+      {
+        user: 'co***@example.com',
+        checkin: {
+          alreadyCollected: true,
+          coinsGainedToday: '70',
+          streakDays: 10,
+          totalBalance: '500'
+        },
+        tasks: null
+        // sem `meta` de propósito: força o fallback compartilhado
+      }
+    ],
+    meta: { totalAccounts: 1, successfulAccounts: 1 }
+  };
+
+  const msg = buildMessage({ report, event: 'success' });
+  assert.ok(msg.includes('+0 (+0/+0)'), `Ganho não pode ser inflado por check-in já feito: ${msg}`);
+  assert.strictEqual(msg.includes('+70'), false, 'Valor fantasma de 70 não pode aparecer');
 });

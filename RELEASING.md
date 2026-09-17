@@ -53,7 +53,7 @@ curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
   -d '{"tag_name":"X.Y.Z","name":"Release X.Y.Z","body":"<notas>","make_latest":"true"}'
 ```
 
-## Checklist para a 1.0.0
+## Checklist para releases maiores (1.x)
 
 - [ ] `[Unreleased]` migrado para `## [1.0.0] - <data>` com **guia de migração** para
       quaisquer quebras de contrato.

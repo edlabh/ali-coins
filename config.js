@@ -459,7 +459,11 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
 function maskUser(user) {
   if (!user || typeof user !== 'string') return '***';
   if (user.includes('@')) {
-    return user.replace(/(.{2})(.*)(@.*)/, '$1***$3');
+    const atIndex = user.indexOf('@');
+    const local = user.slice(0, atIndex);
+    const domain = user.slice(atIndex);
+    // Local part com 1 caractere (ex: a@b.co) também precisa ser mascarado
+    return local.length >= 2 ? `${local.slice(0, 2)}***${domain}` : `***${domain}`;
   }
   // Telefones/IDs sem '@': expõe apenas os 2 primeiros caracteres, sem vazar os dígitos finais
   return user.length > 4 ? user.slice(0, 2) + '***' : '***';

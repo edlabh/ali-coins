@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const { formatDate, formatDateTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
+const { computeCheckinCoinsGained } = require('./report');
 const logger = require('../logger');
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -360,11 +361,9 @@ function buildMessage({
         }
 
         const streak = toSafeStreak(acc.checkin?.streakDays);
+        // Fonte única de cálculo (respeita alreadyCollected quando o meta não está disponível)
         const checkinCoins = toSafeInt(
-          acc.meta?.checkinCoinsGained ??
-            (acc.checkin?.coinsGainedToday
-              ? parseInt(String(acc.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10) || 0
-              : 0)
+          acc.meta?.checkinCoinsGained ?? computeCheckinCoinsGained(acc.checkin)
         );
         const balanceAfterCheckin = parseInt(
           String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
@@ -428,17 +427,10 @@ function buildMessage({
     const reportDate = formatDate(new Date());
     const userDisplay = resolveUser(report);
 
-    let checkinCoins = 0;
-    if (report.meta?.checkinCoinsGained !== undefined) {
-      checkinCoins = Number(report.meta.checkinCoinsGained) || 0;
-    } else if (
-      report.checkin?.coinsGainedToday &&
-      report.checkin.coinsGainedToday !== 'N/D' &&
-      report.checkin.alreadyCollected !== true
-    ) {
-      const parsed = parseInt(String(report.checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
-      if (!isNaN(parsed)) checkinCoins = parsed;
-    }
+    const checkinCoins =
+      report.meta?.checkinCoinsGained !== undefined
+        ? Number(report.meta.checkinCoinsGained) || 0
+        : computeCheckinCoinsGained(report.checkin);
 
     // Cálculo determinístico por diferença de saldo (delta real entre após check-in e final)
     const balanceAfterCheckin = parseInt(
@@ -542,15 +534,10 @@ function buildMessage({
     const reportDate = formatDate(new Date());
     const userDisplay = resolveUser(report);
 
-    let checkinCoins = 0;
-    if (
-      report.coinsGainedToday &&
-      report.coinsGainedToday !== 'N/D' &&
-      report.alreadyCollected !== true
-    ) {
-      const parsed = parseInt(String(report.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
-      if (!isNaN(parsed)) checkinCoins = parsed;
-    }
+    const checkinCoins = computeCheckinCoinsGained({
+      coinsGainedToday: report.coinsGainedToday,
+      alreadyCollected: report.alreadyCollected
+    });
 
     const streakDays =
       report.streakDays !== undefined && report.streakDays !== null
