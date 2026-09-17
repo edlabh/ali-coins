@@ -70,6 +70,10 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
 
   const lockData = {
     pid: process.pid,
+    // Identidade única da geração deste lock: o release só remove o arquivo se o
+    // lockId ainda for o nosso (evita apagar o lock de outra instância que o
+    // substituiu entre a leitura e o unlink).
+    lockId: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     host: os.hostname(),
     platform: process.platform
@@ -84,17 +88,30 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
   // por até LOCK_READ_GRACE_MS antes de considerá-lo definitivamente inválido.
   const readExistingLock = async ({ allowGrace = false } = {}) => {
     const deadline = Date.now() + (allowGrace ? LOCK_READ_GRACE_MS : 0);
+    let ioError = null;
+
     for (;;) {
       try {
         const content = await fs.promises.readFile(targetLockPath, 'utf-8');
         if (content.trim()) {
-          const parsed = JSON.parse(content);
-          if (parsed && parsed.pid) return parsed;
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed && parsed.pid) return { lock: parsed, status: 'ok' };
+          } catch {
+            // JSON inválido: aguarda a carência antes de decidir
+          }
         }
-      } catch {
-        // ENOENT ou JSON inválido: aguarda a carência antes de decidir
+      } catch (err) {
+        if (err.code === 'ENOENT') return { lock: null, status: 'missing' };
+        // Diretório no caminho: cai no fluxo de remoção/falha clara
+        if (err.code === 'EISDIR') return { lock: null, status: 'invalid' };
+        // Erro transitório de I/O (EBUSY/EPERM/EACCES em Windows/AV): NUNCA remover
+        ioError = err;
       }
-      if (Date.now() >= deadline) return null;
+
+      if (Date.now() >= deadline) {
+        return { lock: null, status: ioError ? 'io-error' : 'invalid' };
+      }
       await new Promise((resolve) => setTimeout(resolve, LOCK_READ_RETRY_MS));
     }
   };
@@ -186,9 +203,23 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
       continue;
     }
 
-    const existingLock = await readExistingLock({ allowGrace: true });
+    const readResult = await readExistingLock({ allowGrace: true });
+    const existingLock = readResult.lock;
 
     if (!existingLock) {
+      if (readResult.status === 'missing') {
+        // Removido concorrentemente: tenta criar novamente
+        continue;
+      }
+
+      if (readResult.status === 'io-error') {
+        // Erro transitório de I/O (ex: antivírus/indexador no Windows segurando o arquivo):
+        // tratar como lock ativo é fail-safe — nunca remover um lock que pode ser válido.
+        const msg = `Não foi possível ler o lockfile "${targetLockPath}" (erro de I/O transitório). Tratando como lock ativo por segurança.`;
+        logger.warn({ lockPath: targetLockPath }, msg);
+        throw new LockActiveError(msg, { ioError: true });
+      }
+
       logger.warn(
         { lockPath: targetLockPath },
         'Lockfile ilegível ou inválido detectado após carência de leitura. Removendo para recriar com segurança.'
@@ -308,7 +339,11 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
     try {
       const content = await fs.promises.readFile(targetLockPath, 'utf-8');
       const currentLock = JSON.parse(content);
-      if (currentLock.pid === process.pid) {
+      // lockId identifica a geração do lock; locks legados (sem lockId) usam o PID
+      const isOurs = currentLock.lockId
+        ? currentLock.lockId === lockData.lockId
+        : currentLock.pid === process.pid;
+      if (isOurs) {
         await fs.promises.unlink(targetLockPath).catch(() => {});
       }
     } catch {

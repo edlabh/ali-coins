@@ -417,3 +417,76 @@ test('lockfile.js - falha rápida e clara quando o caminho do lock é um diretó
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('lockfile.js - release não remove lock de outra geração (lockId de terceiros)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-lockid-');
+  const tmpLockPath = path.join(tmpDir, 'lockid.lock');
+
+  try {
+    const release = await acquireLock(false, 60000, tmpLockPath);
+    const ours = JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8'));
+    assert.ok(ours.lockId, 'O lock deve possuir lockId de geração');
+
+    // Simula: nosso lock foi removido e outra instância criou um novo arquivo
+    // (mesmo PID fake, geração diferente)
+    await fs.promises.unlink(tmpLockPath);
+    fs.writeFileSync(
+      tmpLockPath,
+      JSON.stringify({
+        pid: process.pid,
+        lockId: 'outra-geracao-de-lock',
+        createdAt: new Date().toISOString(),
+        host: os.hostname()
+      })
+    );
+
+    await release();
+    assert.ok(
+      fs.existsSync(tmpLockPath),
+      'release não pode remover lock de outra geração (lockId diferente)'
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test(
+  'lockfile.js - erro transitório de I/O é tratado como lock ativo (nunca remove o arquivo)',
+  { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) },
+  async () => {
+    const realFilesSnapshot = snapshotRealFiles();
+    const tmpDir = createIsolatedTestDir('lockfile-io-error-');
+    const tmpLockPath = path.join(tmpDir, 'io.lock');
+
+    try {
+      fs.writeFileSync(
+        tmpLockPath,
+        JSON.stringify({
+          pid: process.pid,
+          createdAt: new Date().toISOString(),
+          host: os.hostname()
+        })
+      );
+      fs.chmodSync(tmpLockPath, 0o000);
+
+      await assert.rejects(
+        async () => {
+          await acquireLock(false, 60000, tmpLockPath);
+        },
+        (err) => {
+          assert.strictEqual(err.code, 'LOCK_ACTIVE');
+          return true;
+        }
+      );
+      assert.ok(fs.existsSync(tmpLockPath), 'Lock com erro de I/O não deve ser removido');
+    } finally {
+      try {
+        fs.chmodSync(tmpLockPath, 0o600);
+      } catch {}
+      cleanupIsolatedTestDir(tmpDir);
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);

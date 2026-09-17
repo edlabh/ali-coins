@@ -7,6 +7,17 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [Unreleased]
 
+### Corrigido
+
+- **Race de liberação do lockfile (detectada no CI Windows):** o arquivo ganhou um
+  `lockId` de geração e o `release()` só remove o lock se o `lockId` ainda for o nosso,
+  eliminando a janela em que uma liberação atrasada apagava o lock de outra instância
+  recém-adquirida (causava sobreposição sob concorrência real).
+- **Erro transitório de I/O no lockfile tratado como lock ativo:** falhas de leitura
+  (`EBUSY`/`EPERM`/`EACCES`, comuns com antivírus/indexador no Windows) não removem mais
+  o arquivo; a execução é adiada de forma fail-safe (`LOCK_ACTIVE`) em vez de arriscar
+  duas instâncias simultâneas. Diretório no caminho continua com falha rápida e clara.
+
 > Alterações destinadas às próximas versões (1.0.x / 1.1.0) devem ser registradas aqui e
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
