@@ -196,7 +196,7 @@ npm run notify:test
 npm start -- --dry-run --notify
 ```
 
-Consulte o manual detalhado com imagens e solução de problemas em: [**`TELEGRAM.md`**](file:///home/eduardo/ali-coins/TELEGRAM.md).
+Consulte o manual detalhado com imagens e solução de problemas em: [**`TELEGRAM.md`**](TELEGRAM.md).
 
 ---
 
@@ -256,7 +256,7 @@ Se a sua VPS cair, faltar energia no datacenter ou o `cron` travar, **nenhum log
    ```
 3. O script enviará automaticamente `/start` ao iniciar, `/` no sucesso com o relatório estruturado e `/fail` em caso de erro, sem nunca alterar o código de saída original.
 4. No CLI: use `--heartbeat` para forçar ou `--no-heartbeat` para desativar pontualmente.
-5. Mais detalhes e resolução de problemas em: [**`CLOUD_SESSIONS.md`**](file:///home/eduardo/ali-coins/CLOUD_SESSIONS.md#10-monitorar-se-o-cron-morreu-dead-mans-switch--heartbeat).
+5. Mais detalhes e resolução de problemas em: [**`CLOUD_SESSIONS.md`**](CLOUD_SESSIONS.md#10-monitorar-se-o-cron-morreu-dead-mans-switch--heartbeat).
 
 ---
 
