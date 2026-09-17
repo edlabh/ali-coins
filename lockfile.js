@@ -1,11 +1,25 @@
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const { lockFilePath: defaultLockFilePath } = require('./config');
 const { safeChmod600 } = require('./security');
 const logger = require('./logger');
 
 const DEFAULT_STALE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos
 const MAX_ACQUIRE_ATTEMPTS = 5; // Tentativas após remoção de locks órfãos/stale/symlink
+// Carência de leitura: um lock recém-criado pode estar sendo escrito por outro processo
+// (fallback em filesystems sem hardlink). Só removemos como "inválido" após esta janela.
+const LOCK_READ_GRACE_MS = 900;
+const LOCK_READ_RETRY_MS = 150;
+// Códigos de erro que indicam filesystem sem suporte a hardlink (fallback para 'wx')
+const LINK_UNSUPPORTED_CODES = new Set([
+  'EXDEV',
+  'EPERM',
+  'ENOSYS',
+  'EOPNOTSUPP',
+  'ENOTSUP',
+  'EMLINK'
+]);
 
 class LockActiveError extends Error {
   constructor(message, details = {}) {
@@ -33,8 +47,12 @@ function isProcessAlive(pid) {
 
 /**
  * Adquire lock exclusivo de forma assíncrona para evitar execuções simultâneas ou sobrepostas.
- * A criação utiliza a flag exclusiva 'wx' (O_CREAT|O_EXCL), eliminando a janela TOCTOU
- * (check-then-write) que permitia duas instâncias adquirirem o mesmo lock simultaneamente.
+ * A publicação é feita por hardlink atômico de um arquivo temporário já completo
+ * (`link` falha com EEXIST sem sobrescrever), eliminando a janela em que o lock existia
+ * vazio entre `open('wx')` e a escrita do conteúdo — cenário que permitia a um concorrente
+ * ler um arquivo incompleto, removê-lo e ambos se considerarem donos do lock.
+ * Em filesystems sem hardlink, usa fallback `wx` com carência de leitura antes de remover
+ * um lock "inválido" (evita destruir o lock de quem ainda está escrevendo).
  * @param {boolean} [force=false] Se true, remove lock existente mesmo que ativo
  * @param {number} [customStaleTimeoutMs] Tempo limite de inatividade para considerar lock órfão
  * @param {string} [customLockFilePath] Caminho customizado para o arquivo de lock
@@ -60,47 +78,96 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
     await fs.promises.unlink(targetLockPath).catch(() => {});
   };
 
-  const readExistingLock = async () => {
-    try {
-      const content = await fs.promises.readFile(targetLockPath, 'utf-8');
-      const parsed = JSON.parse(content);
-      return parsed && parsed.pid ? parsed : null;
-    } catch {
-      return null;
+  // Lê o lock existente. Com allowGrace, tolera arquivos em escrita (vazio/parcial)
+  // por até LOCK_READ_GRACE_MS antes de considerá-lo definitivamente inválido.
+  const readExistingLock = async ({ allowGrace = false } = {}) => {
+    const deadline = Date.now() + (allowGrace ? LOCK_READ_GRACE_MS : 0);
+    for (;;) {
+      try {
+        const content = await fs.promises.readFile(targetLockPath, 'utf-8');
+        if (content.trim()) {
+          const parsed = JSON.parse(content);
+          if (parsed && parsed.pid) return parsed;
+        }
+      } catch {
+        // ENOENT ou JSON inválido: aguarda a carência antes de decidir
+      }
+      if (Date.now() >= deadline) return null;
+      await new Promise((resolve) => setTimeout(resolve, LOCK_READ_RETRY_MS));
     }
+  };
+
+  // Publica o lock via hardlink de um temp já completo (atômico, nunca sobrescreve)
+  const publishLockViaLink = async () => {
+    const tmpPath = `${targetLockPath}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+    let handle = null;
+    try {
+      handle = await fs.promises.open(tmpPath, 'wx', 0o600);
+      await handle.writeFile(serializedLock, 'utf-8');
+      await handle.sync().catch(() => {});
+      await handle.close();
+      handle = null;
+
+      try {
+        await fs.promises.link(tmpPath, targetLockPath);
+        safeChmod600(targetLockPath);
+        return 'created';
+      } catch (linkErr) {
+        if (linkErr.code === 'EEXIST') return 'exists';
+        if (LINK_UNSUPPORTED_CODES.has(linkErr.code)) return 'unsupported';
+        throw linkErr;
+      }
+    } finally {
+      if (handle) await handle.close().catch(() => {});
+      await fs.promises.unlink(tmpPath).catch(() => {});
+    }
+  };
+
+  // Fallback para filesystems sem hardlink (FAT/alguns mounts de rede)
+  const publishLockViaWx = async () => {
+    const handle = await fs.promises.open(targetLockPath, 'wx', 0o600);
+    try {
+      await handle.writeFile(serializedLock, 'utf-8');
+      await handle.sync().catch(() => {});
+    } catch (writeErr) {
+      await handle.close().catch(() => {});
+      await removeLockFile();
+      throw writeErr;
+    }
+    await handle.close().catch(() => {});
+    safeChmod600(targetLockPath);
   };
 
   let acquired = false;
 
   for (let attempt = 1; attempt <= MAX_ACQUIRE_ATTEMPTS && !acquired; attempt++) {
-    // Criação atômica e exclusiva: nunca segue symlink pré-existente (wx => EEXIST)
-    let handle = null;
+    let publishResult;
     try {
-      handle = await fs.promises.open(targetLockPath, 'wx', 0o600);
-      try {
-        await handle.writeFile(serializedLock, 'utf-8');
-        await handle.sync().catch(() => {});
-      } catch (writeErr) {
-        await handle.close().catch(() => {});
-        handle = null;
-        await removeLockFile();
-        throw writeErr;
-      }
-      await handle.close().catch(() => {});
-      handle = null;
-      safeChmod600(targetLockPath);
-      acquired = true;
-      break;
+      publishResult = await publishLockViaLink();
     } catch (err) {
-      if (handle) {
-        await handle.close().catch(() => {});
-      }
-      if (err.code !== 'EEXIST') {
-        logger.error({ err: err.message }, 'Falha ao criar arquivo de lock.');
-        throw err;
+      logger.error({ err: err.message }, 'Falha ao criar arquivo de lock.');
+      throw err;
+    }
+
+    if (publishResult === 'unsupported') {
+      try {
+        await publishLockViaWx();
+        publishResult = 'created';
+      } catch (err) {
+        if (err.code !== 'EEXIST') {
+          logger.error({ err: err.message }, 'Falha ao criar arquivo de lock.');
+          throw err;
+        }
+        publishResult = 'exists';
       }
     }
 
+    if (publishResult === 'created') {
+      acquired = true;
+      break;
+    }
+
+    // 'exists': inspecionar o lock vigente
     // Defesa contra symlink: nunca tratamos um link como lock válido; removemos apenas o link
     try {
       const stat = await fs.promises.lstat(targetLockPath);
@@ -117,12 +184,12 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
       continue;
     }
 
-    const existingLock = await readExistingLock();
+    const existingLock = await readExistingLock({ allowGrace: true });
 
     if (!existingLock) {
       logger.warn(
         { lockPath: targetLockPath },
-        'Lockfile ilegível ou inválido detectado. Removendo para recriar com segurança.'
+        'Lockfile ilegível ou inválido detectado após carência de leitura. Removendo para recriar com segurança.'
       );
       await removeLockFile();
       continue;

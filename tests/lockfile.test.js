@@ -286,3 +286,64 @@ test(
     }
   }
 );
+
+test('lockfile.js - stress concorrente: nenhuma sobreposição de posse por leitura parcial', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-stress-');
+  const tmpLockPath = path.join(tmpDir, 'stress.lock');
+  const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
+
+  const childScript = `
+    const fs = require('fs');
+    const { acquireLock } = require(${JSON.stringify(lockModule)});
+    let overlap = 0;
+    let acquired = 0;
+    (async () => {
+      for (let i = 0; i < 25; i++) {
+        try {
+          const release = await acquireLock(false, 60000, ${JSON.stringify(tmpLockPath)});
+          acquired++;
+          let observed = null;
+          try {
+            observed = JSON.parse(fs.readFileSync(${JSON.stringify(tmpLockPath)}, 'utf-8'));
+          } catch {
+            observed = null;
+          }
+          if (!observed || observed.pid !== process.pid) overlap++;
+          await new Promise((r) => setTimeout(r, 2));
+          await release();
+        } catch {
+          // LOCK_ACTIVE é esperado sob concorrência
+        }
+        await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 3)));
+      }
+      process.stdout.write('OVERLAP=' + overlap + ';ACQUIRED=' + acquired + '\\n');
+    })();
+  `;
+
+  try {
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => runNodeChild(childScript, 20000))
+    );
+
+    let totalOverlap = 0;
+    let totalAcquired = 0;
+    for (const res of results) {
+      const m = res.stdout.match(/OVERLAP=(\d+);ACQUIRED=(\d+)/);
+      assert.ok(m, `Saída inválida do filho: ${res.stdout} ${res.stderr}`);
+      totalOverlap += parseInt(m[1], 10);
+      totalAcquired += parseInt(m[2], 10);
+    }
+
+    assert.strictEqual(
+      totalOverlap,
+      0,
+      `Nenhuma sobreposição de posse é permitida (obtidas ${totalOverlap}). totalAcquired=${totalAcquired}`
+    );
+    assert.ok(totalAcquired > 0, 'Pelo menos uma aquisição deve ocorrer no stress');
+    assert.strictEqual(fs.existsSync(tmpLockPath), false, 'Lock final deve estar liberado');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

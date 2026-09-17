@@ -47,11 +47,26 @@ function getChromiumArgs() {
   return args;
 }
 
+// Política de saneamento do ambiente repassado aos subprocessos do Chromium:
+// herda o ambiente do host (compatibilidade cross-platform), exceto segredos.
+// Segredos (SESSION_SECRET, ALI_PASSWORD, TELEGRAM_BOT_TOKEN, GITHUB_TOKEN, etc.)
+// NUNCA devem chegar ao navegador (zygote/network service/crashpad).
+const SENSITIVE_ENV_KEY_REGEX =
+  /(secret|password|passwd|token|cookie|credential|authorization|api[_-]?key)/i;
+const SENSITIVE_ENV_KEY_PREFIX_REGEX = /^(TELEGRAM_|NOTIFY_|ALI_|SESSION_|GITHUB_|HEARTBEAT_)/i;
+
 /**
- * Configura as variáveis de ambiente necessárias para o Chromium encontrar as bibliotecas do sistema
+ * Configura as variáveis de ambiente necessárias para o Chromium encontrar as bibliotecas do sistema,
+ * deliberadamente sem propagar segredos da aplicação ao navegador.
+ * @returns {Record<string, string>}
  */
 function getChromiumEnv() {
-  const envVars = { ...process.env };
+  const envVars = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    if (SENSITIVE_ENV_KEY_REGEX.test(key) || SENSITIVE_ENV_KEY_PREFIX_REGEX.test(key)) continue;
+    envVars[key] = value;
+  }
   const localLibPath = path.join(__dirname, 'libs', 'extracted', 'usr', 'lib', 'x86_64-linux-gnu');
   if (process.platform === 'linux' && fs.existsSync(localLibPath)) {
     envVars.LD_LIBRARY_PATH = `${localLibPath}:${envVars.LD_LIBRARY_PATH || ''}`;
@@ -329,6 +344,9 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
 
 module.exports = {
   launchBrowser,
+  getChromiumEnv,
+  SENSITIVE_ENV_KEY_REGEX,
+  SENSITIVE_ENV_KEY_PREFIX_REGEX,
   newMobileContext,
   newDesktopContext,
   resolveStorageState,

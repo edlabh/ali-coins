@@ -4,14 +4,32 @@ const path = require('path');
 const assert = require('node:assert/strict');
 
 const REAL_PROJECT_ROOT = path.resolve(__dirname, '..');
-const CRITICAL_REAL_FILES = [
-  'session.json',
-  'session.json.enc',
-  'session_meta.json',
-  'session_token.txt',
-  'credentials.env',
-  'ali-coins.lock'
-];
+
+/**
+ * Lista dinamicamente TODOS os arquivos produtivos de segredos/sessão no diretório real
+ * (primária e secundárias, tokens, accounts.json, credenciais e o lockfile).
+ * A lista é derivada a cada chamada para que arquivos criados por engano também sejam detectados.
+ * @returns {string[]}
+ */
+function listCriticalRealFiles() {
+  const names = [];
+  try {
+    for (const name of fs.readdirSync(REAL_PROJECT_ROOT)) {
+      if (
+        /^(session|accounts|credentials|github_token)/i.test(name) &&
+        !name.endsWith('.example')
+      ) {
+        names.push(name);
+      }
+    }
+  } catch {
+    // Diretório ilegível: nada a proteger
+  }
+  if (fs.existsSync(path.join(REAL_PROJECT_ROOT, 'ali-coins.lock'))) {
+    names.push('ali-coins.lock');
+  }
+  return [...new Set(names)].sort();
+}
 
 /**
  * Registra o estado atual (existência e mtime) dos arquivos críticos em disco
@@ -19,7 +37,7 @@ const CRITICAL_REAL_FILES = [
  */
 function snapshotRealFiles() {
   const snapshot = {};
-  for (const file of CRITICAL_REAL_FILES) {
+  for (const file of listCriticalRealFiles()) {
     const fullPath = path.join(REAL_PROJECT_ROOT, file);
     if (fs.existsSync(fullPath)) {
       const stat = fs.statSync(fullPath);
@@ -36,29 +54,31 @@ function snapshotRealFiles() {
  * @param {Record<string, { exists: boolean, mtimeMs?: number, size?: number }>} snapshot
  */
 function assertRealFilesUntouched(snapshot) {
-  for (const file of CRITICAL_REAL_FILES) {
+  const expectedFiles = Object.keys(snapshot);
+  const currentFiles = listCriticalRealFiles();
+
+  for (const file of currentFiles) {
+    if (!(file in snapshot)) {
+      assert.fail(`Arquivo produtivo "${file}" não existia e foi criado indevidamente pelo teste!`);
+    }
+  }
+
+  for (const file of expectedFiles) {
     const fullPath = path.join(REAL_PROJECT_ROOT, file);
     const prev = snapshot[file];
     const existsNow = fs.existsSync(fullPath);
-    if (!prev.exists) {
-      assert.strictEqual(
-        existsNow,
-        false,
-        `Arquivo produtivo "${file}" não existia e foi criado indevidamente pelo teste!`
-      );
-    } else {
-      assert.strictEqual(
-        existsNow,
-        true,
-        `Arquivo produtivo "${file}" existia e foi apagado indevidamente pelo teste!`
-      );
-      const stat = fs.statSync(fullPath);
-      assert.strictEqual(
-        stat.mtimeMs,
-        prev.mtimeMs,
-        `Arquivo produtivo "${file}" teve seu mtime alterado indevidamente pelo teste!`
-      );
-    }
+    assert.strictEqual(
+      existsNow,
+      true,
+      `Arquivo produtivo "${file}" existia e foi apagado indevidamente pelo teste!`
+    );
+    assert.ok(prev.exists, `Arquivo produtivo "${file}" deveria existir no snapshot!`);
+    const stat = fs.statSync(fullPath);
+    assert.strictEqual(
+      stat.mtimeMs,
+      prev.mtimeMs,
+      `Arquivo produtivo "${file}" teve seu mtime alterado indevidamente pelo teste!`
+    );
   }
 }
 

@@ -130,7 +130,8 @@ async function performMobileLogin(page, context, config, options = {}) {
   }
 
   const rawStorage = await context.storageState();
-  await saveSession(rawStorage, username, options);
+  // Login resolvido neste host: a sessão deixa de ser "importada" (remove marcadores remotos)
+  await saveSession(rawStorage, username, { ...options, freshLogin: true });
   logger.info('[Login] Nova sessão autenticada salva com sucesso.');
   return rawStorage;
 }

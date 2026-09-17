@@ -393,6 +393,13 @@ async function saveSession(storageState, user, options = {}) {
     encrypted: shouldEncrypt
   };
 
+  // Login novo (senha/2FA resolvidos neste host) deixa de ser uma "sessão importada":
+  // limpa os marcadores para não emitir alertas falsos de sessão remota expirada.
+  if (options.freshLogin) {
+    delete metaData.isImported;
+    delete metaData.importedAt;
+  }
+
   if (
     options.streakDays !== undefined &&
     options.streakDays !== null &&

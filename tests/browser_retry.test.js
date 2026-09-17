@@ -124,3 +124,50 @@ test('browser.js:resolveStorageState - normaliza objeto, path json, path enc e a
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - getChromiumEnv não propaga segredos da aplicação ao Chromium', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { getChromiumEnv } = require('../browser');
+  const original = {
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    SESSION_SECRET: process.env.SESSION_SECRET,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    MY_CUSTOM_SECRET: process.env.MY_CUSTOM_SECRET
+  };
+
+  try {
+    process.env.ALI_PASSWORD = 'senha-super-secreta';
+    process.env.SESSION_SECRET = 'chave-secreta-de-teste-com-32-caracteres!!';
+    process.env.TELEGRAM_BOT_TOKEN = '123456789:TOKEN_FALSO_DE_TESTE_abcdefghijklmnop';
+    process.env.GITHUB_TOKEN = 'ghp_token_falso_de_teste_1234567890';
+    process.env.MY_CUSTOM_SECRET = 'valor-secreto-generico';
+
+    const env = getChromiumEnv();
+
+    for (const key of Object.keys(env)) {
+      assert.strictEqual(
+        /(SECRET|PASSWORD|TOKEN|CREDENTIAL)/i.test(key),
+        false,
+        `Variável sensível "${key}" não deve ser propagada ao Chromium`
+      );
+    }
+    assert.strictEqual(env.ALI_PASSWORD, undefined);
+    assert.strictEqual(env.SESSION_SECRET, undefined);
+    assert.strictEqual(env.TELEGRAM_BOT_TOKEN, undefined);
+    assert.strictEqual(env.GITHUB_TOKEN, undefined);
+    assert.strictEqual(env.MY_CUSTOM_SECRET, undefined);
+    assert.strictEqual(JSON.stringify(env).includes('senha-super-secreta'), false);
+    assert.strictEqual(JSON.stringify(env).includes('valor-secreto-generico'), false);
+
+    if (process.env.PATH !== undefined) {
+      assert.strictEqual(env.PATH, process.env.PATH, 'Variáveis não sensíveis devem ser mantidas');
+    }
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value !== undefined) process.env[key] = value;
+      else delete process.env[key];
+    }
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

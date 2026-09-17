@@ -88,6 +88,7 @@ const multiAccountReportSchema = z.object({
         })
         .nullable(),
       error: z.string().optional(),
+      isImportedSessionExpired: z.boolean().optional(),
       duration: z.string().optional(),
       meta: z.object({
         finalBalance: z.string(),

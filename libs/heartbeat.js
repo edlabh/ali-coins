@@ -1,5 +1,8 @@
 const logger = require('../logger');
 
+const { version: APP_VERSION } = require('../package.json');
+const USER_AGENT = `ali-coins/${APP_VERSION}`;
+
 /**
  * Mascara uma URL de heartbeat/ping para exibição segura em logs, preservando
  * o host e mascarando o meio do UUID ou token de identificação.
@@ -76,7 +79,7 @@ async function pingStart(url, options = {}) {
       body: options.body || 'AliExpress Coins job started',
       signal: AbortSignal.timeout(timeoutMs),
       headers: {
-        'User-Agent': 'ali-coins/0.8.0',
+        'User-Agent': USER_AGENT,
         'Content-Type': 'text/plain'
       }
     });
@@ -94,7 +97,7 @@ async function pingStart(url, options = {}) {
       const getRes = await fetch(startUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(timeoutMs),
-        headers: { 'User-Agent': 'ali-coins/0.8.0' }
+        headers: { 'User-Agent': USER_AGENT }
       });
       if (getRes.ok) {
         logger.info(
@@ -159,7 +162,7 @@ async function pingSuccess(url, report = null, options = {}) {
       body,
       signal: AbortSignal.timeout(timeoutMs),
       headers: {
-        'User-Agent': 'ali-coins/0.8.0',
+        'User-Agent': USER_AGENT,
         'Content-Type': contentType
       }
     });
@@ -177,7 +180,7 @@ async function pingSuccess(url, report = null, options = {}) {
       const getRes = await fetch(base, {
         method: 'GET',
         signal: AbortSignal.timeout(timeoutMs),
-        headers: { 'User-Agent': 'ali-coins/0.8.0' }
+        headers: { 'User-Agent': USER_AGENT }
       });
       if (getRes.ok) {
         logger.info(
@@ -236,7 +239,7 @@ async function pingFail(url, err = null, options = {}) {
       body,
       signal: AbortSignal.timeout(timeoutMs),
       headers: {
-        'User-Agent': 'ali-coins/0.8.0',
+        'User-Agent': USER_AGENT,
         'Content-Type': 'text/plain'
       }
     });
@@ -254,7 +257,7 @@ async function pingFail(url, err = null, options = {}) {
       const getRes = await fetch(failUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(timeoutMs),
-        headers: { 'User-Agent': 'ali-coins/0.8.0' }
+        headers: { 'User-Agent': USER_AGENT }
       });
       if (getRes.ok) {
         logger.info(

@@ -262,6 +262,77 @@ async function exportAllSessions(options = {}) {
   return exported;
 }
 
+/**
+ * Rotaciona a chave de criptografia at-rest de TODAS as contas com sessão em disco.
+ * Antes (<= 0.9.5) o `--rotate` girava apenas a conta primária, deixando as sessões
+ * secundárias presas à SESSION_SECRET_OLD indefinidamente.
+ * @param {object} [options={}]
+ * @param {string} [options.baseDir]
+ * @param {string} [options.oldSecret]
+ * @param {string} [options.newSecret]
+ * @returns {Promise<Array<{ success: boolean, skipped?: boolean, user?: string, error?: string, sessionPath: string }>>}
+ */
+async function rotateAllSessions(options = {}) {
+  const { loadAccounts } = require('./config');
+  const { rotateSessionSecret } = require('./libs/session');
+  const baseDir = options.baseDir || __dirname;
+  const accounts = loadAccounts(process.env, baseDir);
+  const targets =
+    accounts.length > 0
+      ? accounts
+      : [
+          {
+            sessionPath: path.join(baseDir, 'session.json'),
+            sessionMetaPath: path.join(baseDir, 'session_meta.json'),
+            maskedUser: 'conta primária'
+          }
+        ];
+
+  logger.info('===================================================================');
+  logger.info(`   ROTAÇÃO DE CHAVE DE SESSÃO (${targets.length} CONTA(S))`);
+  logger.info('===================================================================');
+
+  const results = [];
+  for (const acc of targets) {
+    const encPath = `${acc.sessionPath}.enc`;
+    const hasSession = fs.existsSync(acc.sessionPath) || fs.existsSync(encPath);
+
+    if (!hasSession) {
+      logger.warn(`[${acc.maskedUser}] Nenhuma sessão ativa encontrada. Pulando...`);
+      results.push({
+        success: false,
+        skipped: true,
+        user: acc.maskedUser,
+        sessionPath: acc.sessionPath
+      });
+      continue;
+    }
+
+    try {
+      const res = await rotateSessionSecret({
+        sessionPath: acc.sessionPath,
+        sessionMetaPath: acc.sessionMetaPath,
+        oldSecret: options.oldSecret,
+        newSecret: options.newSecret
+      });
+      results.push({ ...res, sessionPath: acc.sessionPath });
+    } catch (err) {
+      logger.error(
+        { account: acc.maskedUser, err: err.message },
+        'Falha ao rotacionar a chave de sessão da conta.'
+      );
+      results.push({
+        success: false,
+        error: err.message,
+        user: acc.maskedUser,
+        sessionPath: acc.sessionPath
+      });
+    }
+  }
+
+  return results;
+}
+
 if (require.main === module) {
   const { checkAndDisplayHelp, isAll, getAccountArg, loadAccounts } = require('./config');
   if (checkAndDisplayHelp()) {
@@ -273,21 +344,32 @@ if (require.main === module) {
   const isRotate = args.includes('--rotate');
 
   if (isRotate) {
-    const { rotateSessionSecret } = require('./libs/session');
     let newEnvVar = 'SESSION_SECRET_NEW';
     const envArg = args.find((a) => a.startsWith('--new-secret-from-env='));
     if (envArg) {
-      newEnvVar = envArg.split('=')[1].trim();
+      newEnvVar = envArg.split('=').slice(1).join('=').trim();
     }
     const newSecret =
       process.env[newEnvVar] ||
       (process.env.SESSION_SECRET_OLD ? process.env.SESSION_SECRET : null);
     const oldSecret = process.env.SESSION_SECRET_OLD || process.env.SESSION_SECRET;
 
-    rotateSessionSecret({ oldSecret, newSecret })
-      .then((res) => {
-        logger.info(res, '[SUCESSO] Rotação de chave de sessão concluída com sucesso!');
-        flushAndExit(0);
+    rotateAllSessions({ oldSecret, newSecret })
+      .then((results) => {
+        const rotated = results.filter((r) => r.success).length;
+        const failed = results.filter((r) => r.success === false && !r.skipped).length;
+        if (rotated === 0) {
+          logger.error({ results }, 'Nenhuma conta foi rotacionada com sucesso.');
+          flushAndExit(1);
+          return;
+        }
+        logger.info(
+          { rotated, failed },
+          failed > 0
+            ? '[PARCIAL] Rotação concluída com falhas em algumas contas.'
+            : '[SUCESSO] Rotação de chave concluída para todas as contas.'
+        );
+        flushAndExit(failed > 0 ? 1 : 0);
       })
       .catch((err) => {
         logger.error({ err: err.message }, 'Falha na rotação de chave de sessão.');
@@ -336,6 +418,7 @@ if (require.main === module) {
 module.exports = {
   exportSession,
   exportAllSessions,
+  rotateAllSessions,
   ExportSessionError,
   isAllowedStorageKey,
   ALLOWED_STORAGE_KEY_PATTERNS

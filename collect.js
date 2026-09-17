@@ -10,12 +10,7 @@ const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const { flushAndExit } = require('./libs/exit');
-const {
-  validateAndRefresh,
-  saveSession,
-  clearSession,
-  updateSessionStreak
-} = require('./libs/session');
+const { validateAndRefresh, saveSession, updateSessionStreak } = require('./libs/session');
 const { SELECTORS } = require('./libs/selectors');
 const {
   gotoWithRetry,
@@ -356,7 +351,9 @@ async function runCheckin(options = {}) {
           { user: userEmail, streakDays, totalBalance, coinsGainedToday },
           'Erro ao efetuar o login: não foi possível obter streak e saldo.'
         );
-        await clearSession(sessionOpts);
+        // Sessão preservada intencionalmente: a falha pode ser apenas de parsing do DOM
+        // (mudança de layout), não de autenticação. A limpeza ocorre em validateAndRefresh
+        // somente quando há evidência de cookie de autenticação expirado.
         const loginErr = new Error(
           `Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "${userEmail}".`
         );

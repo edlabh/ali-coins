@@ -316,7 +316,8 @@ function isPlaintext() {
 function getFromFile() {
   const fromFileArg = process.argv.find((a) => a.startsWith('--from-file='));
   if (fromFileArg) {
-    return fromFileArg.split('=')[1].trim();
+    // Usa apenas o PRIMEIRO '=' como separador (preserva caminhos que contenham '=')
+    return fromFileArg.slice(fromFileArg.indexOf('=') + 1).trim();
   }
   const idx = process.argv.indexOf('--from-file');
   if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('-')) {
@@ -332,7 +333,8 @@ function isAll() {
 function getAccountArg() {
   const accArg = process.argv.find((a) => a.startsWith('--account='));
   if (accArg) {
-    return accArg.split('=')[1].trim();
+    // Usa apenas o PRIMEIRO '=' como separador (preserva valores com '=')
+    return accArg.slice(accArg.indexOf('=') + 1).trim();
   }
   const idx = process.argv.indexOf('--account');
   if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('-')) {

@@ -42,6 +42,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Cache compartilhado de binários do navegador Playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+# Modo produção: logs em JSON direto no stdout (sem pino-pretty, que é devDependency)
+ENV NODE_ENV=production
+
 WORKDIR /app
 
 # Criar usuário e grupo de sistema dedicados 'appuser' (UID 10001 / GID 10001)
@@ -67,8 +70,9 @@ RUN chmod +x run_*.sh setup_*.sh push_to_github.sh 2>/dev/null || true
 # Executar como usuário não-root dedicado para máxima segurança em containers
 USER appuser
 
-# Verificação de saúde da configuração e ambiente
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD test -f credentials.env && node all.js --dry-run --json || node -e "require('./config').loadConfig(false)" || exit 1
+# Verificação de saúde real: valida credentials.env/schema sem fallback enganoso.
+# Se o arquivo não estiver montado ou a configuração estiver inválida, o container fica unhealthy.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD node all.js --dry-run --json > /dev/null 2>&1
 
 CMD ["npm", "start"]

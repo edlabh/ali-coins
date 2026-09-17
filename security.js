@@ -29,14 +29,26 @@ if (process.env.SCRYPT_N) {
 }
 
 let customScryptN = null;
+let scryptFloorWarned = false;
+
+/**
+ * Emite o alerta de piso criptográfico apenas uma vez por processo (evita spam no getter)
+ * @param {number} n
+ */
+function warnScryptFloorOnce(n) {
+  if (scryptFloorWarned) return;
+  scryptFloorWarned = true;
+  logger.warn(
+    { n, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
+    'Valor de SCRYPT_N abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
+  );
+}
+
 const SCRYPT_PARAMS_V3 = {
   get N() {
     if (customScryptN !== null) {
       if (customScryptN < SCRYPT_MIN_N) {
-        logger.warn(
-          { n: customScryptN, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
-          'Valor de customScryptN abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
-        );
+        warnScryptFloorOnce(customScryptN);
         return SCRYPT_DEFAULT_N;
       }
       return customScryptN;
@@ -45,10 +57,7 @@ const SCRYPT_PARAMS_V3 = {
       const envN = parseInt(process.env.SCRYPT_N, 10);
       if (!isNaN(envN) && envN > 0) {
         if (envN < SCRYPT_MIN_N) {
-          logger.warn(
-            { n: envN, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
-            'Variável SCRYPT_N abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
-          );
+          warnScryptFloorOnce(envN);
           return SCRYPT_DEFAULT_N;
         }
         return envN;

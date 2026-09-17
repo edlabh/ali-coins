@@ -19,7 +19,7 @@
  * 2. Localize no HTML normalizado a nova estrutura das tags/classes do painel alterado.
  * 3. Copie o trecho relevante de HTML e atualize a constante FIXTURE_HTML abaixo.
  * 4. Ajuste os seletores correspondentes em libs/selectors.js para casar com a nova estrutura.
- * 5. Execute 'npm test' ou 'node --test tests/selectors.smoke.js' para garantir que 100% dos testes passam.
+ * 5. Execute 'npm test' ou 'node --test tests/selectors.smoke.test.js' para garantir que 100% dos testes passam.
  */
 
 const test = require('node:test');

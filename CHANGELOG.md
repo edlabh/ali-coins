@@ -5,6 +5,23 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.6] - 2026-09-17
+
+### Corrigido
+
+- **Lockfile com Publicação Atômica por Hardlink:** o lock agora é gravado completo em arquivo temporário (com `fsync`) e publicado via `fs.link` (falha com `EEXIST` sem sobrescrever). Elimina a janela de leitura parcial do fix anterior, na qual um concorrente podia ler o lock vazio entre `open('wx')` e a escrita, removê-lo e ambos se considerarem donos (reproduzido: 12 sobreposições sob stress). Fallback `wx` com carência de leitura de 900 ms em filesystems sem hardlink.
+- **`.dockerignore` Completo para Segredos:** cobertura de `session*.json`, `session_meta*.json`, `session_token*.txt`, `accounts.json`, `*.enc`, `credentials.env*` e `sbom.json`, evitando que sessões secundárias em texto puro, metadados e tokens sejam assados nas camadas da imagem.
+- **Ambiente do Chromium Sem Segredos:** `getChromiumEnv` passou a filtrar variáveis sensíveis (`SESSION_SECRET`, `ALI_PASSWORD`, `TELEGRAM_*`, `GITHUB_*`, `NOTIFY_*`, `HEARTBEAT_*`, `*_TOKEN`, `*SECRET*`, `*PASSWORD*`, `api_key`) antes de repassar o env aos subprocessos do navegador.
+- **Preservação de Sessão em Falha de DOM:** `collect.js` não remove mais `session.json.enc`/metadados quando streak/saldo não são lidos — a falha pode ser apenas de layout. A limpeza continua ocorrendo em `validateAndRefresh` somente com cookie de autenticação comprovadamente expirado.
+- **Login Novo Limpa Marcadores de Sessão Remota:** `saveSession({ freshLogin: true })` (usado por `performMobileLogin`) remove `isImported`/`importedAt`, evitando alertas falsos de "sessão remota expirada" após login local com senha/2FA.
+- **Rotação de Chave Multi-Conta:** `export_session.js --rotate` agora usa `rotateAllSessions`, rotacionando todas as contas configuradas (antes só a primária era migrada, deixando as secundárias presas à chave antiga); falha parcial retorna exit code 1.
+- **Container com Healthcheck Real:** `HEALTHCHECK` valida de fato `node all.js --dry-run --json` (sem fallback enganoso) e o `Dockerfile` define `NODE_ENV=production` (logs JSON sem depender de `pino-pretty`).
+- **Correções Pontuais:** `User-Agent` do heartbeat derivado da versão real do `package.json`; `--from-file`/`--account` preservam valores com `=`; schema multi-conta alinhado com `isImportedSessionExpired`; `push_to_github.sh` não repassa mais argumentos (ex: `--force`) ao push da `main`; warning de piso do `SCRYPT_N` emitido uma única vez.
+
+### Adicionado
+
+- **Testes de Regressão (187 no total):** stress de concorrência do lock com 6 processos (zero sobreposições), sanitização de env do Chromium, `freshLogin`, rotação multi-conta e descoberta dos smoke tests de seletores (`selectors.smoke.test.js`). A guarda anti-destruição do `test_helper` agora cobre dinamicamente todas as sessões/tokens/contas reais (incluindo secundárias).
+
 ## [0.9.5] - 2026-09-17
 
 ### Corrigido

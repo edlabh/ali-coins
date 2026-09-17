@@ -741,3 +741,62 @@ test('libs/session.js - falha na migração preserva o session.json em texto cla
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/session.js - freshLogin limpa marcadores de sessão importada e preserva nos demais casos', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-fresh-login-');
+
+  const fakeState = {
+    cookies: [{ name: 'xman_us_t', value: 'token_fresh', expires: 0 }],
+    origins: []
+  };
+
+  try {
+    const metaPath = path.join(tmpDir, 'session_meta.json');
+    await saveSession(fakeState, 'fresh@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false,
+      freshLogin: true
+    });
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({ user: 'fresh@example.com', isImported: true, importedAt: '2026-01-01' })
+    );
+
+    await saveSession(fakeState, 'fresh@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false,
+      freshLogin: true
+    });
+    const freshMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    assert.strictEqual(
+      freshMeta.isImported,
+      undefined,
+      'isImported deve ser removido em login novo'
+    );
+    assert.strictEqual(
+      freshMeta.importedAt,
+      undefined,
+      'importedAt deve ser removido em login novo'
+    );
+
+    await saveSession(fakeState, 'fresh@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({ user: 'fresh@example.com', isImported: true, importedAt: '2026-01-01' })
+    );
+    await saveSession(fakeState, 'fresh@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+    const preservedMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    assert.strictEqual(preservedMeta.isImported, true, 'Sem freshLogin o marcador é preservado');
+    assert.strictEqual(preservedMeta.importedAt, '2026-01-01');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

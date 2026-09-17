@@ -59,8 +59,9 @@ fi
 BASIC_AUTH="$(printf '%s:%s' "$GITHUB_USER" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
 
 echo "Enviando branch 'main'..."
-# Autenticação segura via header HTTP Authorization: Basic sem expor o token na URL do remote
-git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push -u origin main "$@"
+# Autenticação segura via header HTTP Authorization: Basic sem expor o token na URL do remote.
+# NUNCA repassar "$@" aqui: um --force destinado às tags forçaria a main por acidente.
+git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push -u origin main
 
 echo "Enviando tags de release..."
 git -c http.extraHeader="Authorization: Basic ${BASIC_AUTH}" push origin --tags "$@"

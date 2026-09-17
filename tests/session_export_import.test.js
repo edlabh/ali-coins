@@ -648,3 +648,78 @@ test('import_session.js - keepTokens preserva arquivos de token após importaç�
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('export_session.js - rotateAllSessions rotaciona todas as contas (não só a primária)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('rotate-all-accounts-');
+  const originalEnv = {
+    ALI_USER: process.env.ALI_USER,
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    ALI_USER_2: process.env.ALI_USER_2,
+    ALI_PASSWORD_2: process.env.ALI_PASSWORD_2
+  };
+  const ROTATED_SECRET = 'y'.repeat(48);
+
+  try {
+    process.env.ALI_USER = 'rotate1@test.com';
+    process.env.ALI_PASSWORD = 'pwd1_rotate';
+    process.env.ALI_USER_2 = 'rotate2@test.com';
+    process.env.ALI_PASSWORD_2 = 'pwd2_rotate';
+
+    const { loadAccounts } = require('../config');
+    const { rotateAllSessions } = require('../export_session');
+    const [acc1, acc2] = loadAccounts(process.env, tmpDir);
+
+    const s1 = { cookies: [{ name: 'xman_us_t', value: 'tok_r1' }], origins: [] };
+    const s2 = { cookies: [{ name: 'xman_us_t', value: 'tok_r2' }], origins: [] };
+    await safeWriteFile(acc1.sessionPath, JSON.stringify(s1, null, 2));
+    await safeWriteFile(acc1.sessionMetaPath, JSON.stringify({ user: acc1.user }, null, 2));
+    await safeWriteFile(acc2.sessionPath, JSON.stringify(s2, null, 2));
+    await safeWriteFile(acc2.sessionMetaPath, JSON.stringify({ user: acc2.user }, null, 2));
+
+    const results = await rotateAllSessions({
+      baseDir: tmpDir,
+      oldSecret: TEST_SECRET,
+      newSecret: ROTATED_SECRET
+    });
+
+    assert.strictEqual(results.length, 2);
+    assert.strictEqual(
+      results.filter((r) => r.success).length,
+      2,
+      'Ambas as contas devem rotacionar'
+    );
+    assert.ok(!results.some((r) => r.skipped));
+
+    const loaded1 = await loadSessionFiles({
+      sessionPath: acc1.sessionPath,
+      sessionMetaPath: acc1.sessionMetaPath,
+      secret: ROTATED_SECRET
+    });
+    const loaded2 = await loadSessionFiles({
+      sessionPath: acc2.sessionPath,
+      sessionMetaPath: acc2.sessionMetaPath,
+      secret: ROTATED_SECRET
+    });
+
+    assert.strictEqual(loaded1.sessionData.cookies[0].value, 'tok_r1');
+    assert.strictEqual(loaded2.sessionData.cookies[0].value, 'tok_r2');
+    assert.ok(fs.existsSync(`${acc1.sessionPath}.enc`));
+    assert.ok(fs.existsSync(`${acc2.sessionPath}.enc`));
+
+    for (const metaPath of [acc1.sessionMetaPath, acc2.sessionMetaPath]) {
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      assert.ok(meta.lastRotatedAt, 'Metadados devem registrar lastRotatedAt por conta');
+    }
+  } finally {
+    process.env.ALI_USER = originalEnv.ALI_USER;
+    process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;
+    if (originalEnv.ALI_USER_2 !== undefined) process.env.ALI_USER_2 = originalEnv.ALI_USER_2;
+    else delete process.env.ALI_USER_2;
+    if (originalEnv.ALI_PASSWORD_2 !== undefined)
+      process.env.ALI_PASSWORD_2 = originalEnv.ALI_PASSWORD_2;
+    else delete process.env.ALI_PASSWORD_2;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
