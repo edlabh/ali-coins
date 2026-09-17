@@ -110,10 +110,26 @@ async function main() {
 
   // Encerramento com limpeza real: process.exit() não executa o bloco finally,
   // então fechamos o browser e liberamos o lock antes de sair em QUALQUER caminho.
+  // O close é limitado no tempo: um Chromium travado nunca pode impedir o encerramento.
+  const withTimeoutFallback = (promise, ms) => {
+    let timer = null;
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(resolve, ms);
+      if (timer.unref) timer.unref();
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  };
+
   const gracefulExit = async (code) => {
     if (browser) {
-      await browser.close().catch(() => {});
+      const currentBrowser = browser;
       browser = null;
+      await withTimeoutFallback(
+        currentBrowser.close().catch(() => {}),
+        10000
+      );
     }
     if (releaseSingleLock) {
       const release = releaseSingleLock;

@@ -124,7 +124,7 @@ async function performMobileLogin(page, context, config, options = {}) {
   if (!hasAuthCookie) {
     const errScreenshot = await saveFailureScreenshot(page, 'login_failed');
     logger.error(
-      { user: username, screenshot: errScreenshot },
+      { user: maskUser(username), screenshot: errScreenshot },
       'Falha ao autenticar conta no AliExpress (desafio de segurança não superado).'
     );
     throw new Error('Falha de autenticação no AliExpress (desafio de segurança não superado).');

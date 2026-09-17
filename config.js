@@ -564,7 +564,10 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
       sessionMetaPath: isPrimary
         ? path.join(baseDir, 'session_meta.json')
         : path.join(baseDir, `session_meta_${hash}.json`),
-      lockPath: isPrimary ? lockFilePath : path.join(os.tmpdir(), `ali-coins-${hash}.lock`)
+      // Lock também isolado por usuário (evita colisão multiusuário entre contas homônimas)
+      lockPath: isPrimary
+        ? lockFilePath
+        : path.join(os.tmpdir(), `ali-coins-${lockUserSuffix}-${hash}.lock`)
     };
   });
 }

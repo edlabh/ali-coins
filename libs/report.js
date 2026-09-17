@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { formatDate, formatTime, formatDuration } = require('../time_utils');
+const { maskUser } = require('../config');
 const logger = require('../logger');
 
 /**
@@ -456,7 +457,7 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   logger.info('===============================================================');
 
   if (checkinResult) {
-    logger.info(`Conta: ${checkinResult.userEmail}`);
+    logger.info(`Conta: ${maskUser(checkinResult.userEmail)}`);
     logger.info(
       `Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${checkinResult.coinsGainedToday} moedas/dia)`
     );

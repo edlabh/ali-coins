@@ -18,6 +18,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Poda de Diagnósticos Sem Efeito Colateral:** `pruneSessionBackups({ scratchDir })` não limpa mais temporários do diretório padrão do projeto quando nenhum caminho de sessão explícito foi informado.
 - **Exportação Valida a Conta Alvo:** `exportSession` aceita `expectedUser` (usado por `--account` e `--all`) e falha se o `meta.user` da sessão não corresponder à conta solicitada, em vez de validar contra o próprio metadado (checagem tautológica).
 - **Push Sem Token no `argv`:** `push_to_github.sh` autentica via `GIT_CONFIG_KEY_0=http.extraHeader` em variável de ambiente, evitando que o header Basic/PAT apareça na linha de comando do git (visível a outros usuários locais via `ps`).
+- **PII Residual em Logs e Relatórios (varredura final):** e-mails completos também foram mascarados em `libs/ui/login.js` (falha de autenticação), `libs/report.js` (relatório unificado) e `collect.js` (contexto de erro e mensagem de falha de saldo), fechando os últimos pontos que ainda logavam o identificador em claro.
+- **Encerramento Nunca Trava no `browser.close()`:** o `gracefulExit` limita o fechamento do Chromium a 10s (com `unref` no timer), garantindo que um browser travado não impeça o encerramento do cron nem deixe o lock preso.
+- **Locks Secundários Isolados por Usuário:** as contas além da primária também usam o sufixo de uid no nome do lock (`ali-coins-<uid>-<hash>.lock`), eliminando colisão entre usuários com contas homônimas.
 
 ### Adicionado
 

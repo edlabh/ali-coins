@@ -349,14 +349,14 @@ async function runCheckin(options = {}) {
           );
         }
         logger.error(
-          { user: userEmail, streakDays, totalBalance, coinsGainedToday },
+          { user: maskUser(userEmail), streakDays, totalBalance, coinsGainedToday },
           'Erro ao efetuar o login: não foi possível obter streak e saldo.'
         );
         // Sessão preservada intencionalmente: a falha pode ser apenas de parsing do DOM
         // (mudança de layout), não de autenticação. A limpeza ocorre em validateAndRefresh
         // somente quando há evidência de cookie de autenticação expirado.
         const loginErr = new Error(
-          `Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "${userEmail}".`
+          `Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "${maskUser(userEmail)}".`
         );
         if (isImportedSession) {
           loginErr.isImportedSessionExpired = true;

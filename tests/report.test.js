@@ -517,3 +517,42 @@ test('report.js - payload multi-conta preserva isImportedSessionExpired para o a
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('report.js - renderUnifiedReport mascara o e-mail do usuário no log (PII)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(JSON.stringify(args));
+    };
+
+    renderUnifiedReport(
+      {
+        userEmail: 'pii_report@example.com',
+        alreadyCollected: false,
+        coinsGainedToday: '10',
+        streakDays: 5,
+        totalBalance: '100',
+        duration: '1s',
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString()
+      },
+      null,
+      { skipWebhook: true }
+    );
+
+    const joined = messages.join('\n');
+    assert.strictEqual(
+      joined.includes('pii_report@example.com'),
+      false,
+      'E-mail completo não deve aparecer no relatório logado'
+    );
+    assert.ok(joined.includes('pi***@example.com'), 'E-mail deve ser mascarado no relatório');
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

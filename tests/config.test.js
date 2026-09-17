@@ -160,3 +160,39 @@ test('config.js - lockFilePath é isolado por usuário (evita colisão multiusu�
     );
   }
 });
+
+test('config.js - locks de contas secundárias também são isolados por usuário', () => {
+  const os = require('os');
+  const { loadAccounts } = require('../config');
+  const original = {
+    ALI_USER: process.env.ALI_USER,
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    ALI_USER_2: process.env.ALI_USER_2,
+    ALI_PASSWORD_2: process.env.ALI_PASSWORD_2
+  };
+
+  try {
+    process.env.ALI_USER = 'lock_a@example.com';
+    process.env.ALI_PASSWORD = 'pwd_a';
+    process.env.ALI_USER_2 = 'lock_b@example.com';
+    process.env.ALI_PASSWORD_2 = 'pwd_b';
+
+    const accounts = loadAccounts(process.env, __dirname);
+    assert.strictEqual(accounts.length, 2, 'Duas contas devem ser carregadas');
+
+    for (const acc of accounts) {
+      assert.ok(acc.lockPath.startsWith(os.tmpdir()), `Lock deve ficar no tmpdir: ${acc.lockPath}`);
+      if (typeof process.getuid === 'function') {
+        assert.ok(
+          acc.lockPath.includes(`u${process.getuid()}`),
+          `Lock deve conter o uid: ${acc.lockPath}`
+        );
+      }
+    }
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value !== undefined) process.env[key] = value;
+      else delete process.env[key];
+    }
+  }
+});
