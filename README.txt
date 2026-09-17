@@ -28,6 +28,9 @@ Documentação completa disponível em: README.md e TELEGRAM.md
 - 1: Falha (erro de execução ou credenciais)
 - 2: Já coletado / sem ação necessária hoje
 - 3: Lock ativo (outra execução em andamento)
+- 4: Streak quebrado (sequência de check-in interrompida)
+- 5: 2FA não-interativo (fail-fast em cron sem TTY)
+- 6: Falha global (uncaughtException / unhandledRejection)
 
 Consulte README.md, TELEGRAM.md, INSTALL_LINUX.md, INSTALL_WINDOWS.md,
 INSTALL_MACOS.md e CLOUD_SESSIONS.md para detalhes adicionais de configuração.

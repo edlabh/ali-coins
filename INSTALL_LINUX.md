@@ -61,7 +61,7 @@ Siga as etapas abaixo caso queira controle total sobre cada pacote instalado em 
 
 ### Passo 1: Limpeza de versões antigas do Node.js
 
-No Ubuntu 22.04 LTS padrão, o repositório da Canonical instala o Node.js `v12.22.9`. O Playwright exige **Node.js 18 ou superior**. Se você já instalou o pacote padrão do apt anteriormente, remova-o primeiro:
+No Ubuntu 22.04 LTS padrão, o repositório da Canonical instala o Node.js `v12.22.9`. O projeto e o Playwright exigem **Node.js 22 LTS ou superior**. Se você já instalou o pacote padrão do apt anteriormente, remova-o primeiro:
 
 ```bash
 sudo apt-get remove -y nodejs npm

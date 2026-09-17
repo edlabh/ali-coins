@@ -14,7 +14,7 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 - **Check-in Diário Inteligente:** Compatível com o layout de cartões do AliExpress. Mantém sequências ativas (incluindo 200+ dias) e valores progressivos (+10 até +40 moedas/dia). Detecção bilíngue de saldo ("My coins" / "Minhas moedas").
 - **Tarefas Diárias Automatizadas:** Executa tarefas em lote (produtos surpresa com permanência real, busca por palavras-chave e navegação com scroll).
 - **Sessão Resiliente & Troca de Conta:** Validação estrita de cookies (`xman_us_t`). Detecta alterações de conta no `credentials.env` e renova credenciais com segurança.
-- **Criptografia v2 de Alta Segurança:** Exportação segura de sessão usando derivação via `scrypt` com salt criptográfico dinâmico de 16 bytes e cifra `AES-256-GCM` (formato `v2:salt:iv:tag:ct:base64`). Mantém compatibilidade retroativa com tokens legados `v1`.
+- **Criptografia v3 de Alta Segurança:** Exportação segura de sessão usando derivação via `scrypt` com salt criptográfico dinâmico de 16 bytes, parâmetros explícitos e cifra `AES-256-GCM` (formato `v3:N:r:p:salt:iv:tag:ct:base64`). Mantém compatibilidade retroativa com tokens legados `v1` e `v2`.
 - **Lockfile com Prevenção de Concorrência & Stale Timeout:** Evita execuções sobrepostas no Cron com checagem de hostname + PID e timeout de inatividade (padrão: 30min).
 - **Diagnósticos Playwright:** Captura automática de trace (`retain-on-failure`), screenshots (`only-on-failure`) e vídeo opcional em `scratch/`.
 
@@ -312,7 +312,7 @@ docker run --rm \
   A sessão anterior é descriptografada com `SESSION_SECRET_OLD`, validada, salva como backup seguro em `scratch/session.bak-<timestamp>.json.enc` (0o600) e re-criptografada com a nova chave.
 - **Política de Retenção de Backups (`scratch/`):** Limpeza automática (`pruneSessionBackups`) de backups com idade superior a `SESSION_BACKUP_RETENTION_DAYS` (padrão: 7 dias) acionada durante rotação, salvamento ou limpeza de sessões.
 - **Permissões 0o600 Estritas:** Todos os arquivos de segredos (`credentials.env`, `session.json`, `session.json.enc`, `session_meta.json`, `session_token.txt`, backups e dumps) são salvos e mantidos exclusivamente com permissão `0o600`.
-- **Criptografia AES-256-GCM v2:** Exportações e repouso usam derivação de chave via `scrypt` com salt aleatório dinâmico de 16 bytes e `SESSION_SECRET` (mínimo 32 caracteres).
+- **Criptografia AES-256-GCM v3:** Exportações e repouso usam derivação de chave via `scrypt` com salt aleatório dinâmico de 16 bytes, parâmetros explícitos e `SESSION_SECRET` (mínimo 32 caracteres). Compatível com tokens legados `v1` e `v2`.
 - **Isolamento do Navegador:** A flag `--no-sandbox` do Chromium é restrita exclusivamente para execução como root (UID 0) ou CI, mantendo a sandbox ativada para usuários comuns.
 - **Redação de Logs:** Logs estruturados via `pino` redigem senhas, tokens, cookies e parâmetros de URL sensíveis automaticamente.
 

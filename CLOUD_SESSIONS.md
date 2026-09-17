@@ -101,7 +101,7 @@ Defina a variável `SESSION_SECRET` (mínimo de 32 caracteres) no `credentials.e
   node export_session.js --account="usuario@gmail.com"
   ```
 
-Os tokens criptografados (formato `v2:salt:iv:tag:ciphertext`) são salvos com permissões restritas `0o600`. Por segurança contra vazamento em telas e logs, o terminal exibe apenas o fingerprint SHA-256 e o tamanho do arquivo. (Caso precise exibir o token completo na tela, adicione `--show-token`).
+Os tokens criptografados (formato `v3:N:r:p:salt:iv:tag:ciphertext` ou legados `v2`/`v1`) são salvos com permissões restritas `0o600`. Por segurança contra vazamento em telas e logs, o terminal exibe apenas o fingerprint SHA-256 e o tamanho do arquivo. (Caso precise exibir o token completo na tela, adicione `--show-token`).
 
 #### B. Importação no Servidor na Nuvem (dentro de `~/ali-coins`)
 

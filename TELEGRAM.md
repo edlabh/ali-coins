@@ -156,6 +156,7 @@ npm start -- --dry-run --notify
 | **Lock Ativo**           |       `3`       |          Sim          | Alerta de sobreposição (outra instância já está em execução no host)               |
 | **Streak Quebrado**      |       `4`       |          Sim          | 🚨 Alerta crítico de quebra de sequência (ontem → hoje + saldo atual)              |
 | **2FA Requerido (Cron)** |       `5`       |          Sim          | 🔐 Interrupção rápida (<5s) em cron sem TTY com instruções de export/import        |
+| **Falha Global (Crash)** |       `6`       |          Sim          | 💥 Erro fatal não tratado ou Promise rejeitada (uncaughtException / unhandled)     |
 
 ### Exemplo de Mensagem Recebida (Modo Unificado):
 
