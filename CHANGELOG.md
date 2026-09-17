@@ -11,6 +11,28 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > `## [1.0.0] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+### Adicionado
+
+- **Modo de Baixa Memória do Chromium (`CHROMIUM_LOW_MEMORY`):** opt-in que aplica
+  `--renderer-process-limit=2`, `--js-flags=--max-old-space-size=192`, `--disable-gpu`,
+  `--disable-software-rasterizer`, `--disable-3d-apis`, `--enable-low-end-device-mode` e
+  `--disable-features=BackForwardCache`, reduzindo o pico de memória em hosts de 1 GB.
+  Documentado no `credentials.env.example`.
+- **`docker-run.example.sh`:** wrapper de cron recomendado para hosts pequenos, com
+  `--init`, `--pids-limit=256`, limites `--memory`/`--memory-swap`, rotação de log e
+  registro do **pico real** de memória/PIDs de cada execução.
+
+### Alterado
+
+- **Imagem Docker mais enxuta e leve:** instala apenas o `chrome-headless-shell`
+  (`playwright install --only-shell chromium`, ~390 MB a menos, já que a imagem sempre
+  roda headless), remove o `curl` do runtime, limpa o cache do npm na mesma camada e
+  define `NODE_OPTIONS=--max-old-space-size=256`.
+- **HEALTHCHECK a cada 5 minutos** (antes 30s): evita ~2.600 execuções diárias
+  desnecessárias de um processo Node em um job que roda 1×/dia.
+- **Recomendação de `PW_TRACE=off` em hosts apertados** documentada no
+  `credentials.env.example` (os screenshots manuais de falha continuam ativos).
+
 ## [0.9.7] - 2026-09-17
 
 ### Corrigido

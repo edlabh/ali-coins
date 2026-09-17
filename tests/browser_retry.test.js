@@ -178,3 +178,36 @@ test('browser.js - getChromiumEnv não propaga segredos da aplicação ao Chromi
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - CHROMIUM_LOW_MEMORY adiciona flags de baixa memória (opt-in)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const {
+    getChromiumArgs,
+    isLowMemoryModeEnabled,
+    LOW_MEMORY_CHROMIUM_ARGS
+  } = require('../browser');
+  const original = process.env.CHROMIUM_LOW_MEMORY;
+
+  try {
+    delete process.env.CHROMIUM_LOW_MEMORY;
+    assert.strictEqual(isLowMemoryModeEnabled(), false);
+    const defaultArgs = getChromiumArgs();
+    assert.strictEqual(
+      defaultArgs.some((a) => a.startsWith('--renderer-process-limit')),
+      false,
+      'Sem opt-in não deve incluir flags de baixa memória'
+    );
+
+    process.env.CHROMIUM_LOW_MEMORY = 'true';
+    assert.strictEqual(isLowMemoryModeEnabled(), true);
+    const tunedArgs = getChromiumArgs();
+    for (const flag of LOW_MEMORY_CHROMIUM_ARGS) {
+      assert.ok(tunedArgs.includes(flag), `Flag esperada ausente: ${flag}`);
+    }
+    assert.ok(tunedArgs.includes('--disable-dev-shm-usage'), 'Flags base devem ser preservadas');
+  } finally {
+    if (original !== undefined) process.env.CHROMIUM_LOW_MEMORY = original;
+    else delete process.env.CHROMIUM_LOW_MEMORY;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

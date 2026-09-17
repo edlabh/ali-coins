@@ -29,8 +29,29 @@ function isNoSandboxRequired() {
   };
 }
 
+// Flags de baixa memória para hosts com pouca RAM (ex: VPS de 1 GB).
+// Habilitadas via CHROMIUM_LOW_MEMORY=true|1|on (padrão: desativado).
+const LOW_MEMORY_CHROMIUM_ARGS = [
+  '--renderer-process-limit=2',
+  '--js-flags=--max-old-space-size=192',
+  '--disable-gpu',
+  '--disable-software-rasterizer',
+  '--disable-3d-apis',
+  '--enable-low-end-device-mode',
+  '--disable-features=BackForwardCache'
+];
+
 /**
- * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança.
+ * Indica se o modo de baixa memória do Chromium está habilitado por ambiente
+ * @returns {boolean}
+ */
+function isLowMemoryModeEnabled() {
+  return /^(1|true|on)$/i.test(process.env.CHROMIUM_LOW_MEMORY || '');
+}
+
+/**
+ * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança
+ * e o modo de baixa memória opcional.
  */
 function getChromiumArgs() {
   const { isRoot, isCI, isExplicitNoSandbox, shouldDisable } = isNoSandboxRequired();
@@ -42,6 +63,14 @@ function getChromiumArgs() {
       'Aplicando --no-sandbox (--disable-setuid-sandbox) ao Chromium.'
     );
     args.push('--no-sandbox', '--disable-setuid-sandbox');
+  }
+
+  if (isLowMemoryModeEnabled()) {
+    logger.info(
+      { args: LOW_MEMORY_CHROMIUM_ARGS },
+      'Modo de baixa memória do Chromium habilitado (CHROMIUM_LOW_MEMORY).'
+    );
+    args.push(...LOW_MEMORY_CHROMIUM_ARGS);
   }
 
   return args;
@@ -344,7 +373,10 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
 
 module.exports = {
   launchBrowser,
+  getChromiumArgs,
   getChromiumEnv,
+  isLowMemoryModeEnabled,
+  LOW_MEMORY_CHROMIUM_ARGS,
   SENSITIVE_ENV_KEY_REGEX,
   SENSITIVE_ENV_KEY_PREFIX_REGEX,
   newMobileContext,

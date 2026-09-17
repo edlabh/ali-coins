@@ -17,9 +17,8 @@
 # Para atualizar o digest: docker buildx imagetools inspect node:22-slim
 FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
-# Instalar dependências essenciais de runtime do Chromium
+# Instalar dependências essenciais de runtime do Chromium (sem curl: não é usado em runtime)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     ca-certificates \
     libnss3 \
     libnspr4 \
@@ -45,6 +44,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Modo produção: logs em JSON direto no stdout (sem pino-pretty, que é devDependency)
 ENV NODE_ENV=production
 
+# Teto de heap V8 do processo Node: evita crescimento desnecessário em hosts de 1 GB
+ENV NODE_OPTIONS=--max-old-space-size=256
+
 WORKDIR /app
 
 # Criar usuário e grupo de sistema dedicados 'appuser' (UID 10001 / GID 10001)
@@ -53,12 +55,15 @@ RUN groupadd -g 10001 appuser && \
     mkdir -p /ms-playwright /app/scratch && \
     chown -R appuser:appuser /ms-playwright /app
 
-# Instalar dependências de produção
+# Instalar dependências de produção e APENAS o headless shell do Chromium.
+# O app sempre roda headless (a imagem não tem Xvfb): com 'headless: true' o Playwright usa
+# chrome-headless-shell, então o Chromium completo (~390 MB) seria peso morto.
 # Nota BuildKit: Para compilações mais velozes com cache local de navegadores, pode-se usar:
-# RUN --mount=type=cache,target=/ms-playwright npx playwright install chromium
+# RUN --mount=type=cache,target=/ms-playwright npx playwright install --only-shell chromium
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && \
-    npx playwright install chromium && \
+    npx playwright install --only-shell chromium && \
+    npm cache clean --force && \
     chown -R appuser:appuser /ms-playwright /app
 
 # Copiar código-fonte da aplicação
@@ -72,7 +77,8 @@ USER appuser
 
 # Verificação de saúde real: valida credentials.env/schema sem fallback enganoso.
 # Se o arquivo não estiver montado ou a configuração estiver inválida, o container fica unhealthy.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+# Intervalo de 5 min: o job roda 1x/dia; checagens a cada 30s só gastariam CPU/RAM à toa.
+HEALTHCHECK --interval=5m --timeout=15s --start-period=30s --retries=3 \
     CMD node all.js --dry-run --json > /dev/null 2>&1
 
 CMD ["npm", "start"]
