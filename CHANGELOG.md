@@ -5,6 +5,13 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.7] - 2026-09-17
+
+### Corrigido
+
+- **Rotação Multi-Conta Isolada por `baseDir` (`rotateAllSessions`):** os backups de rotação das contas secundárias passam a ser gravados no `scratch/` do diretório alvo (ex: diretório do projeto sob teste), nunca no `scratch/` real do projeto. Regressão coberta por teste que compara a listagem do scratch real antes/depois.
+- **Compatibilidade Windows do Teste de Env do Chromium:** a asserção de preservação de `PATH` agora compara sem diferenciar maiúsculas/minúsculas (Windows expõe `Path`), mantendo a validação de que variáveis sensíveis não são propagadas.
+
 ## [0.9.6] - 2026-09-17
 
 ### Corrigido

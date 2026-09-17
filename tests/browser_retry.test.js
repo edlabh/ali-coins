@@ -160,8 +160,15 @@ test('browser.js - getChromiumEnv não propaga segredos da aplicação ao Chromi
     assert.strictEqual(JSON.stringify(env).includes('senha-super-secreta'), false);
     assert.strictEqual(JSON.stringify(env).includes('valor-secreto-generico'), false);
 
-    if (process.env.PATH !== undefined) {
-      assert.strictEqual(env.PATH, process.env.PATH, 'Variáveis não sensíveis devem ser mantidas');
+    // Windows preserva a caixa original da variável (Path), então buscamos sem diferenciar maiúsculas
+    const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path');
+    if (process.env.PATH !== undefined || process.env.Path !== undefined) {
+      assert.ok(pathKey, 'PATH deve ser mantido no ambiente do Chromium');
+      assert.strictEqual(
+        env[pathKey],
+        process.env.PATH !== undefined ? process.env.PATH : process.env.Path,
+        'Variáveis não sensíveis devem ser mantidas'
+      );
     }
   } finally {
     for (const [key, value] of Object.entries(original)) {

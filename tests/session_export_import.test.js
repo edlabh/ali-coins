@@ -666,6 +666,9 @@ test('export_session.js - rotateAllSessions rotaciona todas as contas (não só 
     process.env.ALI_USER_2 = 'rotate2@test.com';
     process.env.ALI_PASSWORD_2 = 'pwd2_rotate';
 
+    const realScratch = path.resolve(__dirname, '..', 'scratch');
+    const scratchBefore = fs.existsSync(realScratch) ? fs.readdirSync(realScratch).sort() : [];
+
     const { loadAccounts } = require('../config');
     const { rotateAllSessions } = require('../export_session');
     const [acc1, acc2] = loadAccounts(process.env, tmpDir);
@@ -711,6 +714,18 @@ test('export_session.js - rotateAllSessions rotaciona todas as contas (não só 
       const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
       assert.ok(meta.lastRotatedAt, 'Metadados devem registrar lastRotatedAt por conta');
     }
+
+    // Backups de rotação devem ir para o scratch do baseDir, nunca para o scratch real do projeto
+    const scratchAfter = fs.existsSync(realScratch) ? fs.readdirSync(realScratch).sort() : [];
+    assert.deepStrictEqual(
+      scratchAfter,
+      scratchBefore,
+      'Rotação não pode poluir o scratch real do projeto'
+    );
+    assert.ok(
+      fs.existsSync(path.join(tmpDir, 'scratch')),
+      'Backups de rotação devem ser criados no scratch do baseDir'
+    );
   } finally {
     process.env.ALI_USER = originalEnv.ALI_USER;
     process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;

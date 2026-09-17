@@ -310,6 +310,9 @@ async function rotateAllSessions(options = {}) {
 
     try {
       const res = await rotateSessionSecret({
+        // baseDir garante que backups de rotação caiam no scratch do diretório alvo,
+        // nunca no scratch real do projeto
+        baseDir,
         sessionPath: acc.sessionPath,
         sessionMetaPath: acc.sessionMetaPath,
         oldSecret: options.oldSecret,
