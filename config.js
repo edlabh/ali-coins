@@ -97,6 +97,9 @@ const configSchema = z
     ELEMENT_TIMEOUT: positiveInt(4000),
     TASK_MAX_ACTIONS: positiveInt(25),
     TASK_MAX_ATTEMPTS: positiveInt(4),
+    TASK_ROUND_MAX_ATTEMPTS: positiveInt(3),
+    TASK_MAX_DURATION_MS: positiveInt(3 * 60 * 1000),
+    TASK_SCROLL_MAX_MS: positiveInt(30000),
     SCROLL_WAIT_SECONDS: positiveInt(10),
     LOCK_STALE_TIMEOUT_MS: positiveInt(30 * 60 * 1000),
 
@@ -363,6 +366,9 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     ELEMENT_TIMEOUT: process.env.ELEMENT_TIMEOUT,
     TASK_MAX_ACTIONS: process.env.TASK_MAX_ACTIONS,
     TASK_MAX_ATTEMPTS: process.env.TASK_MAX_ATTEMPTS,
+    TASK_ROUND_MAX_ATTEMPTS: process.env.TASK_ROUND_MAX_ATTEMPTS,
+    TASK_MAX_DURATION_MS: process.env.TASK_MAX_DURATION_MS,
+    TASK_SCROLL_MAX_MS: process.env.TASK_SCROLL_MAX_MS,
     SCROLL_WAIT_SECONDS: process.env.SCROLL_WAIT_SECONDS,
     LOCK_STALE_TIMEOUT_MS: process.env.LOCK_STALE_TIMEOUT_MS,
     PW_TRACE: process.env.PW_TRACE,
@@ -610,6 +616,9 @@ async function handleDryRun() {
         navTimeout: cfg.NAV_TIMEOUT,
         taskMaxActions: cfg.TASK_MAX_ACTIONS,
         taskMaxAttempts: cfg.TASK_MAX_ATTEMPTS,
+        taskRoundMaxAttempts: cfg.TASK_ROUND_MAX_ATTEMPTS,
+        taskMaxDurationMs: cfg.TASK_MAX_DURATION_MS,
+        taskScrollMaxMs: cfg.TASK_SCROLL_MAX_MS,
         telegram: {
           enabled: cfg.TELEGRAM_ENABLED,
           botTokenConfigured: Boolean(cfg.TELEGRAM_BOT_TOKEN),
@@ -649,6 +658,9 @@ async function handleDryRun() {
       );
       logger.info(` • Timeout de Navegação (NAV_TIMEOUT): ${cfg.NAV_TIMEOUT}ms`);
       logger.info(` • Limite de Ações de Tarefas: ${cfg.TASK_MAX_ACTIONS}`);
+      logger.info(` • Limite por Rodada (TASK_ROUND_MAX_ATTEMPTS): ${cfg.TASK_ROUND_MAX_ATTEMPTS}`);
+      logger.info(` • Timeout por Tentativa (TASK_MAX_DURATION_MS): ${cfg.TASK_MAX_DURATION_MS}ms`);
+      logger.info(` • Teto de Scroll (TASK_SCROLL_MAX_MS): ${cfg.TASK_SCROLL_MAX_MS}ms`);
       logger.info(
         ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? `[CONFIGURADO - ${cfg.SESSION_SECRET.length} chars]` : '[NÃO CONFIGURADO]'}`
       );

@@ -41,5 +41,8 @@ module.exports = {
   resetTaskAttempt: dispatcher.resetTaskAttempt,
   markSpecialOrAppOnly: dispatcher.markSpecialOrAppOnly,
   classifyTaskStatus: dispatcher.classifyTaskStatus,
-  findTaskElement: dispatcher.findTaskElement
+  findTaskElement: dispatcher.findTaskElement,
+  getRoundKey: dispatcher.getRoundKey,
+  recordRoundAttempt: dispatcher.recordRoundAttempt,
+  withTimeout: dispatcher.withTimeout
 };

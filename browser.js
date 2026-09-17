@@ -246,14 +246,36 @@ async function retry(
  * @param {import('playwright').Page} page
  * @param {number} [maxSeconds=15] Tempo total de permanência/scroll em segundos
  * @param {object} [options={}] Opções adicionais de scroll e monitoramento
- * @param {boolean} [options.earlyExitOnTracking=false] Se true, permite saída antecipada se tracking for detectado após minSeconds
- * @param {number} [options.minSeconds=15] Tempo mínimo de permanência antes de permitir saída antecipada
+ * @param {boolean} [options.earlyExitOnNoProgress=false] (Canônico) Se true, encerra antecipadamente se nenhum tracking for detectado
+ * @param {number} [options.noProgressTimeoutMs=10000] (Canônico) Tempo limite para saída antecipada sem tracking em ms
+ * @param {number} [options.taskScrollMaxMs=30000] (Canônico) Teto máximo de permanência/scroll em ms (padrão: 30000)
+ * @param {boolean} [options.earlyExitOnTracking=false] Se true, permite saída antecipada quando tracking for detectado após minSeconds
+ * @param {number} [options.minSeconds=15] Tempo mínimo de permanência antes de permitir saída antecipada por tracking
+ * @param {boolean} [options.earlyExitOnNoTracking=false] @deprecated Use options.earlyExitOnNoProgress
+ * @param {number} [options.noTrackingTimeoutMs=10000] @deprecated Use options.noProgressTimeoutMs
  */
 async function waitWithScroll(page, maxSeconds = 15, options = {}) {
+  // Nomes canônicos com suporte retrocompatível a aliases legados (depreciados)
+  const earlyExitOnNoProgress = Boolean(
+    options.earlyExitOnNoProgress ?? options.earlyExitOnNoTracking ?? false
+  );
+  const noProgressTimeoutMs = options.noProgressTimeoutMs ?? options.noTrackingTimeoutMs ?? 10000;
   const earlyExit = options.earlyExitOnTracking === true;
   const minMs = (typeof options.minSeconds === 'number' ? options.minSeconds : 15) * 1000;
+
+  const envScrollMaxMs = process.env.TASK_SCROLL_MAX_MS
+    ? parseInt(process.env.TASK_SCROLL_MAX_MS, 10)
+    : 30000;
+  const scrollMaxCap =
+    typeof options.taskScrollMaxMs === 'number'
+      ? options.taskScrollMaxMs
+      : isNaN(envScrollMaxMs)
+        ? 30000
+        : envScrollMaxMs;
+
   const startTime = Date.now();
-  const maxMs = Math.max(0, maxSeconds) * 1000;
+  const requestedMs = Math.max(0, maxSeconds) * 1000;
+  const maxMs = Math.min(requestedMs, scrollMaxCap);
   let trackingDetected = false;
 
   const responseHandler = (res) => {
@@ -289,6 +311,9 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
 
       const elapsed = Date.now() - startTime;
       if (earlyExit && trackingDetected && elapsed >= minMs) {
+        break;
+      }
+      if (earlyExitOnNoProgress && !trackingDetected && elapsed >= noProgressTimeoutMs) {
         break;
       }
     }

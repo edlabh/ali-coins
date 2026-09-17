@@ -11,7 +11,10 @@ const {
   recordTaskAttempt,
   resetTaskAttempt,
   markSpecialOrAppOnly,
-  classifyTaskStatus
+  classifyTaskStatus,
+  getRoundKey,
+  recordRoundAttempt,
+  withTimeout
 } = require('./state');
 const { openTaskDrawer, extractTasksFromDrawer, findTaskElement } = require('./verifier');
 const defaultLogger = require('../../logger');
@@ -88,6 +91,7 @@ async function executeTaskAction(
       page,
       query: 'fone bluetooth',
       scrollWaitSeconds: scrollSeconds,
+      config,
       logger
     });
     return {};
@@ -132,7 +136,10 @@ async function executeTaskAction(
   // 6. Tarefas normais de navegação e scroll
   logger.info(`Executando navegação com scroll (${scrollSeconds}s): "${task?.title || ''}"...`);
   if (typeof waitWithScroll === 'function') {
-    await waitWithScroll(page, scrollSeconds);
+    await waitWithScroll(page, scrollSeconds, {
+      taskScrollMaxMs: config.TASK_SCROLL_MAX_MS,
+      earlyExitOnNoProgress: true
+    });
   }
   return {};
 }
@@ -152,5 +159,8 @@ module.exports = {
   recordTaskAttempt,
   resetTaskAttempt,
   markSpecialOrAppOnly,
-  classifyTaskStatus
+  classifyTaskStatus,
+  getRoundKey,
+  recordRoundAttempt,
+  withTimeout
 };

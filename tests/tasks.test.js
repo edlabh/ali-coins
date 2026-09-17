@@ -608,3 +608,435 @@ test('tasks - openTaskDrawer e extractTasksFromDrawer aceitam chamada por objeto
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - anti-hang: repetição de rodada idêntica 3x marca tarefa como Falhou e desiste no loop', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { findNextPendingTask, getRoundKey, recordRoundAttempt } = require('../libs/tasks/state');
+    const task = {
+      title: 'View Super discounts',
+      statusText: '2/3',
+      btnText: 'GO',
+      isActionable: true,
+      isDone: false,
+      completedRounds: 2,
+      totalRounds: 3,
+      coins: '+10 moedas'
+    };
+
+    const taskAttempts = {};
+    const roundAttemptsMap = {};
+    const failedTasks = {};
+    const maxRoundAttempts = 3;
+    let actionCount = 0;
+
+    // Simula loop do dispatcher
+    while (actionCount < 10) {
+      const pending = findNextPendingTask([task], taskAttempts, 4, {
+        roundAttemptsMap,
+        maxRoundAttempts,
+        failedTasks
+      });
+      if (!pending) break;
+
+      const roundKey = getRoundKey(pending);
+      recordRoundAttempt(roundAttemptsMap, roundKey);
+      actionCount++;
+    }
+
+    assert.strictEqual(actionCount, 3, 'Deve executar exatamente 3 tentativas antes de desistir');
+    assert.strictEqual(
+      failedTasks['View Super discounts'],
+      'Falhou (sem progresso após 3 tentativas)'
+    );
+
+    // Na 4ª checagem, findNextPendingTask retorna null
+    const check4 = findNextPendingTask([task], taskAttempts, 4, {
+      roundAttemptsMap,
+      maxRoundAttempts,
+      failedTasks
+    });
+    assert.strictEqual(check4, null);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - timeout por tentativa (TASK_MAX_DURATION_MS) aborta e contabiliza tentativa gasta', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { withTimeout, recordRoundAttempt, getRoundKey } = require('../libs/tasks/state');
+
+    // Testa helper withTimeout diretamente
+    let timeoutCaught = false;
+    try {
+      await withTimeout(
+        async () => {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        },
+        50,
+        'Tempo limite excedido'
+      );
+    } catch (err) {
+      timeoutCaught = true;
+      assert.strictEqual(err.code, 'TASK_TIMEOUT');
+    }
+    assert.strictEqual(timeoutCaught, true);
+
+    // Testa no fluxo do loop com contabilização
+    const task = {
+      title: 'Slow Task',
+      statusText: '1/3',
+      btnText: 'GO',
+      isActionable: true,
+      isDone: false
+    };
+    const taskAttempts = {};
+    const roundAttemptsMap = {};
+    let attemptsRun = 0;
+    const taskMaxDurationMs = 30;
+
+    for (let i = 0; i < 2; i++) {
+      taskAttempts[task.title] = (taskAttempts[task.title] || 0) + 1;
+      const roundKey = getRoundKey(task);
+      recordRoundAttempt(roundAttemptsMap, roundKey);
+      attemptsRun++;
+
+      try {
+        await withTimeout(
+          async () => {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          },
+          taskMaxDurationMs,
+          'Tempo limite excedido'
+        );
+      } catch (err) {
+        assert.strictEqual(err.code, 'TASK_TIMEOUT');
+      }
+    }
+
+    assert.strictEqual(attemptsRun, 2);
+    assert.strictEqual(taskAttempts['Slow Task'], 2);
+    assert.strictEqual(roundAttemptsMap['Slow Task:::1/3'], 2);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - waitWithScroll respeita teto TASK_SCROLL_MAX_MS e saída antecipada sem tracking', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { waitWithScroll } = require('../browser');
+    const mockPage = {
+      on: () => {},
+      off: () => {},
+      evaluate: async () => {},
+      waitForTimeout: async () => {} // Mock instantâneo
+    };
+
+    // 1. Teto TASK_SCROLL_MAX_MS limita tempo solicitado (solicitado: 60s, teto: 40ms)
+    const t0 = Date.now();
+    await waitWithScroll(mockPage, 60, { taskScrollMaxMs: 40 });
+    const elapsed1 = Date.now() - t0;
+    assert.ok(elapsed1 < 500, `Duração com teto deve ser baixa, foi ${elapsed1}ms`);
+
+    // 2. Saída antecipada sem sinal de tracking/progresso (earlyExitOnNoProgress)
+    const t1 = Date.now();
+    await waitWithScroll(mockPage, 10, {
+      earlyExitOnNoProgress: true,
+      noProgressTimeoutMs: 30
+    });
+    const elapsed2 = Date.now() - t1;
+    assert.ok(elapsed2 < 500, `Saída sem tracking deve ocorrer rapidamente, foi ${elapsed2}ms`);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - classifyTaskStatus e relatório marcam tarefas desistidas como Falhou (nunca Concluída)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { classifyTaskStatus } = require('../libs/tasks/state');
+    const { buildUnifiedReportPayload, buildMultiAccountReportPayload } = require('../libs/report');
+
+    const failedTaskDoneFlagTrue = {
+      title: 'View Super discounts',
+      statusText: '2/3',
+      completedRounds: 2,
+      totalRounds: 3,
+      isDone: true // mesmo que flag estivesse true por anomalia
+    };
+
+    const failedTasks = {
+      'View Super discounts': 'Falhou (sem progresso após 3 tentativas)'
+    };
+
+    // 1. classifyTaskStatus prioriza failedTasks e nunca retorna Concluída
+    const status = classifyTaskStatus(failedTaskDoneFlagTrue, { failedTasks });
+    assert.strictEqual(status, 'Falhou (sem progresso após 3 tentativas)');
+    assert.ok(!status.includes('Concluída'));
+
+    // 2. Com failureReason direto na tarefa
+    const statusWithReason = classifyTaskStatus({
+      title: 'Outra Tarefa',
+      isDone: true,
+      failureReason: 'Falhou (sem progresso após 3 tentativas)'
+    });
+    assert.strictEqual(statusWithReason, 'Falhou (sem progresso após 3 tentativas)');
+
+    // 3. No payload unificado
+    const unified = buildUnifiedReportPayload(
+      { totalBalance: '500', coinsGainedToday: '70', alreadyCollected: false },
+      {
+        results: [
+          {
+            title: 'View Super discounts',
+            status,
+            coins: '+10 moedas'
+          }
+        ],
+        finalCoins: '500 moedas',
+        duration: '1m 20s'
+      }
+    );
+    assert.strictEqual(unified.tasks.results[0].status, 'Falhou (sem progresso após 3 tentativas)');
+
+    // 4. No payload multi-conta
+    const multi = buildMultiAccountReportPayload([
+      {
+        account: { maskedUser: 'us***@example.com' },
+        tasksResult: {
+          results: [
+            {
+              title: 'View Super discounts',
+              status,
+              coins: '+10 moedas'
+            }
+          ],
+          finalCoins: '500 moedas',
+          totalActions: 3
+        }
+      }
+    ]);
+    assert.strictEqual(
+      multi.accounts[0].tasks.results[0].status,
+      'Falhou (sem progresso após 3 tentativas)'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - simulação completa do bug: 5 tentativas travadas cortam em 3 e finalizam limpo em ms', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const {
+      findNextPendingTask,
+      recordTaskAttempt,
+      getRoundKey,
+      recordRoundAttempt,
+      classifyTaskStatus
+    } = require('../libs/tasks/state');
+
+    // Reproduz o cenário exato do bug:
+    // View Super discounts presa na Rodada 3/3 (statusText: '2/3')
+    // No bug original, executava 5x (ou até MAX_TOTAL_ACTIONS=25) levando minutos/horas.
+    const stuckTask = {
+      index: 0,
+      title: 'View Super discounts',
+      statusText: '2/3',
+      btnText: 'GO',
+      isActionable: true,
+      isDone: false,
+      completedRounds: 2,
+      totalRounds: 3,
+      coins: '+10 moedas'
+    };
+
+    const taskAttempts = {};
+    const roundAttemptsMap = {};
+    const failedTasks = {};
+    const taskProgressMap = {};
+    const maxAttemptsPerTask = 4;
+    const maxRoundAttempts = 3;
+    let totalActions = 0;
+    const MAX_TOTAL_ACTIONS = 25;
+
+    const startTime = Date.now();
+
+    while (totalActions < MAX_TOTAL_ACTIONS) {
+      // Simula gaveta retornando a mesma tarefa sempre sem progresso (throttling do AliExpress)
+      const currentTasks = [{ ...stuckTask }];
+
+      // Checagem de progresso idêntica a do_tasks.js
+      for (const t of currentTasks) {
+        if (t.completedRounds !== null && t.completedRounds !== undefined) {
+          const prevRounds = taskProgressMap[t.title] !== undefined ? taskProgressMap[t.title] : -1;
+          if (t.completedRounds > prevRounds) {
+            taskProgressMap[t.title] = t.completedRounds;
+          }
+        }
+      }
+
+      const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask, {
+        roundAttemptsMap,
+        maxRoundAttempts,
+        failedTasks
+      });
+
+      if (!pendingTask) {
+        break; // Nenhuma tarefa elegível restante
+      }
+
+      const roundKey = getRoundKey(pendingTask);
+      recordTaskAttempt(taskAttempts, pendingTask.title);
+      recordRoundAttempt(roundAttemptsMap, roundKey);
+      totalActions++;
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    // Garante que travamento de 5 tentativas foi cortado em exatamente 3
+    assert.strictEqual(totalActions, 3, 'Deve cortar em exatamente 3 ações');
+    assert.strictEqual(
+      roundAttemptsMap['View Super discounts:::2/3'],
+      3,
+      'Deve ter registrado 3 tentativas para a rodada'
+    );
+    assert.strictEqual(
+      failedTasks['View Super discounts'],
+      'Falhou (sem progresso após 3 tentativas)'
+    );
+
+    // Gera resultados finais
+    const finalTasks = [{ ...stuckTask }];
+    const results = finalTasks.map((t) => ({
+      title: t.title,
+      status: failedTasks[t.title] || classifyTaskStatus(t, { failedTasks }),
+      coins: t.coins
+    }));
+
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].status, 'Falhou (sem progresso após 3 tentativas)');
+    assert.ok(durationMs < 500, `Execução em mock deve durar milissegundos, levou ${durationMs}ms`);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - findNextPendingTask adota maxRoundAttempts = 3 por padrão se não especificado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { findNextPendingTask, getRoundKey, recordRoundAttempt } = require('../libs/tasks/state');
+    const task = {
+      title: 'Stuck Task',
+      statusText: '1/3',
+      btnText: 'GO',
+      isActionable: true,
+      isDone: false
+    };
+
+    const taskAttempts = {};
+    const roundAttemptsMap = {};
+    const failedTasks = {};
+    let count = 0;
+
+    // Não especifica maxRoundAttempts nas opções -> deve usar 3 por padrão
+    while (count < 10) {
+      const pending = findNextPendingTask([task], taskAttempts, 10, {
+        roundAttemptsMap,
+        failedTasks
+      });
+      if (!pending) break;
+
+      const roundKey = getRoundKey(pending);
+      recordRoundAttempt(roundAttemptsMap, roundKey);
+      count++;
+    }
+
+    assert.strictEqual(
+      count,
+      3,
+      'Deve executar exatamente 3 tentativas por padrão antes de desistir'
+    );
+    assert.strictEqual(failedTasks['Stuck Task'], 'Falhou (sem progresso após 3 tentativas)');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - isolamento no TASK_TIMEOUT: fecha aba ou força goto(commit) curto e próxima ação executa em página sã', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { withTimeout, getRoundKey, recordRoundAttempt } = require('../libs/tasks/state');
+
+    const gotoCalls = [];
+
+    const mockPage = {
+      url: () => 'https://m.aliexpress.com/item/100500.html',
+      goto: async (url, opts) => {
+        gotoCalls.push({ url, opts });
+      },
+      waitForTimeout: async () => {}
+    };
+
+    const tasks = [
+      { title: 'Hanging Task', statusText: '1/1', isDone: false, hangs: true },
+      { title: 'Healthy Task', statusText: '1/1', isDone: false, hangs: false }
+    ];
+
+    const taskAttempts = {};
+    const roundAttemptsMap = {};
+    const executedSuccess = [];
+
+    for (const t of tasks) {
+      taskAttempts[t.title] = (taskAttempts[t.title] || 0) + 1;
+      const roundKey = getRoundKey(t);
+      recordRoundAttempt(roundAttemptsMap, roundKey);
+
+      let actionTimedOut = false;
+      try {
+        await withTimeout(
+          async () => {
+            if (t.hangs) {
+              await new Promise((resolve) => setTimeout(resolve, 80));
+            } else {
+              executedSuccess.push(t.title);
+            }
+          },
+          30,
+          `Tempo limite da tarefa "${t.title}" excedido`
+        );
+      } catch (err) {
+        if (err.code === 'TASK_TIMEOUT') {
+          actionTimedOut = true;
+        }
+      }
+
+      if (actionTimedOut) {
+        // Recuperação e isolamento idênticos ao do_tasks.js
+        if (mockPage.goto) {
+          await mockPage
+            .goto('https://m.aliexpress.com/p/coin-index/index.html', {
+              waitUntil: 'commit',
+              timeout: 10000
+            })
+            .catch(() => {});
+        }
+        await mockPage.waitForTimeout(1000).catch(() => {});
+        continue;
+      }
+    }
+
+    // Validações
+    assert.strictEqual(taskAttempts['Hanging Task'], 1);
+    assert.strictEqual(taskAttempts['Healthy Task'], 1);
+    assert.deepStrictEqual(executedSuccess, ['Healthy Task']);
+    assert.strictEqual(gotoCalls.length, 1);
+    assert.strictEqual(gotoCalls[0].url, 'https://m.aliexpress.com/p/coin-index/index.html');
+    assert.strictEqual(gotoCalls[0].opts.waitUntil, 'commit');
+    assert.strictEqual(gotoCalls[0].opts.timeout, 10000);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

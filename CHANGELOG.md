@@ -5,6 +5,15 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.2] - 2026-09-17
+
+### Corrigido
+
+- **Anti-Travamento do Dispatcher de Tarefas (Rodadas Repetidas):** Rastreamento granular de tentativas por rodada (`getRoundKey`, combinando `taskTitle + statusText`). Ao atingir o limite configurável (`TASK_ROUND_MAX_ATTEMPTS=3`, padrão 3) sem avanço em `statusText` ou `completedRounds` (ex: travamento por throttling de msite/servidor), o despachante desiste da tarefa com o status descritivo `'Falhou (sem progresso após 3 tentativas)'` e a exclui do ciclo, eliminando repetições desnecessárias.
+- **Timeout Estrito por Tentativa de Tarefa (`TASK_MAX_DURATION_MS`):** Implementação de encapsulamento com `withTimeout` (`TASK_MAX_DURATION_MS=180000`, padrão 3 minutos / 180s) abortando pontualmente tentativas congeladas, contabilizando a ação gasta, fechando abas filhas órfãs ou forçando cancelamento de navegações penduradas com `page.goto(coin-index, { waitUntil: 'commit', timeout: 10000 })` para garantir isolamento da próxima ação.
+- **Fail-Fast em Páginas Lentas (`TASK_SCROLL_MAX_MS`):** Inclusão de teto defensivo em `waitWithScroll` (`TASK_SCROLL_MAX_MS=30000`, padrão 30 segundos) e saída antecipada quando nenhum sinal de tracking for detectado (`earlyExitOnNoProgress`, com suporte retrocompatível e depreciação dos aliases `earlyExitOnNoTracking` e `noTrackingTimeoutMs`).
+- **Transparência e Integridade no Relatório Final:** Tarefas que desistirem ou falharem são categorizadas estritamente como `Falhou (...)` via `classifyTaskStatus(t, { failedTasks })` e nunca como `Concluída`, refletindo fielmente os dados no resumo impresso, no payload JSON e nas notificações enviadas ao Telegram e multi-conta.
+
 ## [0.9.1] - 2026-09-16
 
 ### Corrigido

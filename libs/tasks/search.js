@@ -14,6 +14,7 @@ async function executeSearchTask({
   page,
   query = 'fone bluetooth',
   scrollWaitSeconds = 10,
+  config = {},
   logger = defaultLogger
 } = {}) {
   logger.info(`Executando busca por produto: "${query}"...`);
@@ -23,7 +24,10 @@ async function executeSearchTask({
     if (searchInput.press) await searchInput.press('Enter').catch(() => {});
   }
   if (typeof waitWithScroll === 'function') {
-    await waitWithScroll(page, scrollWaitSeconds);
+    await waitWithScroll(page, scrollWaitSeconds, {
+      taskScrollMaxMs: config?.TASK_SCROLL_MAX_MS,
+      earlyExitOnNoProgress: true
+    });
   }
   return true;
 }

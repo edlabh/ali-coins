@@ -16,6 +16,17 @@ test('config.js - defaults schema Zod', () => {
   assert.strictEqual(parsed.NAV_TIMEOUT, 35000, 'NAV_TIMEOUT default deve ser 35000');
   assert.strictEqual(parsed.TASK_MAX_ACTIONS, 25, 'TASK_MAX_ACTIONS default deve ser 25');
   assert.strictEqual(parsed.TASK_MAX_ATTEMPTS, 4, 'TASK_MAX_ATTEMPTS default deve ser 4');
+  assert.strictEqual(
+    parsed.TASK_ROUND_MAX_ATTEMPTS,
+    3,
+    'TASK_ROUND_MAX_ATTEMPTS default deve ser 3'
+  );
+  assert.strictEqual(
+    parsed.TASK_MAX_DURATION_MS,
+    180000,
+    'TASK_MAX_DURATION_MS default deve ser 180000 (3min)'
+  );
+  assert.strictEqual(parsed.TASK_SCROLL_MAX_MS, 30000, 'TASK_SCROLL_MAX_MS default deve ser 30000');
   assert.strictEqual(parsed.PW_TRACE, 'retain-on-failure');
   assert.strictEqual(parsed.PW_SCREENSHOT, 'only-on-failure');
   assert.strictEqual(parsed.PW_VIDEO, 'off');

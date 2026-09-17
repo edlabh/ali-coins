@@ -24,7 +24,10 @@ const {
   markSpecialOrAppOnly,
   classifyTaskStatus,
   findTaskElement,
-  captureDomHashAndArtifacts
+  captureDomHashAndArtifacts,
+  getRoundKey,
+  recordRoundAttempt,
+  withTimeout
 } = require('./libs/ui');
 const { renderTasksReport } = require('./libs/report');
 const logger = require('./logger');
@@ -191,8 +194,13 @@ async function runTasks(options = {}) {
       }
 
       const taskAttempts = {};
+      const roundAttemptsMap = {};
+      const failedTasks = {};
       const taskProgressMap = {};
+      const taskStatusMap = {};
       const maxAttemptsPerTask = config.TASK_MAX_ATTEMPTS;
+      const maxRoundAttempts = config.TASK_ROUND_MAX_ATTEMPTS || 3;
+      const taskMaxDurationMs = config.TASK_MAX_DURATION_MS || 3 * 60 * 1000;
       let totalActions = 0;
       const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
 
@@ -201,7 +209,7 @@ async function runTasks(options = {}) {
         const currentTasks = await extractTasksFromDrawer(page);
         if (!currentTasks || currentTasks.length === 0) break;
 
-        // Se uma tarefa progrediu de rodada, reseta suas tentativas consecutivas
+        // Se uma tarefa progrediu de rodada ou status, reseta suas tentativas consecutivas
         for (const t of currentTasks) {
           if (t.completedRounds !== null && t.completedRounds !== undefined) {
             const prevRounds =
@@ -216,16 +224,29 @@ async function runTasks(options = {}) {
               taskProgressMap[t.title] = t.completedRounds;
             }
           }
+          if (t.statusText) {
+            const prevStatus = taskStatusMap[t.title];
+            if (prevStatus !== undefined && prevStatus !== t.statusText) {
+              resetTaskAttempt(taskAttempts, t.title);
+            }
+            taskStatusMap[t.title] = t.statusText;
+          }
         }
 
-        const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask);
+        const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask, {
+          roundAttemptsMap,
+          maxRoundAttempts,
+          failedTasks
+        });
 
         if (!pendingTask) {
           logger.info('Todas as tarefas disponíveis foram concluídas ou verificadas.');
           break;
         }
 
+        const roundKey = getRoundKey(pendingTask);
         recordTaskAttempt(taskAttempts, pendingTask.title);
+        recordRoundAttempt(roundAttemptsMap, roundKey);
         totalActions++;
 
         const taskStartTime = new Date();
@@ -256,31 +277,66 @@ async function runTasks(options = {}) {
 
         // Caso 2: Ação executável (GO / IR)
         newPageOpened = null;
-        await page.evaluate((el) => el.click(), actionBtn);
+        await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
         await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(1500).catch(() => {});
 
         const activePage = newPageOpened || page;
         const isNewTab = newPageOpened !== null;
 
+        let actionTimedOut = false;
         try {
-          const actionRes = await executeTaskAction(activePage, context, pendingTask, config);
-          if (actionRes && actionRes.isSpecialOrAppOnly) {
-            markSpecialOrAppOnly(taskAttempts, pendingTask.title);
-          }
+          await withTimeout(
+            async () => {
+              const actionRes = await executeTaskAction(activePage, context, pendingTask, config);
+              if (actionRes && actionRes.isSpecialOrAppOnly) {
+                markSpecialOrAppOnly(taskAttempts, pendingTask.title);
+              }
+            },
+            taskMaxDurationMs,
+            `Tempo limite da tarefa "${pendingTask.title}" excedido (${taskMaxDurationMs}ms)`
+          );
         } catch (taskErr) {
-          logger.error({ err: taskErr.message }, `Erro ao executar "${pendingTask.title}".`);
+          if (taskErr.code === 'TASK_TIMEOUT' || taskErr.message?.includes('Tempo limite')) {
+            actionTimedOut = true;
+            logger.warn(
+              { task: pendingTask.title, timeoutMs: taskMaxDurationMs },
+              `Tempo limite de execução atingido para "${pendingTask.title}". Abortando tentativa.`
+            );
+          } else {
+            logger.error({ err: taskErr.message }, `Erro ao executar "${pendingTask.title}".`);
+          }
+        }
+
+        if (actionTimedOut) {
+          if (isNewTab) {
+            await activePage.close().catch(() => {});
+          } else if (page.goto) {
+            // Cancela navegações órfãs/penduradas imediatamente e restaura coin-index
+            await page
+              .goto('https://m.aliexpress.com/p/coin-index/index.html', {
+                waitUntil: 'commit',
+                timeout: 10000
+              })
+              .catch(() => {});
+          }
+          await page.waitForTimeout(1000).catch(() => {});
+          const taskEndTime = new Date();
+          logger.info(
+            `Ação abortada por timeout em: ${formatDuration(taskEndTime - taskStartTime)}`
+          );
+          continue;
         }
 
         if (isNewTab) {
           await activePage.close().catch(() => {});
-        } else if (!page.url().includes('coin-index/index.html')) {
+        } else if (page.url && !page.url().includes('coin-index/index.html')) {
           await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
             waitUntil: 'domcontentloaded'
-          });
+          }).catch(() => {});
         }
         // Aguarda sincronização do AliExpress e atualização do status da tarefa
-        await page.waitForTimeout(2500);
+        await page.waitForTimeout(2500).catch(() => {});
 
         const taskEndTime = new Date();
         logger.info(`Concluída ação em: ${formatDuration(taskEndTime - taskStartTime)}`);
@@ -290,10 +346,22 @@ async function runTasks(options = {}) {
       const finalTasks = await extractTasksFromDrawer(page);
       const results = finalTasks.map((t) => ({
         title: t.title,
-        status: classifyTaskStatus(t),
+        status: failedTasks[t.title] || classifyTaskStatus(t, { failedTasks }),
         coins: t.coins,
         estimatedCoins: t.estimatedCoins || t.coins
       }));
+
+      // Garante que tarefas que desistiram/falharam constem no relatório mesmo se ausentes da gaveta
+      for (const [failedTitle, reason] of Object.entries(failedTasks)) {
+        if (!results.some((r) => r.title === failedTitle)) {
+          results.push({
+            title: failedTitle,
+            status: reason,
+            coins: '+0 moedas',
+            estimatedCoins: '+0 moedas'
+          });
+        }
+      }
 
       await closeContextWithDiagnostics(context, { failed: false, name: 'tasks-mobile' });
 
