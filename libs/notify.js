@@ -707,13 +707,17 @@ async function sendTelegram({
 
   const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const hostLabel = cfg.NOTIFY_HOST_LABEL || process.env.NOTIFY_HOST_LABEL || os.hostname();
-  const messageHtml = buildMessage({
-    report,
-    event,
-    error,
-    customMessage,
-    hostname: hostLabel
-  });
+  // Trunca TODAS as mensagens (não apenas o relatório multi-conta): erros longos do
+  // Playwright ultrapassam o limite de 4096 chars e fariam a API retornar HTTP 400.
+  const messageHtml = truncateMessageIfNeeded(
+    buildMessage({
+      report,
+      event,
+      error,
+      customMessage,
+      hostname: hostLabel
+    })
+  );
 
   const payload = {
     chat_id: targetChatId,
@@ -732,7 +736,7 @@ async function sendTelegram({
 
     // Fallback: se retornar 400 por erro de parse de entidades HTML, tenta enviar como texto puro
     if (response.status === 400) {
-      const plainText = messageHtml.replace(/<[^>]+>/g, '');
+      const plainText = truncateMessageIfNeeded(messageHtml.replace(/<[^>]+>/g, ''));
       response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -18,7 +18,7 @@ const {
   assertRealFilesUntouched
 } = require('./test_helper');
 
-const TEST_SECRET = 'secret_key_with_at_least_32_characters_long_12345';
+const TEST_SECRET = 'secret_key_with_at_least_32_characters_long_12345'; //gitleaks:allow valor fictício de teste
 
 test('export_session.js - allowlist de localStorage', () => {
   assert.strictEqual(isAllowedStorageKey('login_token'), true);
@@ -486,6 +486,18 @@ test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote
     assert.ok(fs.existsSync(`${acc2.sessionPath}.enc`));
     assert.ok(fs.existsSync(acc2.sessionMetaPath));
 
+    // Higiene: tokens de uso único são removidos após importação bem-sucedida
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session_token.txt')),
+      false,
+      'session_token.txt deve ser removido após importação'
+    );
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session_token_2.txt')),
+      false,
+      'session_token_2.txt deve ser removido após importação'
+    );
+
     const loaded1 = await loadSessionFiles({
       sessionPath: acc1.sessionPath,
       sessionMetaPath: acc1.sessionMetaPath,
@@ -561,6 +573,64 @@ test('import_session.js - Bug 13: lanca ImportSessionError se token nao correspo
         return true;
       }
     );
+  } finally {
+    process.env.ALI_USER = originalEnv.ALI_USER;
+    process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;
+    if (originalEnv.ALI_USER_2 !== undefined) {
+      process.env.ALI_USER_2 = originalEnv.ALI_USER_2;
+    } else {
+      delete process.env.ALI_USER_2;
+    }
+    if (originalEnv.ALI_PASSWORD_2 !== undefined) {
+      process.env.ALI_PASSWORD_2 = originalEnv.ALI_PASSWORD_2;
+    } else {
+      delete process.env.ALI_PASSWORD_2;
+    }
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('import_session.js - keepTokens preserva arquivos de token após importação em lote', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('import-keep-tokens-');
+  const originalEnv = {
+    ALI_USER: process.env.ALI_USER,
+    ALI_PASSWORD: process.env.ALI_PASSWORD,
+    ALI_USER_2: process.env.ALI_USER_2,
+    ALI_PASSWORD_2: process.env.ALI_PASSWORD_2
+  };
+
+  try {
+    process.env.ALI_USER = 'keep@example.com';
+    process.env.ALI_PASSWORD = 'pwd_keep';
+    delete process.env.ALI_USER_2;
+    delete process.env.ALI_PASSWORD_2;
+
+    const sPath = path.join(tmpDir, 'session.json');
+    const mPath = path.join(tmpDir, 'session_meta.json');
+    await safeWriteFile(
+      sPath,
+      JSON.stringify({ cookies: [{ name: 'xman_us_t', value: 'tok_keep' }], origins: [] })
+    );
+    await safeWriteFile(mPath, JSON.stringify({ user: 'keep@example.com' }));
+
+    const exportResult = await exportSession({ secret: TEST_SECRET, baseDir: tmpDir });
+    const tokenFile = path.join(tmpDir, 'session_token.txt');
+    fs.writeFileSync(tokenFile, exportResult.token, 'utf-8');
+
+    // Remover sessão local para simular host limpo
+    await fs.promises.unlink(sPath);
+    await fs.promises.unlink(mPath);
+
+    const imported = await importAllSessions({
+      baseDir: tmpDir,
+      secret: TEST_SECRET,
+      keepTokens: true
+    });
+
+    assert.strictEqual(imported.length, 1);
+    assert.ok(fs.existsSync(tokenFile), 'Com keepTokens=true o arquivo deve ser preservado');
   } finally {
     process.env.ALI_USER = originalEnv.ALI_USER;
     process.env.ALI_PASSWORD = originalEnv.ALI_PASSWORD;

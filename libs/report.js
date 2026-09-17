@@ -570,6 +570,8 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
           }
         : null,
       error: item.error || undefined,
+      // Preserva o sinal de sessão importada expirada para o alerta consolidado do Telegram
+      isImportedSessionExpired: Boolean(item.isImportedSessionExpired),
       duration: accountDuration,
       meta: {
         finalBalance,

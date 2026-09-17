@@ -5,6 +5,23 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.5] - 2026-09-17
+
+### Corrigido
+
+- **Cancelamento Cooperativo de Ações em Timeout (`withTimeout` + `AbortSignal`):** O timeout por tentativa de tarefa (`TASK_MAX_DURATION_MS`) agora fornece um `AbortSignal` que é abortado no disparo, propagado por `executeTaskAction`, `waitWithScroll`, `executeSurpriseItems` e `executeSearchTask`. A ação órfã deixa de continuar manipulando o mesmo `page` em segundo plano, encerrando nos checkpoints de scroll/clique.
+- **Privacidade do Dump de DOM (`captureDomHashAndArtifacts`):** O artefato `dom-*.hash.txt` passa a gravar somente hash SHA-256, timestamp, alvo e tamanho do HTML. O HTML normalizado completo (que pode conter dados de conta/CSRF) só é anexado com opt-in explícito via `PW_DUMP_DOM=true` em depuração local. O diretório `scratch/` é restringido a `0o700`.
+- **Truncamento Universal de Mensagens do Telegram:** `sendTelegram` agora aplica `truncateMessageIfNeeded` a **todas** as mensagens (inclusive falhas com stack traces longos do Playwright) e ao fallback de texto puro, evitando HTTP 400 silencioso por exceder 4096 caracteres.
+- **Alerta de Sessão Remota no Modo Multi-Conta:** `buildMultiAccountReportPayload` passou a propagar `isImportedSessionExpired`, reativando o bloco de aviso "Sessão Remota Expirada" na notificação consolidada (antes era código morto).
+- **Mensagens de Validação PT-BR no Zod 4:** `ALI_USER`/`ALI_PASSWORD` usam a opção `error` (que substituiu `required_error`/`invalid_type_error`), restaurando as mensagens em português no `credentials.env` inválido.
+- **Gitleaks Sem Allowlist de Diretório:** a exclusão genérica de `tests/` foi removida e substituída por allowlist de **valores exatos** fictícios. O scan completo do histórico agora cobre qualquer segredo real, inclusive em testes.
+- **Supply-Chain do CI:** todas as GitHub Actions (`checkout`, `setup-node`, `upload-artifact`, `gitleaks-action`, `codeql-action`, `fetch-metadata`) foram pinadas por SHA de commit com comentário de versão; o workflow passou a declarar `permissions: contents: read` por padrão e `persist-credentials: false` nos checkouts.
+
+### Adicionado
+
+- **Higiene de Tokens de Importação:** `import_session.js --all` remove cada `session_token*.txt` após importação bem-sucedida (uso único), com opt-out via `--keep-tokens` ou `KEEP_SESSION_TOKENS=true`. Documentado no `README.md` e `CLOUD_SESSIONS.md`.
+- **Testes de Regressão:** aborto do `AbortSignal` no timeout, encerramento imediato do `waitWithScroll` por abort, ação em task já abortada sem tocar no browser, artefato DOM sem HTML por padrão (+ opt-in), diretório de diagnóstico `0700`, truncamento de erros longos no Telegram, flag multi-conta de sessão remota, mensagens Zod PT-BR, remoção/preservação de tokens (179 testes no total).
+
 ## [0.9.4] - 2026-09-17
 
 ### Corrigido

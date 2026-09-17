@@ -80,10 +80,23 @@ test('libs/ui/diagnostics.js - captureDomHashAndArtifacts gera hash SHA-256 e sc
     const savedContent = fs.readFileSync(res.hashFile, 'utf-8');
     assert.ok(savedContent.includes(res.hash));
     assert.ok(savedContent.includes('tasks_drawer'));
-    assert.ok(
-      savedContent.includes('<html> <body> <div class="test">Hello World</div> </body></html>')
+    assert.ok(savedContent.includes('HTML length:'));
+    assert.strictEqual(
+      savedContent.includes('<html>'),
+      false,
+      'Por padrão o artefato NÃO deve conter o HTML completo (privacidade)'
     );
+
+    // Opt-in explícito via PW_DUMP_DOM=true anexa o HTML normalizado para depuração
+    process.env.PW_DUMP_DOM = 'true';
+    const resDump = await captureDomHashAndArtifacts(mockPage, 'tasks_drawer_dump');
+    const savedDump = fs.readFileSync(resDump.hashFile, 'utf-8');
+    assert.ok(
+      savedDump.includes('<html> <body> <div class="test">Hello World</div> </body></html>')
+    );
+    delete process.env.PW_DUMP_DOM;
   } finally {
+    delete process.env.PW_DUMP_DOM;
     if (prevOutDir !== undefined) {
       process.env.PW_OUTPUT_DIR = prevOutDir;
     } else {
@@ -127,3 +140,38 @@ test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no 
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test(
+  'libs/ui/diagnostics.js - getDiagnosticsDir restringe diretório de artefatos a 0700',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const { getDiagnosticsDir } = require('../libs/ui');
+    const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
+
+    const realFilesSnapshot = snapshotRealFiles();
+    const tmpDir = createIsolatedTestDir('diag-dir-perm-');
+    const sharedDir = path.join(tmpDir, 'shared');
+    const prevOutDir = process.env.PW_OUTPUT_DIR;
+
+    try {
+      fs.mkdirSync(sharedDir, { mode: 0o755 });
+      process.env.PW_OUTPUT_DIR = sharedDir;
+
+      const resolved = getDiagnosticsDir();
+      assert.strictEqual(resolved, sharedDir);
+
+      const mode = fs.statSync(sharedDir).mode & 0o777;
+      assert.strictEqual(mode, 0o700, `Diretório deve ser 0700, obtido 0${mode.toString(8)}`);
+    } finally {
+      if (prevOutDir !== undefined) {
+        process.env.PW_OUTPUT_DIR = prevOutDir;
+      } else {
+        delete process.env.PW_OUTPUT_DIR;
+      }
+      cleanupIsolatedTestDir(tmpDir);
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);

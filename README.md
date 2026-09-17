@@ -235,6 +235,8 @@ Provedores de nuvem possuem IPs de Datacenter que o AliExpress identifica com ri
    ```
 
    > ⚠️ **Aviso de Segurança:** Por segurança, o script recusa a passagem de tokens via linha de comando (`argv`), pois isso exporia credenciais no histórico do shell (`history`) e na listagem de processos do sistema (`ps aux`). O importador realiza **auto-roteamento inteligente**, salvando a sessão da conta correspondente sem nunca sobrescrever outras contas.
+   >
+   > 🧹 **Higiene de Tokens:** na importação em lote (`--all`), os arquivos `session_token*.txt` são removidos após cada importação bem-sucedida (uso único). Use `--keep-tokens` (ou `KEEP_SESSION_TOKENS=true`) para preservá-los.
 
 3. Execute `./run_all.sh` na nuvem. A sessão permanecerá válida por semanas/meses sem exigir login.
 

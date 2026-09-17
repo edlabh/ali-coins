@@ -34,18 +34,32 @@ async function executeTaskAction(
   contextArg = null,
   taskArg = null,
   configArg = {},
-  loggerArg = defaultLogger
+  loggerArg = defaultLogger,
+  signalArg = null
 ) {
-  let page, context, task, config, logger;
+  let page, context, task, config, logger, signal;
   if (pageOrParams && (pageOrParams.page !== undefined || pageOrParams.task !== undefined)) {
-    ({ page, context = null, task, config = {}, logger = defaultLogger } = pageOrParams);
+    ({
+      page,
+      context = null,
+      task,
+      config = {},
+      logger = defaultLogger,
+      signal = null
+    } = pageOrParams);
   } else {
     page = pageOrParams;
     context = contextArg || null;
     task = taskArg;
     config = configArg || {};
     logger = loggerArg || defaultLogger;
+    signal = signalArg || null;
   }
+
+  // Cancela a ação cooperativamente entre etapas (o AbortSignal é disparado no timeout)
+  const isAborted = () => Boolean(signal && signal.aborted);
+
+  if (isAborted()) return {};
 
   const titleLower = (task?.title || '').toLowerCase();
   const descLower = (task?.desc || '').toLowerCase();
@@ -59,9 +73,11 @@ async function executeTaskAction(
   ) {
     const startCardIdx =
       task?.completedRounds && task.completedRounds > 0 ? task.completedRounds * 3 : 0;
-    await executeSurpriseItems({ page, context, startIndex: startCardIdx, logger });
+    await executeSurpriseItems({ page, context, startIndex: startCardIdx, logger, signal });
     return {};
   }
+
+  if (isAborted()) return {};
 
   let scrollSeconds =
     typeof config.SCROLL_WAIT_SECONDS === 'number' ? config.SCROLL_WAIT_SECONDS : 15;
@@ -92,10 +108,13 @@ async function executeTaskAction(
       query: 'fone bluetooth',
       scrollWaitSeconds: scrollSeconds,
       config,
-      logger
+      logger,
+      signal
     });
     return {};
   }
+
+  if (isAborted()) return {};
 
   // 3. Fazenda Mágica / Prize Land
   if (
@@ -138,7 +157,8 @@ async function executeTaskAction(
   if (typeof waitWithScroll === 'function') {
     await waitWithScroll(page, scrollSeconds, {
       taskScrollMaxMs: config.TASK_SCROLL_MAX_MS,
-      earlyExitOnNoProgress: true
+      earlyExitOnNoProgress: true,
+      abortSignal: signal
     });
   }
   return {};

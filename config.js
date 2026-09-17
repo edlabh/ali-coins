@@ -35,17 +35,22 @@ const positiveInt = (defaultVal) =>
 // Schema de validação Zod para configuração
 const configSchema = z
   .object({
+    // Zod 4: a opção `error` substitui `required_error`/`invalid_type_error` (removidos)
     ALI_USER: z
       .string({
-        required_error: 'A variável ALI_USER é obrigatória no credentials.env.',
-        invalid_type_error: 'A variável ALI_USER deve ser uma string de texto.'
+        error: (iss) =>
+          iss.input === undefined || iss.input === null
+            ? 'A variável ALI_USER é obrigatória no credentials.env.'
+            : 'A variável ALI_USER deve ser uma string de texto.'
       })
       .trim()
       .min(1, 'ALI_USER não pode estar vazio.'),
     ALI_PASSWORD: z
       .string({
-        required_error: 'A variável ALI_PASSWORD é obrigatória no credentials.env.',
-        invalid_type_error: 'A variável ALI_PASSWORD deve ser uma string de texto.'
+        error: (iss) =>
+          iss.input === undefined || iss.input === null
+            ? 'A variável ALI_PASSWORD é obrigatória no credentials.env.'
+            : 'A variável ALI_PASSWORD deve ser uma string de texto.'
       })
       .min(1, 'ALI_PASSWORD não pode estar vazio.'),
     SESSION_SECRET: z
@@ -234,6 +239,10 @@ function createCliProgram() {
     .option(
       '--account <id>',
       'Especifica o índice (1, 2) ou e-mail da conta (export_session / import_session)'
+    )
+    .option(
+      '--keep-tokens',
+      'Mantém os arquivos session_token*.txt após a importação em lote (padrão: remover)'
     )
     .allowUnknownOption(true)
     .helpOption('-h, --help', 'Exibe esta ajuda com a lista de opções')

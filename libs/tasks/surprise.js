@@ -15,16 +15,24 @@ async function executeSurpriseItems(
   pageOrParams,
   contextArg = null,
   startIndexArg = 0,
-  loggerArg = defaultLogger
+  loggerArg = defaultLogger,
+  signalArg = null
 ) {
-  let page, context, startIndex, logger;
+  let page, context, startIndex, logger, signal;
   if (pageOrParams && pageOrParams.page) {
-    ({ page, context = null, startIndex = 0, logger = defaultLogger } = pageOrParams);
+    ({
+      page,
+      context = null,
+      startIndex = 0,
+      logger = defaultLogger,
+      signal = null
+    } = pageOrParams);
   } else {
     page = pageOrParams;
     context = contextArg || null;
     startIndex = typeof startIndexArg === 'number' ? startIndexArg : 0;
     logger = loggerArg || defaultLogger;
+    signal = signalArg || null;
   }
 
   if (!page) {
@@ -41,6 +49,10 @@ async function executeSurpriseItems(
   const targetClicks = 3;
 
   for (let i = 0; i < targetClicks; i++) {
+    if (signal && signal.aborted) {
+      logger.warn('Execução de itens surpresa cancelada por timeout.');
+      break;
+    }
     const targetIdx = startIndex + i;
 
     // Garante que o DOM tenha cards suficientes antes de tentar obter o elemento

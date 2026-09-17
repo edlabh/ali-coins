@@ -262,6 +262,7 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
   const noProgressTimeoutMs = options.noProgressTimeoutMs ?? options.noTrackingTimeoutMs ?? 10000;
   const earlyExit = options.earlyExitOnTracking === true;
   const minMs = (typeof options.minSeconds === 'number' ? options.minSeconds : 15) * 1000;
+  const abortSignal = options.abortSignal || null;
 
   const envScrollMaxMs = process.env.TASK_SCROLL_MAX_MS
     ? parseInt(process.env.TASK_SCROLL_MAX_MS, 10)
@@ -300,6 +301,7 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
 
   try {
     while (Date.now() - startTime < maxMs) {
+      if (abortSignal && abortSignal.aborted) break;
       if (page && typeof page.evaluate === 'function') {
         await page.evaluate(() => window.scrollBy(0, 300)).catch(() => {});
       }
@@ -308,6 +310,7 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
       } else {
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
+      if (abortSignal && abortSignal.aborted) break;
 
       const elapsed = Date.now() - startTime;
       if (earlyExit && trackingDetected && elapsed >= minMs) {

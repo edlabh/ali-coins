@@ -351,6 +351,11 @@ async function importAllSessions(options = {}) {
   const { loadAccounts } = require('./config');
   const accounts = loadAccounts(process.env, baseDir);
   const imported = [];
+  const keepTokens = Boolean(
+    options.keepTokens ||
+    process.argv.includes('--keep-tokens') ||
+    /^(1|true|on)$/i.test(process.env.KEEP_SESSION_TOKENS || '')
+  );
 
   logger.info('===================================================================');
   logger.info('   IMPORTAÇÃO MULTI-CONTA DE SESSÕES ALIEXPRESS');
@@ -396,6 +401,22 @@ async function importAllSessions(options = {}) {
         ...res,
         tokenFile: path.basename(tPath)
       });
+
+      // Higiene operacional: o token é de uso único; remove após importação bem-sucedida
+      if (!keepTokens) {
+        try {
+          await fs.promises.unlink(tPath);
+          logger.info(
+            { file: path.basename(tPath) },
+            'Token de sessão removido após importação bem-sucedida (use --keep-tokens para preservar).'
+          );
+        } catch (unlinkErr) {
+          logger.warn(
+            { file: path.basename(tPath), err: unlinkErr.message },
+            'Não foi possível remover o arquivo de token após a importação.'
+          );
+        }
+      }
     } catch (err) {
       logger.error(
         { file: path.basename(tPath), err: err.message },

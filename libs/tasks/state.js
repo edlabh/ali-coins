@@ -47,19 +47,24 @@ function recordRoundAttempt(roundAttemptsMap, roundKey) {
 }
 
 /**
- * Envolve função assíncrona com timeout estrito
- * @param {Function} asyncFn
+ * Envolve função assíncrona com timeout estrito e cancelamento cooperativo.
+ * A função recebe um AbortSignal que é abortado no timeout, permitindo que
+ * tarefas longas (scroll, cliques, navegação) encerrem em vez de continuarem
+ * operando no mesmo page em segundo plano.
+ * @param {(signal: AbortSignal) => Promise<any>} asyncFn
  * @param {number} timeoutMs
  * @param {string} [timeoutMessage='Timeout excedido']
  * @returns {Promise<any>}
  */
 async function withTimeout(asyncFn, timeoutMs, timeoutMessage = 'Timeout excedido') {
+  const controller = new AbortController();
   let timerId;
   let hasTimedOut = false;
 
   const timeoutPromise = new Promise((_, reject) => {
     timerId = setTimeout(() => {
       hasTimedOut = true;
+      controller.abort();
       const err = new Error(timeoutMessage);
       err.code = 'TASK_TIMEOUT';
       reject(err);
@@ -67,9 +72,9 @@ async function withTimeout(asyncFn, timeoutMs, timeoutMessage = 'Timeout excedid
   });
 
   const wrappedFnPromise = Promise.resolve()
-    .then(asyncFn)
+    .then(() => asyncFn(controller.signal))
     .catch((err) => {
-      if (hasTimedOut) return null; // evita unhandled rejection tardio
+      if (hasTimedOut) return null; // evita unhandled rejection tardio da ação cancelada
       throw err;
     });
 

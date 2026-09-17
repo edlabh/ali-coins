@@ -1040,3 +1040,96 @@ test('tasks - isolamento no TASK_TIMEOUT: fecha aba ou força goto(commit) curto
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - withTimeout aborta o AbortSignal para cancelar ação órfã no browser', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { withTimeout } = require('../libs/tasks/state');
+
+    let aborted = false;
+    let signalRef = null;
+
+    await assert.rejects(
+      withTimeout(
+        (signal) =>
+          new Promise(() => {
+            signalRef = signal;
+            signal.addEventListener('abort', () => {
+              aborted = true;
+            });
+          }),
+        40,
+        'Timeout de teste cancelável'
+      ),
+      (err) => err.code === 'TASK_TIMEOUT'
+    );
+
+    assert.ok(signalRef, 'withTimeout deve fornecer um AbortSignal para a função');
+    assert.strictEqual(signalRef.aborted, true, 'Signal deve estar abortado após o timeout');
+    assert.strictEqual(aborted, true, 'Listener de abort deve ter sido disparado');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('browser.js - waitWithScroll encerra imediatamente ao receber abortSignal', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { waitWithScroll } = require('../browser');
+    const controller = new AbortController();
+    const mockPage = {
+      on: () => {},
+      off: () => {},
+      evaluate: async () => {},
+      // Cede o event loop (macrotask) para que o timer de abort possa disparar
+      waitForTimeout: (ms) => new Promise((resolve) => setTimeout(resolve, Math.min(ms, 10)))
+    };
+
+    setTimeout(() => controller.abort(), 50);
+
+    const t0 = Date.now();
+    await waitWithScroll(mockPage, 30, { abortSignal: controller.signal });
+    const elapsed = Date.now() - t0;
+
+    assert.ok(elapsed < 1000, `Scroll deveria encerrar ao abortar, levou ${elapsed}ms`);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeTaskAction com signal já abortado retorna sem acionar o browser', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeTaskAction } = require('../libs/tasks/dispatcher');
+    const controller = new AbortController();
+    controller.abort();
+
+    let touchedPage = false;
+    const mockPage = {
+      get url() {
+        touchedPage = true;
+        return () => '';
+      },
+      evaluate: async () => {
+        touchedPage = true;
+      },
+      $: async () => {
+        touchedPage = true;
+        return null;
+      }
+    };
+
+    const res = await executeTaskAction({
+      page: mockPage,
+      context: null,
+      task: { title: 'Tarefa qualquer', desc: '', isActionable: true, btnText: 'GO' },
+      config: {},
+      signal: controller.signal
+    });
+
+    assert.deepStrictEqual(res, {});
+    assert.strictEqual(touchedPage, false, 'Nenhuma interação no page deve ocorrer após abort');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

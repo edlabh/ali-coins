@@ -288,8 +288,14 @@ async function runTasks(options = {}) {
         let actionTimedOut = false;
         try {
           await withTimeout(
-            async () => {
-              const actionRes = await executeTaskAction(activePage, context, pendingTask, config);
+            async (signal) => {
+              const actionRes = await executeTaskAction({
+                page: activePage,
+                context,
+                task: pendingTask,
+                config,
+                signal
+              });
               if (actionRes && actionRes.isSpecialOrAppOnly) {
                 markSpecialOrAppOnly(taskAttempts, pendingTask.title);
               }

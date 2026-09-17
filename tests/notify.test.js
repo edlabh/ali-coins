@@ -798,3 +798,38 @@ test('libs/notify.js - toSafeInt e toSafeStreak sanitizam valores com segurança
   assert.strictEqual(toSafeStreak(null), 'N/D');
   assert.strictEqual(toSafeStreak(undefined), 'N/D');
 });
+
+test('libs/notify.js - sendTelegram trunca erros longos antes de enviar (limite de 4096)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalFetch = global.fetch;
+
+  try {
+    const validConfig = {
+      TELEGRAM_ENABLED: true,
+      TELEGRAM_BOT_TOKEN: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456',
+      TELEGRAM_CHAT_ID: '987654321',
+      TELEGRAM_SILENT: false,
+      TELEGRAM_TIMEOUT_MS: 5000
+    };
+
+    let lastBody = null;
+    global.fetch = async (url, options) => {
+      lastBody = JSON.parse(options.body);
+      return { ok: true, status: 200, text: async () => '{"ok":true}' };
+    };
+
+    const hugeError = new Error('E'.repeat(9000));
+    const res = await sendTelegram({ config: validConfig, event: 'failure', error: hugeError });
+
+    assert.strictEqual(res.ok, true);
+    assert.ok(lastBody, 'Payload deve ter sido enviado');
+    assert.ok(
+      lastBody.text.length <= 4096,
+      `Texto enviado ao Telegram deve respeitar 4096 chars (obtido ${lastBody.text.length})`
+    );
+    assert.ok(lastBody.text.includes('mensagem truncada'));
+  } finally {
+    global.fetch = originalFetch;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

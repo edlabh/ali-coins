@@ -115,6 +115,8 @@ Transfira os arquivos de token gerados para a pasta do projeto no servidor:
 
   O utilitário processa todos os arquivos `session_token*.txt` do diretório, descriptografa com a sua `SESSION_SECRET`, reconhece cada conta pelo `meta.user` e grava nos arquivos isolados correspondentes (`session.json.enc`, `session_<hash>.json.enc`, etc.), aplicando `0o600` em todos.
 
+  > 🧹 **Higiene de Tokens:** por padrão, cada `session_token*.txt` é **removido com segurança após a importação bem-sucedida** (o token é de uso único). Se precisar preservá-los (ex: replicar a importação em outro host), use `node import_session.js --all --keep-tokens` ou defina `KEEP_SESSION_TOKENS=true`.
+
 - **Importar individualmente (via STDIN - recomendado):**
 
   ```bash

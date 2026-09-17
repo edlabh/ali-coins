@@ -10,12 +10,12 @@
  *
  * COMO ATUALIZAR AS FIXTURES QUANDO O ALIEXPRESS MUDAR O DOM (OBSERVABLE SELECTORS):
  * Quando o painel/drawer ou seletor falha em runtime, o sistema gera automaticamente:
- *   - scratch/dom-<timestamp>.hash.txt (hash SHA-256 e HTML normalizado completo)
+ *   - scratch/dom-<timestamp>.hash.txt (hash SHA-256 e metadados; HTML completo somente com PW_DUMP_DOM=true)
  *   - scratch/tasks_drawer_failed.png (screenshot da tela no momento exato do erro)
  *   - Log de WARN com o hash SHA-256 para auditoria e rastreabilidade
  *
  * Passos para atualizar as fixtures a partir do dump:
- * 1. Abra o arquivo scratch/dom-<timestamp>.hash.txt gerado na falha mais recente.
+ * 1. Reexecute com PW_DUMP_DOM=true e abra o scratch/dom-<timestamp>.hash.txt gerado na falha.
  * 2. Localize no HTML normalizado a nova estrutura das tags/classes do painel alterado.
  * 3. Copie o trecho relevante de HTML e atualize a constante FIXTURE_HTML abaixo.
  * 4. Ajuste os seletores correspondentes em libs/selectors.js para casar com a nova estrutura.

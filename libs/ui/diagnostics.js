@@ -11,10 +11,12 @@ function getDiagnosticsDir() {
   const outDir = process.env.PW_OUTPUT_DIR || path.join(__dirname, '..', '..', 'scratch');
   try {
     if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
+      fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
     }
+    // Restringe o diretório de artefatos ao dono (independe do umask do host)
+    fs.chmodSync(outDir, 0o700);
   } catch {
-    // Ignorar falha se não conseguir criar pasta
+    // Ignorar falha se não conseguir criar/ajustar a pasta (ex: Windows/volume montado)
   }
   return outDir;
 }
@@ -137,9 +139,26 @@ async function captureDomHashAndArtifacts(page, name = 'tasks_drawer') {
       const normalizedHtml = rawHtml.replace(/\s+/g, ' ').trim();
       hash = crypto.createHash('sha256').update(normalizedHtml).digest('hex');
       hashFile = path.join(outDir, `dom-${timestamp}.hash.txt`);
-      const content = `SHA-256: ${hash}\nTimestamp: ${new Date().toISOString()}\nTarget: ${name}\n\nHTML:\n${normalizedHtml}`;
+      // Privacidade: por padrão grava somente o hash (a página autenticada pode conter
+      // dados de conta/CSRF). Use PW_DUMP_DOM=true em depuração local para anexar o HTML.
+      const shouldDumpHtml = /^(1|true|on)$/i.test(process.env.PW_DUMP_DOM || '');
+      const content = [
+        `SHA-256: ${hash}`,
+        `Timestamp: ${new Date().toISOString()}`,
+        `Target: ${name}`,
+        `HTML length: ${normalizedHtml.length}`,
+        shouldDumpHtml ? `\nHTML:\n${normalizedHtml}` : ''
+      ]
+        .filter(Boolean)
+        .join('\n');
       await safeWriteFile(hashFile, content, 'utf-8');
       safeChmod600(hashFile);
+      if (shouldDumpHtml) {
+        logger.warn(
+          { hashFile },
+          '[PW_DUMP_DOM=true] HTML normalizado completo gravado no artefato de diagnóstico.'
+        );
+      }
     } catch (err) {
       logger.debug({ err: err.message }, 'Falha ao capturar hash do DOM normalizado.');
     }

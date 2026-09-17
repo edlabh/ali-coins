@@ -112,3 +112,30 @@ test('config.js - isNotify e parseCliOptions com Commander 15', () => {
   const optsNoNotify = parseCliOptions(['node', 'all.js', '--no-notify']);
   assert.strictEqual(optsNoNotify.notify, false);
 });
+
+test('config.js - mensagens PT-BR de validação são preservadas no Zod 4 (opção error)', () => {
+  const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const missing = configSchema.safeParse({});
+    assert.strictEqual(missing.success, false);
+    const missingMessages = missing.error.issues.map((i) => i.message).join(' | ');
+    assert.ok(
+      missingMessages.includes('ALI_USER é obrigatória'),
+      `Mensagem de ALI_USER ausente: ${missingMessages}`
+    );
+    assert.ok(
+      missingMessages.includes('ALI_PASSWORD é obrigatória'),
+      `Mensagem de ALI_PASSWORD ausente: ${missingMessages}`
+    );
+
+    const wrongType = configSchema.safeParse({ ALI_USER: 12345, ALI_PASSWORD: 'pwd' });
+    assert.strictEqual(wrongType.success, false);
+    assert.ok(
+      wrongType.error.issues.some((i) => i.message.includes('deve ser uma string de texto')),
+      'Mensagem de tipo inválido deve ser PT-BR'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

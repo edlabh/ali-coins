@@ -1,5 +1,17 @@
-[allowlist]
-description = "Ignore mock test keys and fixtures in tests directory"
-paths = [
-  '''tests/.*''',
+# Configuração do Gitleaks para o repositório ali-coins.
+# Política: usar as regras padrão com allowlist ESTREITA e comprovadamente fictícia.
+# Nunca allowlistar diretórios inteiros (ex: tests/) — um segredo real commitado
+# em qualquer arquivo deve ser detectado. Exceções futuras devem apontar para
+# arquivo + regra específicos.
+[extend]
+useDefault = true
+
+# Exceções pontuais: valores fictícios usados em testes automatizados.
+# São allowlists por VALOR EXATO (nunca por diretório/arquivo), de modo que
+# qualquer outro segredo — inclusive dentro de tests/ — continua sendo detectado.
+[[allowlists]]
+description = "Segredos fictícios de testes (valores exatos)"
+regexes = [
+  '''secret_key_with_at_least_32_characters_long_12345''',
+  '''curta_demais_123''',
 ]

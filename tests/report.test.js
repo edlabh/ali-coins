@@ -475,3 +475,45 @@ test('libs/report.js - buildMultiAccountReportPayload calcula duration individua
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('report.js - payload multi-conta preserva isImportedSessionExpired para o alerta do Telegram', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { buildMultiAccountReportPayload } = require('../libs/report');
+    const { checkIfImportedSessionExpired } = require('../libs/notify');
+
+    const payload = buildMultiAccountReportPayload([
+      {
+        account: { maskedUser: 'us***@example.com', user: 'user1@example.com' },
+        checkinResult: null,
+        tasksResult: null,
+        error: 'Sessão expirou ou exige login.',
+        isImportedSessionExpired: true,
+        duration: '1s'
+      },
+      {
+        account: { maskedUser: 'ou***@example.com', user: 'user2@example.com' },
+        checkinResult: {
+          alreadyCollected: true,
+          coinsGainedToday: '0',
+          streakDays: 5,
+          totalBalance: '100',
+          duration: '1s'
+        },
+        tasksResult: null,
+        error: null,
+        duration: '1s'
+      }
+    ]);
+
+    assert.strictEqual(payload.accounts[0].isImportedSessionExpired, true);
+    assert.strictEqual(payload.accounts[1].isImportedSessionExpired, false);
+    assert.strictEqual(
+      checkIfImportedSessionExpired(null, payload),
+      true,
+      'Alerta de sessão remota deve ser detectado a partir do relatório multi-conta'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
