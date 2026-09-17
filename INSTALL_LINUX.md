@@ -334,19 +334,67 @@ O daemon `cron` executa tarefas com um ambiente mínimo onde a variável `$PATH`
 ### C. Erro: `SyntaxError: Unexpected token '?'` ou falha no npm
 
 - **Causa:** Você está utilizando uma versão legada do Node.js (como a versão 12 padrão do Ubuntu 22.04).
-- **Solução:** Siga o [Passo 2](#passo-2-instala%C3%A7%C3%A3o-do-nodejs-20-lts) para instalar o **Node.js 20 LTS**.
+- **Solução:** Siga o [Passo 2](#passo-2-instala%C3%A7%C3%A3o-do-nodejs-22-lts) para instalar o **Node.js 22 LTS**.
 
-### D. Servidores com Pouca Memória RAM (VPS de 512 MB ou 1 GB)
+### D. Servidores com Pouca Memória RAM (VPS de 512 MB ou 1 GB - Execução Nativa ou Docker)
 
-- **Causa:** O navegador Chromium pode ser finalizado pelo kernel Linux (_Out of Memory Killer_) se a memória esgotar durante a renderização de páginas pesadas do AliExpress.
-- **Solução:** Crie um arquivo de Swap de 1 GB ou 2 GB:
-  ```bash
-  sudo fallocate -l 2G /swapfile
-  sudo chmod 600 /swapfile
-  sudo mkswap /swapfile
-  sudo swapon /swapfile
-  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-  ```
+Em servidores com 1 GB de RAM (como instâncias gratuitas da Oracle Cloud, AWS t2/t3.micro ou DigitalOcean), o navegador Chromium ou o processo Node.js podem ser finalizados pelo kernel Linux (_Out of Memory Killer - Exit Code 137_) se a memória esgotar durante o carregamento de páginas pesadas.
+
+O projeto inclui otimizações de baixo consumo que funcionam **tanto nativamente no host quanto dentro de containers Docker**:
+
+1. **Ativar Memória Swap de 2 GB no Host (Essencial):**
+
+   ```bash
+   sudo fallocate -l 2G /swapfile
+   sudo chmod 600 /swapfile
+   sudo mkswap /swapfile
+   sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+   ```
+
+   Valide com `free -h` se a linha `Swap:` exibe ~2.0Gi.
+
+2. **Flags de Baixo Consumo do Chromium (Ativadas por Padrão):**
+   O `browser.js` já aplica automaticamente argumentos de redução de footprint em qualquer execução (`./run_all.sh`, `npm start` ou Docker):
+   - `--disable-gpu` e `--disable-software-rasterizer` (desativa GPU em software, economizando ~50–80 MB);
+   - `--renderer-process-limit=1` (restringe a 1 processo de renderização);
+   - `--js-flags=--max-old-space-size=128` (limita a heap V8 interna do Chromium a 128 MB);
+   - `--disk-cache-size=10485760` (limita cache em 10 MB);
+   - Bloqueio de mídias pesadas (`ALLOW_MEDIA=false`).
+     _(Caso deseje desativar em máquinas com muita memória, defina `CHROMIUM_LOW_MEMORY=false`)._
+
+3. **Limitar a Heap do Node.js fora do Docker (`NODE_OPTIONS`):**
+   Para forçar o Garbage Collector do Node.js a coletar lixo antes de atingir o limite de RAM do servidor:
+   - **No terminal:**
+     ```bash
+     export NODE_OPTIONS="--max-old-space-size=192"
+     ./run_all.sh
+     ```
+   - **No Crontab (`crontab -e`):**
+     ```cron
+     NODE_OPTIONS="--max-old-space-size=192"
+     0 8 * * * cd /home/ubuntu/ali-coins && ./run_all.sh >> cron.log 2>&1
+     ```
+
+4. **Reduzir o Custo Criptográfico do `scrypt`:**
+   No `credentials.env`, defina:
+
+   ```env
+   SCRYPT_N=32768
+   ```
+
+   Isso reduz o pico instantâneo de memória da derivação de chave de ~134 MB para apenas ~33 MB (ou `16384` para ~16 MB), mantendo a cifra AES-256-GCM 100% segura.
+
+5. **Em Containers Docker:**
+   Se executar via Docker, a imagem já traz `NODE_OPTIONS="--max-old-space-size=192"` embutido. Ao rodar o container, adicione os limites de cgroups:
+   ```bash
+   docker run --rm --init --pids-limit=256 \
+     --shm-size=256m \
+     --memory=768m --memory-swap=1536m \
+     -v "$PWD/credentials.env:/app/credentials.env:ro" \
+     -v "$PWD/session.json.enc:/app/session.json.enc" \
+     ali-coins:latest
+   ```
 
 ### E. Servidores em Nuvem (Oracle Cloud, AWS, VPS): Desafio de Captcha ou Bloqueio no Login
 

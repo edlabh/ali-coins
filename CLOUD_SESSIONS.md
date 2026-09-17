@@ -266,6 +266,17 @@ Para evitar falhas por memória:
    `CHROMIUM_LOW_MEMORY=false`. Em hosts apertados, `PW_TRACE=off` também reduz CPU/disco
    durante a execução (os screenshots de falha continuam sendo gerados).
 
+6. **Execução nativa fora do Docker em servidores com 1 GB:**
+
+   Todas as flags de baixo consumo do Chromium acima e o alívio de `SCRYPT_N` funcionam
+   **nativamente e de forma idêntica fora do Docker** (via `./run_all.sh` ou `npm start`).
+   Para limitar também o heap do Node.js fora do container, exporte no shell ou adicione ao `crontab -e`:
+
+   ```cron
+   NODE_OPTIONS="--max-old-space-size=192"
+   0 4 * * * cd /home/ubuntu/ali-coins && ./run_all.sh >> cron.log 2>&1
+   ```
+
 ---
 
 ## 8. Agendamento no Cron com Notificações no Telegram

@@ -308,7 +308,7 @@ Os tokens criptografados serão gravados em `session_token.txt` (Conta 1), `sess
 Abra o PowerShell na pasta do projeto e execute (exemplo para rodar diariamente às **08:00**):
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c run_all.bat >> coins_daily.log 2>&1" -WorkingDirectory "$PWD"
+$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c set "NODE_OPTIONS=--max-old-space-size=192" && run_all.bat >> coins_daily.log 2>&1' -WorkingDirectory "$PWD"
 $trigger = New-ScheduledTaskTrigger -Daily -At 8:00AM
 Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Trigger $trigger -Description "Coleta diária de moedas do AliExpress"
 ```
@@ -380,3 +380,29 @@ Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Tri
     - No Prompt de Comando (CMD): `chcp 65001`
     - No PowerShell: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 > $null`
   - Recomendamos também o uso do **Windows Terminal** (nativo no Windows 11 ou instalável via `winget install Microsoft.WindowsTerminal`), que possui suporte moderno e renderização completa de emojis por padrão.
+
+### H. Otimização para Ambientes com Pouca Memória RAM (1 GB a 2 GB ou VMs Windows)
+
+Se você executa a automação em máquinas virtuais Windows compactas ou computadores com pouca memória disponível:
+
+1. **Memória Virtual (Arquivo de Paginação - Pagefile):**
+   - Certifique-se de que o Windows possui arquivo de paginação habilitado e gerenciado pelo sistema (ou fixado em pelo menos 2 GB).
+   - Verifique em: **Configurações > Sistema > Sobre > Configurações avançadas do sistema > Avançado > Desempenho (Configurações) > Avançado > Memória virtual**.
+
+2. **Flags de Baixo Consumo do Chromium Nativas:**
+   - O `browser.js` já aplica por padrão os argumentos `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false` em execuções via `run_all.bat` e `run_all.ps1`.
+
+3. **Limite de Heap do Node.js (`NODE_OPTIONS`):**
+   - Para forçar o Garbage Collector do Node.js a manter o consumo compacto (192 MB):
+     - No Prompt de Comando (CMD):
+       ```cmd
+       set "NODE_OPTIONS=--max-old-space-size=192" && run_all.bat
+       ```
+     - No PowerShell:
+       ```powershell
+       $env:NODE_OPTIONS = "--max-old-space-size=192"
+       .\run_all.ps1
+       ```
+
+4. **Reduzir o Custo Criptográfico do `scrypt`:**
+   - No `credentials.env`, configure `SCRYPT_N=32768` (ou `16384`) para limitar o pico de derivação de chave de ~134 MB para ~33 MB durante a leitura/gravação da sessão `.enc`.

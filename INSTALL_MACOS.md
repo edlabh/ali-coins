@@ -220,6 +220,7 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
    ```cron
    SHELL=/bin/zsh
    PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+   NODE_OPTIONS="--max-old-space-size=192"
 
    0 8 * * * cd /caminho/completo/para/ali-coins && ./run_all.sh >> coins_daily.log 2>&1
    ```
@@ -249,6 +250,11 @@ O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segun
    <dict>
        <key>Label</key>
        <string>com.alicoins.collector</string>
+       <key>EnvironmentVariables</key>
+       <dict>
+           <key>NODE_OPTIONS</key>
+           <string>--max-old-space-size=192</string>
+       </dict>
        <key>ProgramArguments</key>
        <array>
            <string>/bin/zsh</string>
@@ -296,5 +302,23 @@ O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segun
 
 - **Causa:** Em algumas versões do macOS, o binário do Chromium baixado pelo Playwright pode solicitar confirmação de segurança.
 - **Solução:** Vá em **Ajustes do Sistema > Privacidade e Segurança**, role até a seção "Segurança" e clique em **Permitir mesmo assim** caso haja algum aviso referente ao Chromium.
+
+### D. Otimização de Recursos e Baixo Consumo de Memória (Macs com Pouca RAM ou VMs)
+
+Se você executa a automação em máquinas virtuais macOS ou Macs com recursos de memória concorrentes com outros apps pesados:
+
+1. **Flags de Baixo Consumo do Chromium Nativas:**
+   O `browser.js` já ativa por padrão flags de conservação de memória (`--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false`). Funcionam automaticamente via `./run_all.sh` ou `npm start`.
+
+2. **Limite de Heap do Node.js (`NODE_OPTIONS`):**
+   Para forçar o Garbage Collector do Node.js a manter a heap compacta:
+
+   ```bash
+   export NODE_OPTIONS="--max-old-space-size=192"
+   ./run_all.sh
+   ```
+
+3. **Custo Criptográfico do `scrypt`:**
+   No `credentials.env`, configure `SCRYPT_N=32768` (ou `16384`) para limitar o pico de derivação de chave de ~134 MB para ~33 MB durante o carregamento de sessão.
 
 ---
