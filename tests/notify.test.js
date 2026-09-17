@@ -604,3 +604,99 @@ test('libs/notify.js - Bug 15: alertas de multi-conta não atribuem falsamente a
     );
   }
 });
+
+test('libs/notify.js - resolução de duração em notificações unificadas, individuais e multi-conta', () => {
+  const hostname = 'test-host';
+
+  // 1. unified_report com totalDuration preenchido (modo conta única ou individual)
+  const report1 = {
+    type: 'unified_report',
+    user: 'single@example.com',
+    meta: {
+      finalBalance: '1500 moedas',
+      totalCoinsGained: 75,
+      totalDuration: '42s'
+    }
+  };
+  const msg1 = buildMessage({ report: report1, event: 'success', hostname });
+  assert.ok(msg1.includes('⏱️ Duração: 42s'));
+
+  // 2. unified_report com totalDuration='0s' mas com startTime e endTime (recupera duração real)
+  const report2 = {
+    type: 'unified_report',
+    user: 'acc1@example.com',
+    meta: {
+      finalBalance: '1500 moedas',
+      totalCoinsGained: 75,
+      startTime: '2026-09-17T10:00:00.000Z',
+      endTime: '2026-09-17T10:00:38.000Z',
+      totalDuration: '0s'
+    }
+  };
+  const msg2 = buildMessage({ report: report2, event: 'success', hostname });
+  assert.ok(
+    msg2.includes('⏱️ Duração: 38s'),
+    'Deve recuperar duração real a partir de startTime/endTime se totalDuration for 0s'
+  );
+
+  // 3. unified_report com totalDuration ausente/0s mas com checkin.duration e tasks.duration
+  const report3 = {
+    type: 'unified_report',
+    user: 'acc2@example.com',
+    checkin: {
+      duration: '12s'
+    },
+    tasks: {
+      duration: '0s'
+    },
+    meta: {
+      finalBalance: '2000 moedas',
+      totalCoinsGained: 40
+    }
+  };
+  const msg3 = buildMessage({ report: report3, event: 'success', hostname });
+  assert.ok(msg3.includes('⏱️ Duração: 12s'));
+
+  // 4. checkin com duration='0s' mas com startTime e endTime
+  const checkinReport = {
+    type: 'checkin',
+    userEmail: 'user@example.com',
+    alreadyCollected: false,
+    coinsGainedToday: '70',
+    streakDays: 5,
+    totalBalance: '1000',
+    startTime: new Date('2026-09-17T10:00:00Z'),
+    endTime: new Date('2026-09-17T10:00:19Z'),
+    duration: '0s'
+  };
+  const checkinMsg = buildMessage({ report: checkinReport, event: 'success', hostname });
+  assert.ok(checkinMsg.includes('⏱️ Duração: 19s'));
+
+  // 5. tasks com duration='0s' mas com startTime e endTime
+  const tasksReport = {
+    type: 'tasks',
+    userEmail: 'user@example.com',
+    coinsGained: 15,
+    finalBalance: '1015',
+    startTime: new Date('2026-09-17T10:00:00Z'),
+    endTime: new Date('2026-09-17T10:01:02Z'),
+    duration: '0s'
+  };
+  const tasksMsg = buildMessage({ report: tasksReport, event: 'success', hostname });
+  assert.ok(tasksMsg.includes('⏱️ Duração: 1m 02s'));
+
+  // 6. multi_account_report com startTime e endTime no meta
+  const multiReport = {
+    type: 'multi_account_report',
+    accounts: [{ user: 'acc1***@gmail.com', checkin: { streakDays: 10 } }],
+    meta: {
+      totalAccounts: 1,
+      successfulAccounts: 1,
+      startTime: '2026-09-17T10:00:00.000Z',
+      endTime: '2026-09-17T10:01:25.000Z',
+      totalDuration: '0s'
+    }
+  };
+  const multiMsg = buildMessage({ report: multiReport, event: 'success', hostname });
+  assert.ok(multiMsg.includes('⏱️ <b>Duração Total:</b> 1m 25s'));
+});

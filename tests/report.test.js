@@ -363,3 +363,115 @@ test('libs/report.js - Bug 12: buildUnifiedReportPayload zera checkinCoinsGained
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/report.js - buildUnifiedReportPayload resolve totalDuration a partir de mainStartTime e mainEndTime quando ausente ou 0s', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const checkin = {
+      userEmail: 'user@example.com',
+      alreadyCollected: false,
+      coinsGainedToday: '70',
+      streakDays: 10,
+      totalBalance: '1000',
+      duration: '15s'
+    };
+    const tasks = {
+      results: [{ title: 'Task 1', status: 'Concluída' }],
+      coinsGained: 10,
+      finalCoins: '1010 moedas',
+      duration: '25s'
+    };
+
+    // Caso 1: meta sem totalDuration explícito, mas com datas
+    const metaWithDates = {
+      mainStartTime: new Date('2026-09-17T10:00:00Z'),
+      mainEndTime: new Date('2026-09-17T10:00:40Z')
+    };
+    const payload1 = buildUnifiedReportPayload(checkin, tasks, metaWithDates);
+    assert.strictEqual(payload1.meta.totalDuration, '40s');
+    assert.strictEqual(payload1.meta.step1Duration, '15s');
+    assert.strictEqual(payload1.meta.step2Duration, '25s');
+    assert.ok(unifiedReportSchema.safeParse(payload1).success);
+
+    // Caso 2: meta com totalDuration: '0s' deve recalcular usando mainStartTime e mainEndTime
+    const metaWithZero = {
+      mainStartTime: new Date('2026-09-17T10:00:00Z'),
+      mainEndTime: new Date('2026-09-17T10:01:15Z'),
+      totalDuration: '0s'
+    };
+    const payload2 = buildUnifiedReportPayload(checkin, tasks, metaWithZero);
+    assert.strictEqual(payload2.meta.totalDuration, '1m 15s');
+    assert.ok(unifiedReportSchema.safeParse(payload2).success);
+
+    // Caso 3: meta totalmente vazio calcula a partir dos resultados de checkin e tasks
+    const checkinWithDates = {
+      ...checkin,
+      startTime: new Date('2026-09-17T10:00:00Z'),
+      endTime: new Date('2026-09-17T10:00:15Z')
+    };
+    const tasksWithDates = {
+      ...tasks,
+      startTime: new Date('2026-09-17T10:00:15Z'),
+      endTime: new Date('2026-09-17T10:00:55Z')
+    };
+    const payload3 = buildUnifiedReportPayload(checkinWithDates, tasksWithDates, {});
+    assert.strictEqual(payload3.meta.totalDuration, '55s');
+    assert.ok(unifiedReportSchema.safeParse(payload3).success);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - buildMultiAccountReportPayload calcula duration individual e totalDuration', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const accountResults = [
+      {
+        account: { maskedUser: 'acc1***@example.com' },
+        startTime: new Date('2026-09-17T10:00:00Z'),
+        endTime: new Date('2026-09-17T10:00:25Z'),
+        checkinResult: {
+          alreadyCollected: false,
+          coinsGainedToday: '70',
+          streakDays: 5,
+          totalBalance: '500',
+          duration: '10s'
+        },
+        tasksResult: {
+          results: [],
+          finalCoins: '500 moedas',
+          duration: '15s'
+        }
+      },
+      {
+        account: { maskedUser: 'acc2***@example.com' },
+        duration: '35s',
+        checkinResult: {
+          alreadyCollected: true,
+          coinsGainedToday: '0',
+          streakDays: 12,
+          totalBalance: '1200',
+          duration: '5s'
+        },
+        tasksResult: {
+          results: [],
+          finalCoins: '1200 moedas',
+          duration: '30s'
+        }
+      }
+    ];
+
+    const meta = {
+      mainStartTime: new Date('2026-09-17T10:00:00Z'),
+      mainEndTime: new Date('2026-09-17T10:01:05Z')
+    };
+
+    const payload = buildMultiAccountReportPayload(accountResults, meta);
+    assert.strictEqual(payload.accounts[0].duration, '25s');
+    assert.strictEqual(payload.accounts[1].duration, '35s');
+    assert.strictEqual(payload.meta.totalDuration, '1m 05s');
+    assert.ok(multiAccountReportSchema.safeParse(payload).success);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

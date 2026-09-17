@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { formatDate, formatTime } = require('../time_utils');
+const { formatDate, formatTime, formatDuration } = require('../time_utils');
 const logger = require('../logger');
 
 /**
@@ -88,6 +88,7 @@ const multiAccountReportSchema = z.object({
         })
         .nullable(),
       error: z.string().optional(),
+      duration: z.string().optional(),
       meta: z.object({
         finalBalance: z.string(),
         totalCoinsGained: z.union([z.number(), z.string()]).optional(),
@@ -175,6 +176,49 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
 
   const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
 
+  let totalDuration = meta.totalDuration;
+  if (!totalDuration || totalDuration === '0s') {
+    if (meta.mainStartTime && meta.mainEndTime) {
+      const ms = new Date(meta.mainEndTime) - new Date(meta.mainStartTime);
+      if (ms > 0) totalDuration = formatDuration(ms);
+    }
+  }
+  if (!totalDuration || totalDuration === '0s') {
+    if (checkinResult?.startTime && tasksResult?.endTime) {
+      const ms = new Date(tasksResult.endTime) - new Date(checkinResult.startTime);
+      if (ms > 0) totalDuration = formatDuration(ms);
+    } else if (
+      checkinResult?.duration &&
+      checkinResult.duration !== '0s' &&
+      (!tasksResult || !tasksResult.duration || tasksResult.duration === '0s')
+    ) {
+      totalDuration = checkinResult.duration;
+    } else if (
+      tasksResult?.duration &&
+      tasksResult.duration !== '0s' &&
+      (!checkinResult || !checkinResult.duration || checkinResult.duration === '0s')
+    ) {
+      totalDuration = tasksResult.duration;
+    }
+  }
+  if (!totalDuration) {
+    totalDuration = meta.totalDuration || '0s';
+  }
+
+  let step1Duration = meta.step1Duration;
+  if (!step1Duration || step1Duration === '0s') {
+    if (checkinResult?.duration && checkinResult.duration !== '0s') {
+      step1Duration = checkinResult.duration;
+    }
+  }
+
+  let step2Duration = meta.step2Duration;
+  if (!step2Duration || step2Duration === '0s') {
+    if (tasksResult?.duration && tasksResult.duration !== '0s') {
+      step2Duration = tasksResult.duration;
+    }
+  }
+
   return {
     type: 'unified_report',
     user:
@@ -203,9 +247,9 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
     meta: {
       startTime: meta.mainStartTime ? meta.mainStartTime.toISOString() : undefined,
       endTime: meta.mainEndTime ? meta.mainEndTime.toISOString() : undefined,
-      totalDuration: meta.totalDuration,
-      step1Duration: meta.step1Duration,
-      step2Duration: meta.step2Duration,
+      totalDuration,
+      step1Duration,
+      step2Duration,
       finalBalance,
       totalCoinsGained,
       checkinCoinsGained,
@@ -477,6 +521,32 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
 
     const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
 
+    let accountDuration = item.duration;
+    if (!accountDuration || accountDuration === '0s') {
+      if (item.startTime && item.endTime) {
+        const ms = new Date(item.endTime) - new Date(item.startTime);
+        if (ms > 0) accountDuration = formatDuration(ms);
+      }
+    }
+    if (!accountDuration || accountDuration === '0s') {
+      if (checkin?.startTime && tasks?.endTime) {
+        const ms = new Date(tasks.endTime) - new Date(checkin.startTime);
+        if (ms > 0) accountDuration = formatDuration(ms);
+      } else if (
+        checkin?.duration &&
+        checkin.duration !== '0s' &&
+        (!tasks || !tasks.duration || tasks.duration === '0s')
+      ) {
+        accountDuration = checkin.duration;
+      } else if (
+        tasks?.duration &&
+        tasks.duration !== '0s' &&
+        (!checkin || !checkin.duration || checkin.duration === '0s')
+      ) {
+        accountDuration = tasks.duration;
+      }
+    }
+
     return {
       user: item.account ? item.account.maskedUser : item.user || 'Desconhecido',
       checkin: checkin
@@ -500,6 +570,7 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
           }
         : null,
       error: item.error || undefined,
+      duration: accountDuration,
       meta: {
         finalBalance,
         totalCoinsGained,
@@ -511,13 +582,21 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
 
   const successfulAccounts = accountResults.filter((a) => !a.error).length;
 
+  let totalDuration = meta.totalDuration;
+  if (!totalDuration || totalDuration === '0s') {
+    if (meta.mainStartTime && meta.mainEndTime) {
+      const ms = new Date(meta.mainEndTime) - new Date(meta.mainStartTime);
+      if (ms > 0) totalDuration = formatDuration(ms);
+    }
+  }
+
   return {
     type: 'multi_account_report',
     accounts,
     meta: {
       startTime: meta.mainStartTime ? meta.mainStartTime.toISOString() : undefined,
       endTime: meta.mainEndTime ? meta.mainEndTime.toISOString() : undefined,
-      totalDuration: meta.totalDuration,
+      totalDuration,
       totalAccounts: accountResults.length,
       successfulAccounts
     }

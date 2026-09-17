@@ -1,6 +1,6 @@
 const fs = require('fs');
 const os = require('os');
-const { formatDate, formatDateTime } = require('../time_utils');
+const { formatDate, formatDateTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
 const logger = require('../logger');
 
@@ -351,8 +351,15 @@ function buildMessage({
     }
 
     lines.push('');
-    if (report.meta?.totalDuration) {
-      lines.push(`⏱️ <b>Duração Total:</b> ${escapeHtml(report.meta.totalDuration)}`);
+    let multiTotalDuration = report.meta?.totalDuration;
+    if (!multiTotalDuration || multiTotalDuration === '0s') {
+      if (report.meta?.startTime && report.meta?.endTime) {
+        const ms = new Date(report.meta.endTime) - new Date(report.meta.startTime);
+        if (ms > 0) multiTotalDuration = formatDuration(ms);
+      }
+    }
+    if (multiTotalDuration && multiTotalDuration !== '0s') {
+      lines.push(`⏱️ <b>Duração Total:</b> ${escapeHtml(multiTotalDuration)}`);
     }
     if (checkIfImportedSessionExpired(error, report)) {
       lines.push('');
@@ -441,7 +448,34 @@ function buildMessage({
       saldoDisplay = String(rawBalance).includes('moedas') ? rawBalance : `${rawBalance} moedas`;
     }
 
-    const totalDuration = report.meta?.totalDuration || '0s';
+    let totalDuration = report.meta?.totalDuration;
+    if (!totalDuration || totalDuration === '0s') {
+      if (report.meta?.startTime && report.meta?.endTime) {
+        const ms = new Date(report.meta.endTime) - new Date(report.meta.startTime);
+        if (ms > 0) totalDuration = formatDuration(ms);
+      }
+    }
+    if (!totalDuration || totalDuration === '0s') {
+      if (report.duration && report.duration !== '0s') {
+        totalDuration = report.duration;
+      } else if (report.checkin?.startTime && report.tasks?.endTime) {
+        const ms = new Date(report.tasks.endTime) - new Date(report.checkin.startTime);
+        if (ms > 0) totalDuration = formatDuration(ms);
+      } else if (
+        report.checkin?.duration &&
+        report.checkin.duration !== '0s' &&
+        (!report.tasks || !report.tasks.duration || report.tasks.duration === '0s')
+      ) {
+        totalDuration = report.checkin.duration;
+      } else if (
+        report.tasks?.duration &&
+        report.tasks.duration !== '0s' &&
+        (!report.checkin || !report.checkin.duration || report.checkin.duration === '0s')
+      ) {
+        totalDuration = report.tasks.duration;
+      }
+    }
+    if (!totalDuration) totalDuration = '0s';
 
     const lines = [
       `${titleEmoji} ali-coins — ${reportDate}`,
@@ -485,7 +519,14 @@ function buildMessage({
         : `${report.totalBalance} moedas`;
     }
 
-    const duration = report.duration || '0s';
+    let duration = report.duration;
+    if (!duration || duration === '0s') {
+      if (report.startTime && report.endTime) {
+        const ms = new Date(report.endTime) - new Date(report.startTime);
+        if (ms > 0) duration = formatDuration(ms);
+      }
+    }
+    if (!duration) duration = '0s';
 
     const lines = [
       `${titleEmoji} ali-coins — ${reportDate}`,
@@ -518,7 +559,14 @@ function buildMessage({
         : `${report.finalBalance} moedas`;
     }
 
-    const duration = report.duration || '0s';
+    let duration = report.duration;
+    if (!duration || duration === '0s') {
+      if (report.startTime && report.endTime) {
+        const ms = new Date(report.endTime) - new Date(report.startTime);
+        if (ms > 0) duration = formatDuration(ms);
+      }
+    }
+    if (!duration) duration = '0s';
 
     const lines = [
       `${titleEmoji} ali-coins — ${reportDate}`,

@@ -322,6 +322,12 @@ async function main() {
           `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser}`
         );
 
+        const accStartTime = new Date();
+        let accStep1Duration = '0s';
+        let accStep2Duration = '0s';
+        let accEndTime = null;
+        let accTotalDuration = '0s';
+
         // Garante isolamento estrito de cookies e storage fechando contextos remanescentes
         if (browser && typeof browser.contexts === 'function') {
           for (const ctx of browser.contexts()) {
@@ -335,6 +341,8 @@ async function main() {
           allAccountsLocked = false;
         } catch (err) {
           consecutiveFailures++;
+          accEndTime = new Date();
+          accTotalDuration = formatDuration(accEndTime - accStartTime);
           if (err instanceof LockActiveError) {
             logger.warn(
               { account: account.maskedUser },
@@ -345,7 +353,10 @@ async function main() {
               user: account.maskedUser,
               checkinResult: null,
               tasksResult: null,
-              error: 'Lock ativo por outro processo'
+              error: 'Lock ativo por outro processo',
+              duration: accTotalDuration,
+              startTime: accStartTime,
+              endTime: accEndTime
             });
             if (i < accounts.length - 1) {
               const backoffMs = calculateAccountBackoff(consecutiveFailures - 1);
@@ -366,7 +377,10 @@ async function main() {
             user: account.maskedUser,
             checkinResult: null,
             tasksResult: null,
-            error: err.message
+            error: err.message,
+            duration: accTotalDuration,
+            startTime: accStartTime,
+            endTime: accEndTime
           });
           if (i < accounts.length - 1) {
             const backoffMs = calculateAccountBackoff(consecutiveFailures - 1);
@@ -389,7 +403,13 @@ async function main() {
         try {
           // Etapa 1: Check-in
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Check-in Diário...`);
+          const accStep1StartTime = new Date();
           accCheckin = await runCheckin({ browser, account, skipReport: true });
+          const accStep1EndTime = new Date();
+          accStep1Duration = formatDuration(accStep1EndTime - accStep1StartTime);
+          logger.info(
+            `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Concluída em ${formatDateTime(accStep1EndTime)} | Duração: ${accStep1Duration}`
+          );
 
           const accCurrentStreak =
             typeof accCheckin?.streakDays === 'number'
@@ -420,6 +440,7 @@ async function main() {
 
           // Etapa 2: Tarefas
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Tarefas Diárias...`);
+          const accStep2StartTime = new Date();
           try {
             accTasks = await runTasks({
               browser,
@@ -435,6 +456,11 @@ async function main() {
               'Aviso na etapa de tarefas.'
             );
           }
+          const accStep2EndTime = new Date();
+          accStep2Duration = formatDuration(accStep2EndTime - accStep2StartTime);
+          logger.info(
+            `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Concluída em ${formatDateTime(accStep2EndTime)} | Duração: ${accStep2Duration}`
+          );
 
           anyAccountSuccess = true;
           consecutiveFailures = 0;
@@ -443,8 +469,13 @@ async function main() {
           if (hadNewCheckin || hadTaskActions) {
             anyAccountHadNewAction = true;
           }
+
+          accEndTime = new Date();
+          accTotalDuration = formatDuration(accEndTime - accStartTime);
         } catch (accErr) {
           consecutiveFailures++;
+          accEndTime = new Date();
+          accTotalDuration = formatDuration(accEndTime - accStartTime);
           accError = accErr.message;
           accImportedExpired = Boolean(accErr.isImportedSessionExpired);
           if (accErr.name === 'TwoFactorRequiredNonInteractive' || accErr.is2FARequired) {
@@ -488,11 +519,11 @@ async function main() {
           try {
             const accPayload = buildUnifiedReportPayload(accCheckin, accTasks, {
               user: account.maskedUser,
-              mainStartTime: new Date(),
-              mainEndTime: new Date(),
-              totalDuration: '0s',
-              step1Duration: '0s',
-              step2Duration: '0s'
+              mainStartTime: accStartTime,
+              mainEndTime: accEndTime || new Date(),
+              totalDuration: accTotalDuration,
+              step1Duration: accStep1Duration,
+              step2Duration: accStep2Duration
             });
             const accEvent = accIs2FARequired
               ? '2fa_required'
@@ -526,7 +557,10 @@ async function main() {
           error: accError,
           isImportedSessionExpired: accImportedExpired,
           is2FARequired: accIs2FARequired,
-          streakBroken: accStreakBroken
+          streakBroken: accStreakBroken,
+          startTime: accStartTime,
+          endTime: accEndTime || new Date(),
+          duration: accTotalDuration
         });
       }
 
