@@ -21,6 +21,7 @@ const { sendTelegram } = require('./libs/notify');
 const { sendHeartbeat } = require('./libs/heartbeat');
 const { startAccountTimer } = require('./libs/timing');
 const { setupGlobalCrashHandler } = require('./libs/crash');
+const { flushAndExit } = require('./libs/exit');
 const logger = require('./logger');
 
 let currentConfig = null;
@@ -34,12 +35,12 @@ setupGlobalCrashHandler(() => ({
 
 async function main() {
   if (checkAndDisplayHelp()) {
-    process.exit(0);
+    await flushAndExit(0);
   }
 
   // 1. Suporte a validação sem abrir navegador
   if (await handleDryRun()) {
-    process.exit(0);
+    await flushAndExit(0);
   }
 
   const { runCheckin } = require('./collect');
@@ -71,7 +72,7 @@ async function main() {
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de lock.');
         }
-        process.exit(3);
+        await flushAndExit(3);
       }
       logger.error({ err: err.message }, 'Falha ao adquirir lock exclusivo.');
       try {
@@ -86,7 +87,7 @@ async function main() {
       } catch (tgErr) {
         logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
       }
-      process.exit(1);
+      await flushAndExit(1);
     }
   }
 
@@ -144,7 +145,7 @@ async function main() {
           } catch (tgErr) {
             logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de 2FA.');
           }
-          process.exit(5);
+          await flushAndExit(5);
         }
         if (err.isImportedSessionExpired) {
           logger.error(
@@ -167,7 +168,7 @@ async function main() {
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
         }
-        process.exit(1);
+        await flushAndExit(1);
       }
 
       const step1EndTime = new Date();
@@ -189,7 +190,7 @@ async function main() {
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
         }
-        process.exit(1);
+        await flushAndExit(1);
       }
 
       logger.info(
@@ -310,15 +311,15 @@ async function main() {
           ),
           report: unifiedPayload
         });
-        process.exit(4);
+        await flushAndExit(4);
       }
 
       await sendHeartbeat('success', { config, report: unifiedPayload });
 
       if (!hadNewCheckin && !hadTaskActions) {
-        process.exit(2);
+        await flushAndExit(2);
       }
-      process.exit(0);
+      await flushAndExit(0);
     } else {
       // ----------------- FLUXO MULTI-CONTA SEQUENCIAL -----------------
       const accountReports = [];
@@ -612,7 +613,7 @@ async function main() {
           error: new Error('Todas as contas estavam com lock ativo'),
           report: multiPayload
         });
-        process.exit(3);
+        await flushAndExit(3);
       }
       if (anyAccountStreakBroken) {
         await sendHeartbeat('fail', {
@@ -620,7 +621,7 @@ async function main() {
           error: new Error('Streak quebrado em conta multi-conta'),
           report: multiPayload
         });
-        process.exit(4);
+        await flushAndExit(4);
       }
       if (anyAccount2FARequired && !anyAccountSuccess) {
         await sendHeartbeat('fail', {
@@ -628,7 +629,7 @@ async function main() {
           error: new Error('2FA requerido em ambiente não-interativo'),
           report: multiPayload
         });
-        process.exit(5);
+        await flushAndExit(5);
       }
       if (!anyAccountSuccess) {
         await sendHeartbeat('fail', {
@@ -636,15 +637,15 @@ async function main() {
           error: new Error('Todas as contas falharam na execução'),
           report: multiPayload
         });
-        process.exit(1);
+        await flushAndExit(1);
       }
 
       await sendHeartbeat('success', { config, report: multiPayload });
 
       if (!anyAccountHadNewAction) {
-        process.exit(2);
+        await flushAndExit(2);
       }
-      process.exit(0);
+      await flushAndExit(0);
     }
   } catch (fatalErr) {
     await sendHeartbeat('fail', { config, error: fatalErr });
@@ -662,7 +663,7 @@ async function main() {
           'Falha ao enviar notificação Telegram em erro fatal 2FA.'
         );
       }
-      process.exit(5);
+      await flushAndExit(5);
     }
     if (fatalErr.isImportedSessionExpired) {
       logger.error(
@@ -676,7 +677,7 @@ async function main() {
     } catch (tgErr) {
       logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram em erro fatal.');
     }
-    process.exit(1);
+    await flushAndExit(1);
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
@@ -688,9 +689,9 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
+  main().catch(async (err) => {
     logger.error({ err: err.message }, 'Erro não tratado no processo principal.');
-    process.exit(1);
+    await flushAndExit(1);
   });
 }
 

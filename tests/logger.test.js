@@ -58,3 +58,43 @@ test('logger.js - sanitiza parâmetros de busca e tokens de bots sensíveis', ()
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('logger.js - mascara chaves sensíveis por prefixo/sufixo e em objetos aninhados', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const script = `
+      process.argv.push('--json');
+      const logger = require('./logger');
+      logger.info({
+        my_secret_field: 'VALOR_TOPSECRET',
+        userToken: 'VALOR_USERTOKEN',
+        nested: { apiKey: 'VALOR_APIKEY', cookie: 'VALOR_COOKIE', safeField: 'VALOR_SEGURO' },
+        password: 'VALOR_PASSWORD'
+      }, 'teste de scrub');
+    `;
+
+    const res = spawnSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8'
+    });
+
+    assert.strictEqual(res.status, 0);
+    for (const value of [
+      'VALOR_TOPSECRET',
+      'VALOR_USERTOKEN',
+      'VALOR_APIKEY',
+      'VALOR_COOKIE',
+      'VALOR_PASSWORD'
+    ]) {
+      assert.strictEqual(
+        res.stderr.includes(value),
+        false,
+        `Valor sensível "${value}" não deve aparecer no log`
+      );
+    }
+    assert.ok(res.stderr.includes('VALOR_SEGURO'), 'Campos não sensíveis devem ser preservados');
+    assert.ok(res.stderr.includes('[REDACTED]'), 'Valores sensíveis devem ser mascarados');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

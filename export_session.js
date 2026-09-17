@@ -11,6 +11,7 @@ const {
   isShowToken
 } = require('./config');
 const { encryptSession, safeWriteFile, safeChmod600, validateSession } = require('./security');
+const { flushAndExit } = require('./libs/exit');
 const logger = require('./logger');
 
 // Carregar variáveis de ambiente do credentials.env de forma silenciosa
@@ -264,7 +265,8 @@ async function exportAllSessions(options = {}) {
 if (require.main === module) {
   const { checkAndDisplayHelp, isAll, getAccountArg, loadAccounts } = require('./config');
   if (checkAndDisplayHelp()) {
-    process.exit(0);
+    flushAndExit(0);
+    return;
   }
 
   const args = process.argv.slice(2);
@@ -285,11 +287,11 @@ if (require.main === module) {
     rotateSessionSecret({ oldSecret, newSecret })
       .then((res) => {
         logger.info(res, '[SUCESSO] Rotação de chave de sessão concluída com sucesso!');
-        process.exit(0);
+        flushAndExit(0);
       })
       .catch((err) => {
         logger.error({ err: err.message }, 'Falha na rotação de chave de sessão.');
-        process.exit(1);
+        flushAndExit(1);
       });
   } else {
     const accounts = loadAccounts(process.env, __dirname);
@@ -299,33 +301,33 @@ if (require.main === module) {
     if (accountArg) {
       exportSession({ account: accountArg })
         .then(() => {
-          process.exit(0);
+          flushAndExit(0);
         })
         .catch((err) => {
           logger.error({ err: err.message }, 'Falha na exportação da sessão.');
-          process.exit(1);
+          flushAndExit(1);
         });
     } else if (allFlag || accounts.length > 1) {
       exportAllSessions()
         .then((res) => {
           if (res.length === 0) {
             logger.warn('Nenhuma sessão ativa encontrada para exportar.');
-            process.exit(1);
+            flushAndExit(1);
           }
-          process.exit(0);
+          flushAndExit(0);
         })
         .catch((err) => {
           logger.error({ err: err.message }, 'Falha na exportação multi-conta.');
-          process.exit(1);
+          flushAndExit(1);
         });
     } else {
       exportSession()
         .then(() => {
-          process.exit(0);
+          flushAndExit(0);
         })
         .catch((err) => {
           logger.error({ err: err.message }, 'Falha na exportação da sessão.');
-          process.exit(1);
+          flushAndExit(1);
         });
     }
   }

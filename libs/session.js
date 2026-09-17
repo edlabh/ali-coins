@@ -85,10 +85,21 @@ async function loadSessionFiles(options = {}) {
   let sessionData = null;
   let metaData = null;
 
-  // 1. Tentar ler arquivo criptografado .enc se existir
+  // 1. Tentar ler arquivo criptografado .enc se existir.
+  // Erros de I/O (EACCES/EMFILE/EINTR) NUNCA removem o arquivo: apenas falhas de
+  // parse/autenticação são definitivas, pois podem ser transitórias.
   if (fs.existsSync(encPath)) {
+    let encryptedContent = null;
     try {
-      const encryptedContent = await fs.promises.readFile(encPath, 'utf-8');
+      encryptedContent = await fs.promises.readFile(encPath, 'utf-8');
+    } catch (readErr) {
+      logger.warn(
+        { err: readErr.message },
+        'Falha temporária de leitura de session.json.enc. Arquivo preservado para nova tentativa.'
+      );
+    }
+
+    if (encryptedContent !== null) {
       if (secret && secret.length >= 32) {
         try {
           const decrypted = decryptSession(encryptedContent, secret);
@@ -114,7 +125,7 @@ async function loadSessionFiles(options = {}) {
           } else {
             logger.warn(
               { err: decryptErr.message },
-              'Falha ao descriptografar session.json.enc com SESSION_SECRET atual.'
+              'Falha ao descriptografar session.json.enc com SESSION_SECRET atual. Arquivo preservado.'
             );
           }
         }
@@ -123,44 +134,77 @@ async function loadSessionFiles(options = {}) {
           'Arquivo session.json.enc detectado mas SESSION_SECRET não configurado (ou < 32 chars). Não é possível descriptografar.'
         );
       }
-    } catch {
-      logger.warn('Arquivo session.json.enc corrompido ou ilegível. Removendo...');
-      await fs.promises.unlink(encPath).catch(() => {});
     }
   }
 
   // 2. Fallback: ler arquivo legado em texto plano (session.json)
   if (!sessionData && fs.existsSync(sPath)) {
+    let plainContent = null;
     try {
-      const content = await fs.promises.readFile(sPath, 'utf-8');
-      sessionData = JSON.parse(content);
+      plainContent = await fs.promises.readFile(sPath, 'utf-8');
+    } catch (readErr) {
+      logger.warn(
+        { err: readErr.message },
+        'Falha temporária de leitura de session.json. Arquivo preservado para nova tentativa.'
+      );
+    }
 
-      // Se criptografia está habilitada e autoMigrate permitida, migrar para .enc
-      const autoMigrate = options.autoMigrate !== false;
-      if (shouldEncrypt && sessionData && autoMigrate) {
-        logger.info(
-          'Migrando sessão legada em texto claro (session.json) para formato criptografado at-rest (session.json.enc)...'
+    if (plainContent !== null) {
+      let parsedPlain = null;
+      try {
+        parsedPlain = JSON.parse(plainContent);
+      } catch {
+        logger.warn(
+          'Arquivo session.json inválido (JSON malformado). Arquivo preservado sem exclusão automática.'
         );
-        const encrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
-        await safeWriteFile(encPath, encrypted, 'utf-8');
-        safeChmod600(encPath);
-        // Remover o arquivo em texto puro após migração segura
-        await fs.promises.unlink(sPath).catch(() => {});
       }
-    } catch {
-      logger.warn('Arquivo session.json corrompido ou inválido. Removendo...');
-      await fs.promises.unlink(sPath).catch(() => {});
+
+      if (parsedPlain) {
+        sessionData = parsedPlain;
+
+        // Se criptografia está habilitada e autoMigrate permitida, migrar para .enc
+        const autoMigrate = options.autoMigrate !== false;
+        if (shouldEncrypt && autoMigrate) {
+          logger.info(
+            'Migrando sessão legada em texto claro (session.json) para formato criptografado at-rest (session.json.enc)...'
+          );
+          try {
+            const encrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
+            await safeWriteFile(encPath, encrypted, 'utf-8');
+            safeChmod600(encPath);
+            // Remover o arquivo em texto puro SOMENTE após a migração ser concluída com sucesso
+            await fs.promises.unlink(sPath).catch(() => {});
+          } catch (migrateErr) {
+            logger.warn(
+              { err: migrateErr.message },
+              'Falha ao migrar session.json para .enc. Arquivo em texto claro preservado.'
+            );
+          }
+        }
+      }
     }
   }
 
-  // 3. Ler metadados
+  // 3. Ler metadados (mesma política não-destrutiva para erros de I/O)
   if (fs.existsSync(mPath)) {
+    let metaContent = null;
     try {
-      const content = await fs.promises.readFile(mPath, 'utf-8');
-      metaData = JSON.parse(content);
-    } catch {
-      logger.warn('Arquivo session_meta.json corrompido ou inválido. Removendo...');
-      await fs.promises.unlink(mPath).catch(() => {});
+      metaContent = await fs.promises.readFile(mPath, 'utf-8');
+    } catch (readErr) {
+      logger.warn(
+        { err: readErr.message },
+        'Falha temporária de leitura de session_meta.json. Arquivo preservado para nova tentativa.'
+      );
+    }
+
+    if (metaContent !== null) {
+      try {
+        metaData = JSON.parse(metaContent);
+      } catch {
+        logger.warn(
+          'Arquivo session_meta.json inválido (JSON malformado). Arquivo preservado sem exclusão automática.'
+        );
+      }
     }
   }
 

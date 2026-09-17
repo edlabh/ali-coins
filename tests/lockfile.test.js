@@ -104,3 +104,185 @@ test('lockfile.js - lock órfão (stale timeout) é removido automaticamente iso
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+const { spawn } = require('child_process');
+
+function runNodeChild(script, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', script], {
+      cwd: path.resolve(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`Timeout de ${timeoutMs}ms aguardando processo filho. stdout=${stdout}`));
+    }, timeoutMs);
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal, stdout, stderr });
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+test('lockfile.js - criação atômica impede dupla aquisição sob concorrência real', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-race-');
+  const tmpLockPath = path.join(tmpDir, 'race.lock');
+  const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
+
+  const childScript = `
+    const { acquireLock } = require(${JSON.stringify(lockModule)});
+    acquireLock(false, 60000, ${JSON.stringify(tmpLockPath)})
+      .then(async (release) => {
+        process.stdout.write('ACQUIRED\\n');
+        await new Promise((r) => setTimeout(r, 1200));
+        await release();
+        process.exit(0);
+      })
+      .catch((err) => {
+        process.stdout.write('BLOCKED:' + (err.code || err.message) + '\\n');
+        process.exit(3);
+      });
+  `;
+
+  try {
+    const results = await Promise.all(Array.from({ length: 6 }, () => runNodeChild(childScript)));
+    const acquired = results.filter((r) => r.stdout.includes('ACQUIRED'));
+    const blocked = results.filter((r) => r.stdout.includes('LOCK_ACTIVE'));
+
+    assert.strictEqual(
+      acquired.length,
+      1,
+      `Apenas 1 processo deve adquirir o lock (obtidos: ${acquired.length}). Saídas: ${results
+        .map((r) => r.stdout.trim())
+        .join(' | ')}`
+    );
+    assert.strictEqual(blocked.length, 5, 'Os demais processos devem receber LOCK_ACTIVE');
+    assert.strictEqual(
+      fs.existsSync(tmpLockPath),
+      false,
+      'Lock deve ser removido após a liberação do vencedor'
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test(
+  'lockfile.js - SIGINT libera o lock e encerra o processo (sem travar em segundo plano)',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const realFilesSnapshot = snapshotRealFiles();
+    const tmpDir = createIsolatedTestDir('lockfile-sigint-');
+    const tmpLockPath = path.join(tmpDir, 'sigint.lock');
+    const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
+
+    const childScript = `
+      const { acquireLock } = require(${JSON.stringify(lockModule)});
+      acquireLock(false, 60000, ${JSON.stringify(tmpLockPath)}).then((release) => {
+        process.stdout.write('LOCK_OK\\n');
+        setInterval(() => {}, 1000);
+      });
+    `;
+
+    const child = spawn(process.execPath, ['-e', childScript], {
+      cwd: path.resolve(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error('Timeout aguardando LOCK_OK do processo filho')),
+          10000
+        );
+        child.stdout.on('data', (d) => {
+          if (d.toString().includes('LOCK_OK')) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        child.on('close', () => {
+          clearTimeout(timer);
+          reject(new Error('Processo filho encerrou antes de LOCK_OK'));
+        });
+      });
+
+      assert.ok(fs.existsSync(tmpLockPath), 'Lock deve existir antes do sinal');
+
+      const closed = new Promise((resolve) => {
+        child.on('close', (code, signal) => resolve({ code, signal }));
+      });
+      child.kill('SIGINT');
+
+      const outcome = await Promise.race([
+        closed,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Processo não encerrou após SIGINT (bug regressivo)')),
+            8000
+          )
+        )
+      ]);
+
+      assert.ok(
+        outcome.signal === 'SIGINT' || outcome.code === 130 || outcome.code === 1,
+        `Processo deve encerrar via SIGINT (code=${outcome.code}, signal=${outcome.signal})`
+      );
+      assert.strictEqual(
+        fs.existsSync(tmpLockPath),
+        false,
+        'Lock deve ser liberado antes do encerramento'
+      );
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      cleanupIsolatedTestDir(tmpDir);
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);
+
+test(
+  'lockfile.js - symlink malicioso no caminho do lock não é seguido nem sobrescreve o alvo',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const realFilesSnapshot = snapshotRealFiles();
+    const tmpDir = createIsolatedTestDir('lockfile-symlink-');
+    const victimPath = path.join(tmpDir, 'victim.txt');
+    const tmpLockPath = path.join(tmpDir, 'symlink.lock');
+    const victimContent = 'CONTEUDO_CRITICO_QUE_NAO_PODE_SER_TRUNCADO';
+
+    try {
+      fs.writeFileSync(victimPath, victimContent, 'utf-8');
+      fs.symlinkSync(victimPath, tmpLockPath);
+
+      const release = await acquireLock(false, null, tmpLockPath);
+      assert.strictEqual(
+        fs.readFileSync(victimPath, 'utf-8'),
+        victimContent,
+        'Arquivo alvo do symlink não pode ser alterado/truncado'
+      );
+      assert.ok(
+        !fs.lstatSync(tmpLockPath).isSymbolicLink(),
+        'Symlink deve ser substituído por lock real'
+      );
+      await release();
+    } finally {
+      cleanupIsolatedTestDir(tmpDir);
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);

@@ -5,6 +5,20 @@ Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
 e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.9.4] - 2026-09-17
+
+### Corrigido
+
+- **Aquisição Atômica do Lockfile (`acquireLock`):** Eliminação da janela TOCTOU (_time-of-check to time-of-use_) que permitia duas instâncias adquirirem o mesmo lock simultaneamente sob concorrência real (reproduzido em 2/25 execuções com 6 processos). A criação agora usa a flag exclusiva `wx` (`O_CREAT|O_EXCL`) com `fsync`, inspeção de lock existente e até 5 tentativas após remoção de locks órfãos/stale. Adicionada defesa contra symlink no caminho do lock: o link é removido sem nunca seguir o alvo (impedindo truncamento malicioso de arquivos em `/tmp`).
+- **Encerramento Correto em SIGINT/SIGTERM:** Os handlers de sinal do lockfile não suprimem mais o comportamento padrão do Node. Ao receber `SIGINT`/`SIGTERM`, o lock é liberado, os listeners são removidos e o sinal é reemitido, encerrando o processo imediatamente (antes, o processo permanecia vivo em segundo plano com o Chromium em execução). Após liberação normal do lock, os listeners também são removidos, restaurando o `Ctrl+C` padrão.
+- **Flush de stdout/stderr Antes do Encerramento (`libs/exit.js`):** Novo helper `flushAndExit()` aguarda o flush físico de `stdout`/`stderr` antes de chamar `process.exit()`. Elimina o truncamento silencioso de relatórios JSON e tokens (`--json`, `--show-token`) no limite do buffer de pipe (~64 KB), mantendo os exit codes 0–6 inalterados.
+- **Mascaramento de Segredos no Logger (`redact` + scrub recursivo):** Caminhos inválidos do fast-redact (`*secret*`, `*passwd*`) foram substituídos por caminhos válidos e uma varredura recursiva (`scrubSensitiveFields`) passou a mascarar chaves sensíveis por prefixo/sufixo (`my_secret_field`, `userToken`, `apiKey`, objetos aninhados) sem mutar o objeto original do chamador.
+- **Leitura Não-Destrutiva de Sessões (`loadSessionFiles`):** Erros transitórios de I/O (`EACCES`/`EMFILE`/`EINTR`) não removem mais `session.json.enc`, `session.json` ou `session_meta.json`. A remoção de arquivos só ocorre quando a migração é concluída com sucesso; JSON malformado é preservado para diagnóstico em vez de excluído automaticamente.
+
+### Adicionado
+
+- **Testes de Regressão de Concorrência e Encerramento:** Cobertura dedicada para dupla aquisição sob 6 processos concorrentes, defesa contra symlink, encerramento por `SIGINT` com liberação de lock, ausência de truncamento de `stdout` acima de 64 KB, scrub de chaves sensíveis e preservação de arquivos de sessão sob `EACCES`/JSON malformado/falha de migração (171 testes no total).
+
 ## [0.9.3] - 2026-09-17
 
 ### Corrigido

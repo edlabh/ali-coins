@@ -9,6 +9,7 @@ const {
 const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
 const { acquireLock, LockActiveError } = require('./lockfile');
+const { flushAndExit } = require('./libs/exit');
 const {
   validateAndRefresh,
   saveSession,
@@ -427,12 +428,13 @@ if (require.main === module) {
   setupGlobalCrashHandler(() => ({ config: cfg, scriptName: 'collect.js' }));
 
   if (checkAndDisplayHelp()) {
-    process.exit(0);
+    void flushAndExit(0);
+    return;
   }
 
   (async () => {
     if (await handleDryRun()) {
-      process.exit(0);
+      await flushAndExit(0);
     }
 
     const { sendTelegram } = require('./libs/notify');
@@ -448,11 +450,11 @@ if (require.main === module) {
     } catch (err) {
       if (err instanceof LockActiveError) {
         await sendTelegram({ config: cfg, event: 'lock_active', error: err }).catch(() => {});
-        process.exit(3);
+        await flushAndExit(3);
       }
       logger.error({ err: err.message }, 'Falha ao obter lock.');
       await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
-      process.exit(1);
+      await flushAndExit(1);
     }
 
     try {
@@ -462,9 +464,9 @@ if (require.main === module) {
       const event = result && result.alreadyCollected ? 'already_collected' : 'success';
       await sendTelegram({ config: cfg, report, event }).catch(() => {});
       if (result && result.alreadyCollected) {
-        process.exit(2);
+        await flushAndExit(2);
       }
-      process.exit(0);
+      await flushAndExit(0);
     } catch (err) {
       if (releaseLock) await releaseLock();
       if (err.isImportedSessionExpired) {
@@ -474,7 +476,7 @@ if (require.main === module) {
       }
       logger.error({ err: err.message }, 'Falha no check-in diário.');
       await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
-      process.exit(1);
+      await flushAndExit(1);
     }
   })();
 }

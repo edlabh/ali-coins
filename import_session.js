@@ -10,6 +10,7 @@ const {
   safeChmod600
 } = require('./security');
 const { resolveSessionPaths, getEncryptionConfig } = require('./libs/session');
+const { flushAndExit } = require('./libs/exit');
 const logger = require('./logger');
 
 // Carregar variáveis de ambiente do credentials.env de forma silenciosa
@@ -421,7 +422,8 @@ async function importAllSessions(options = {}) {
 if (require.main === module) {
   const { checkAndDisplayHelp, isAll, getAccountArg } = require('./config');
   if (checkAndDisplayHelp()) {
-    process.exit(0);
+    flushAndExit(0);
+    return;
   }
 
   const allFlag = isAll();
@@ -431,11 +433,11 @@ if (require.main === module) {
 
   runPromise
     .then(() => {
-      process.exit(0);
+      flushAndExit(0);
     })
     .catch((err) => {
       logger.error({ err: err.message }, 'Falha na importação da sessão.');
-      process.exit(1);
+      flushAndExit(1);
     });
 }
 

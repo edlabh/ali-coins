@@ -649,3 +649,95 @@ test('libs/session.js - getEncryptionConfig e tratamento de erros em loadSession
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test(
+  'libs/session.js - erro de I/O (EACCES) preserva session.json.enc e metadados sem exclusão',
+  { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) },
+  async () => {
+    const realFilesSnapshot = snapshotRealFiles();
+    const tmpDir = createIsolatedTestDir('session-eacces-');
+
+    const encFile = path.join(tmpDir, 'session.json.enc');
+    const metaFile = path.join(tmpDir, 'session_meta.json');
+
+    try {
+      const payload = JSON.stringify({
+        session: {
+          cookies: [{ name: 'xman_us_t', value: 'abc', expires: 0 }]
+        },
+        meta: { user: 'user@example.com' }
+      });
+      fs.writeFileSync(encFile, encryptSession(payload, TEST_SECRET_1), 'utf-8');
+      fs.writeFileSync(metaFile, JSON.stringify({ user: 'user@example.com' }), 'utf-8');
+
+      fs.chmodSync(encFile, 0o000);
+      fs.chmodSync(metaFile, 0o000);
+
+      const res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+
+      assert.strictEqual(res.sessionData, null, 'Sem permissão de leitura, sessão não é carregada');
+      assert.ok(
+        fs.existsSync(encFile),
+        'session.json.enc NUNCA deve ser removido por erro transitório de I/O'
+      );
+      assert.ok(
+        fs.existsSync(metaFile),
+        'session_meta.json NUNCA deve ser removido por erro transitório de I/O'
+      );
+    } finally {
+      try {
+        fs.chmodSync(encFile, 0o600);
+        fs.chmodSync(metaFile, 0o600);
+      } catch {}
+      cleanupIsolatedTestDir(tmpDir);
+      assertRealFilesUntouched(realFilesSnapshot);
+    }
+  }
+);
+
+test('libs/session.js - session.json com JSON malformado é preservado sem exclusão automática', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-malformed-');
+
+  const plainFile = path.join(tmpDir, 'session.json');
+
+  try {
+    fs.writeFileSync(plainFile, '{ isto nao e um json valido', 'utf-8');
+
+    const res = await loadSessionFiles({ baseDir: tmpDir, encryptLocalSession: false });
+
+    assert.strictEqual(res.sessionData, null);
+    assert.ok(
+      fs.existsSync(plainFile),
+      'Arquivo malformado deve ser preservado (política não-destrutiva)'
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - falha na migração preserva o session.json em texto claro', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-migrate-fail-');
+
+  const plainFile = path.join(tmpDir, 'session.json');
+
+  try {
+    const fakeState = {
+      cookies: [{ name: 'xman_us_t', value: 'token123', expires: 0 }]
+    };
+    fs.writeFileSync(plainFile, JSON.stringify(fakeState), 'utf-8');
+
+    // Diretório no lugar do .enc força a falha do rename atômico durante a migração
+    fs.mkdirSync(path.join(tmpDir, 'session.json.enc'));
+
+    const res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+
+    assert.ok(fs.existsSync(plainFile), 'session.json deve sobreviver à falha de migração');
+    assert.strictEqual(res.sessionData.cookies[0].name, 'xman_us_t');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
