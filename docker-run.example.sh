@@ -9,8 +9,8 @@
 # Variáveis de ambiente opcionais:
 #   ALI_COINS_DIR      diretório do projeto (padrão: $HOME/ali-coins)
 #   ALI_COINS_IMAGE    imagem Docker (padrão: ali-coins:latest)
-#   ALI_COINS_MEM      limite de RAM do container (padrão: 700m)
-#   ALI_COINS_MEM_SWAP RAM+swap do container (padrão: 1800m)
+#   ALI_COINS_MEM      limite de RAM do container (padrão: 768m)
+#   ALI_COINS_MEM_SWAP RAM+swap do container (padrão: 1536m)
 #
 # Dicas de economia aplicadas aqui:
 #   --init             reaping de processos filhos do Chromium (evita zumbis)
@@ -25,8 +25,8 @@ DIR="${ALI_COINS_DIR:-$HOME/ali-coins}"
 IMAGE="${ALI_COINS_IMAGE:-ali-coins:latest}"
 RUN_NAME="ali-coins-cron"
 LOG="$DIR/cron.log"
-MEM_LIMIT="${ALI_COINS_MEM:-700m}"
-MEM_SWAP="${ALI_COINS_MEM_SWAP:-1800m}"
+MEM_LIMIT="${ALI_COINS_MEM:-768m}"
+MEM_SWAP="${ALI_COINS_MEM_SWAP:-1536m}"
 
 MOUNTS=(-v "$DIR/credentials.env:/app/credentials.env:ro" -v "$DIR/scratch:/app/scratch")
 for f in "$DIR"/session*; do
