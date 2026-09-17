@@ -19,6 +19,7 @@ const {
 } = require('./libs/report');
 const { sendTelegram } = require('./libs/notify');
 const { sendHeartbeat } = require('./libs/heartbeat');
+const { startAccountTimer } = require('./libs/timing');
 const logger = require('./logger');
 
 async function main() {
@@ -322,11 +323,9 @@ async function main() {
           `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser}`
         );
 
-        const accStartTime = new Date();
+        const accTimer = startAccountTimer();
         let accStep1Duration = '0s';
         let accStep2Duration = '0s';
-        let accEndTime = null;
-        let accTotalDuration = '0s';
 
         // Garante isolamento estrito de cookies e storage fechando contextos remanescentes
         if (browser && typeof browser.contexts === 'function') {
@@ -341,8 +340,7 @@ async function main() {
           allAccountsLocked = false;
         } catch (err) {
           consecutiveFailures++;
-          accEndTime = new Date();
-          accTotalDuration = formatDuration(accEndTime - accStartTime);
+          const lockTiming = accTimer.end('lock');
           if (err instanceof LockActiveError) {
             logger.warn(
               { account: account.maskedUser },
@@ -354,9 +352,9 @@ async function main() {
               checkinResult: null,
               tasksResult: null,
               error: 'Lock ativo por outro processo',
-              duration: accTotalDuration,
-              startTime: accStartTime,
-              endTime: accEndTime
+              duration: lockTiming.duration,
+              startTime: lockTiming.startTime,
+              endTime: lockTiming.endTime
             });
             if (i < accounts.length - 1) {
               const backoffMs = calculateAccountBackoff(consecutiveFailures - 1);
@@ -378,9 +376,9 @@ async function main() {
             checkinResult: null,
             tasksResult: null,
             error: err.message,
-            duration: accTotalDuration,
-            startTime: accStartTime,
-            endTime: accEndTime
+            duration: lockTiming.duration,
+            startTime: lockTiming.startTime,
+            endTime: lockTiming.endTime
           });
           if (i < accounts.length - 1) {
             const backoffMs = calculateAccountBackoff(consecutiveFailures - 1);
@@ -403,12 +401,12 @@ async function main() {
         try {
           // Etapa 1: Check-in
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Check-in Diário...`);
-          const accStep1StartTime = new Date();
+          const step1Timer = startAccountTimer();
           accCheckin = await runCheckin({ browser, account, skipReport: true });
-          const accStep1EndTime = new Date();
-          accStep1Duration = formatDuration(accStep1EndTime - accStep1StartTime);
+          const step1Timing = step1Timer.end('step1');
+          accStep1Duration = step1Timing.duration;
           logger.info(
-            `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Concluída em ${formatDateTime(accStep1EndTime)} | Duração: ${accStep1Duration}`
+            `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Concluída em ${formatDateTime(step1Timing.endTime)} | Duração: ${accStep1Duration}`
           );
 
           const accCurrentStreak =
@@ -440,7 +438,7 @@ async function main() {
 
           // Etapa 2: Tarefas
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Tarefas Diárias...`);
-          const accStep2StartTime = new Date();
+          const step2Timer = startAccountTimer();
           try {
             accTasks = await runTasks({
               browser,
@@ -456,10 +454,10 @@ async function main() {
               'Aviso na etapa de tarefas.'
             );
           }
-          const accStep2EndTime = new Date();
-          accStep2Duration = formatDuration(accStep2EndTime - accStep2StartTime);
+          const step2Timing = step2Timer.end('step2');
+          accStep2Duration = step2Timing.duration;
           logger.info(
-            `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Concluída em ${formatDateTime(accStep2EndTime)} | Duração: ${accStep2Duration}`
+            `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Concluída em ${formatDateTime(step2Timing.endTime)} | Duração: ${accStep2Duration}`
           );
 
           anyAccountSuccess = true;
@@ -470,12 +468,10 @@ async function main() {
             anyAccountHadNewAction = true;
           }
 
-          accEndTime = new Date();
-          accTotalDuration = formatDuration(accEndTime - accStartTime);
+          accTimer.end('success');
         } catch (accErr) {
           consecutiveFailures++;
-          accEndTime = new Date();
-          accTotalDuration = formatDuration(accEndTime - accStartTime);
+          accTimer.end('error');
           accError = accErr.message;
           accImportedExpired = Boolean(accErr.isImportedSessionExpired);
           if (accErr.name === 'TwoFactorRequiredNonInteractive' || accErr.is2FARequired) {
@@ -515,13 +511,14 @@ async function main() {
           }
         }
 
+        const accTiming = accTimer.end();
         if (account.telegramChatId) {
           try {
             const accPayload = buildUnifiedReportPayload(accCheckin, accTasks, {
               user: account.maskedUser,
-              mainStartTime: accStartTime,
-              mainEndTime: accEndTime || new Date(),
-              totalDuration: accTotalDuration,
+              mainStartTime: accTiming.startTime,
+              mainEndTime: accTiming.endTime,
+              totalDuration: accTiming.duration,
               step1Duration: accStep1Duration,
               step2Duration: accStep2Duration
             });
@@ -558,9 +555,9 @@ async function main() {
           isImportedSessionExpired: accImportedExpired,
           is2FARequired: accIs2FARequired,
           streakBroken: accStreakBroken,
-          startTime: accStartTime,
-          endTime: accEndTime || new Date(),
-          duration: accTotalDuration
+          startTime: accTiming.startTime,
+          endTime: accTiming.endTime,
+          duration: accTiming.duration
         });
       }
 
