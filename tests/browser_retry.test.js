@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { retry, resolveStorageState } = require('../browser');
+const { retry, resolveStorageState, launchBrowser, buildChromiumArgs } = require('../browser');
 const { encryptSession } = require('../security');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
@@ -262,6 +262,82 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
   } finally {
     if (original !== undefined) process.env.CHROMIUM_LOW_MEMORY = original;
     else delete process.env.CHROMIUM_LOW_MEMORY;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('browser.js - buildChromiumArgs suporta overrides de fallback (no-sandbox e low-memory)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalNoSandbox = process.env.NO_SANDBOX;
+  const originalCI = process.env.CI;
+
+  try {
+    delete process.env.NO_SANDBOX;
+    delete process.env.CI;
+
+    // lowMemory: false remove as flags de baixo consumo
+    const noLowMemory = buildChromiumArgs({ lowMemory: false });
+    for (const flag of ['--disable-gpu', '--renderer-process-limit=1', '--no-zygote']) {
+      assert.strictEqual(noLowMemory.includes(flag), false, `Não deveria conter ${flag}`);
+    }
+
+    // forceNoSandbox: true aplica --no-sandbox e, com low-memory, --no-zygote
+    const forced = buildChromiumArgs({ forceNoSandbox: true, lowMemory: true });
+    assert.ok(forced.includes('--no-sandbox'), 'forceNoSandbox deve aplicar --no-sandbox');
+    assert.ok(forced.includes('--disable-setuid-sandbox'));
+    assert.ok(forced.includes('--no-zygote'), '--no-zygote acompanha --no-sandbox');
+    assert.ok(forced.includes('--renderer-process-limit=1'));
+  } finally {
+    if (originalNoSandbox !== undefined) process.env.NO_SANDBOX = originalNoSandbox;
+    else delete process.env.NO_SANDBOX;
+    if (originalCI !== undefined) process.env.CI = originalCI;
+    else delete process.env.CI;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('browser.js - launchBrowser faz fallback progressivo (sandbox indisponível e flags de memória)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const playwright = require('playwright');
+  const originalLaunch = playwright.chromium.launch;
+  const calls = [];
+
+  try {
+    playwright.chromium.launch = async (opts) => {
+      calls.push(opts);
+      if (calls.length === 1) {
+        throw new Error('browserType.launch: No usable sandbox! ...');
+      }
+      if (calls.length === 2) {
+        throw new Error('browserType.launch: Target page, context or browser has been closed');
+      }
+      return { close: async () => {}, __fake: true };
+    };
+
+    const browser = await launchBrowser({ headless: true });
+    assert.strictEqual(browser.__fake, true);
+
+    assert.ok(calls.length >= 2, 'Deve tentar mais de uma configuração de launch');
+    assert.ok(
+      calls[0].args.includes('--disable-gpu'),
+      'Primeira tentativa deve usar flags de baixo consumo'
+    );
+    const lastCall = calls[calls.length - 1];
+    assert.strictEqual(
+      lastCall.args.includes('--disable-gpu'),
+      false,
+      'Última tentativa (fallback) deve desativar as flags de baixo consumo'
+    );
+
+    // Se a primeira tentativa não tinha --no-sandbox, a segunda deve tê-lo (fallback de sandbox)
+    if (!calls[0].args.includes('--no-sandbox')) {
+      assert.ok(
+        calls[1].args.includes('--no-sandbox'),
+        'Segunda tentativa deve desabilitar o sandbox quando o launch falha'
+      );
+    }
+  } finally {
+    playwright.chromium.launch = originalLaunch;
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });

@@ -125,9 +125,13 @@ async function exportSession(options = {}) {
     meta.user = process.env.ALI_USER;
   }
 
-  // Valida a conta esperada (quando conhecida); sem alvo explícito, mantém o comportamento
-  // histórico de validar contra o próprio meta.user
-  const validation = validateSession(session, meta, expectedUser || meta.user);
+  // Contas comparadas sem diferenciar maiúsculas/minúsculas quando os dois lados são o
+  // mesmo identificador (e-mails); caso contrário, valida estritamente contra o alvo.
+  const sameAccountIgnoringCase =
+    Boolean(expectedUser && meta.user) && expectedUser.toLowerCase() === meta.user.toLowerCase();
+  const validationUser = sameAccountIgnoringCase ? meta.user : expectedUser || meta.user;
+
+  const validation = validateSession(session, meta, validationUser);
   if (!validation.valid) {
     throw new ExportSessionError(`Sessão inválida para exportação: ${validation.reason}`);
   }

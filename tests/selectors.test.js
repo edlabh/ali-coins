@@ -175,3 +175,62 @@ test(
     }
   }
 );
+
+test('libs/ui/diagnostics.js - PW_SCREENSHOT captura screenshot automático apenas quando configurado', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { closeContextWithDiagnostics } = require('../libs/ui');
+  const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
+
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('pw-screenshot-');
+  const prevOut = process.env.PW_OUTPUT_DIR;
+  const prevShot = process.env.PW_SCREENSHOT;
+  const prevTrace = process.env.PW_TRACE;
+
+  const makeContext = (shots) => ({
+    pages: () => [
+      {
+        screenshot: async ({ path: filePath }) => {
+          shots.push(filePath);
+          fs.writeFileSync(filePath, 'fake-png');
+        }
+      }
+    ],
+    tracing: { stop: async () => {} },
+    close: async () => {}
+  });
+
+  try {
+    process.env.PW_OUTPUT_DIR = tmpDir;
+    process.env.PW_TRACE = 'off';
+
+    // 1. only-on-failure + failed=true -> captura
+    process.env.PW_SCREENSHOT = 'only-on-failure';
+    const shots1 = [];
+    await closeContextWithDiagnostics(makeContext(shots1), { failed: true, name: 'pw-shot' });
+    assert.strictEqual(shots1.length, 1, 'Deve capturar 1 screenshot em falha');
+    assert.ok(fs.existsSync(shots1[0]), 'Arquivo de screenshot deve existir');
+    assert.ok(path.basename(shots1[0]).startsWith('pw-shot-screenshot-'));
+
+    // 2. only-on-failure + failed=false -> não captura
+    const shots2 = [];
+    await closeContextWithDiagnostics(makeContext(shots2), { failed: false, name: 'pw-shot-ok' });
+    assert.strictEqual(shots2.length, 0, 'Não deve capturar screenshot em sucesso');
+
+    // 3. off -> nunca captura
+    process.env.PW_SCREENSHOT = 'off';
+    const shots3 = [];
+    await closeContextWithDiagnostics(makeContext(shots3), { failed: true, name: 'pw-shot-off' });
+    assert.strictEqual(shots3.length, 0, 'PW_SCREENSHOT=off não deve capturar');
+  } finally {
+    if (prevOut !== undefined) process.env.PW_OUTPUT_DIR = prevOut;
+    else delete process.env.PW_OUTPUT_DIR;
+    if (prevShot !== undefined) process.env.PW_SCREENSHOT = prevShot;
+    else delete process.env.PW_SCREENSHOT;
+    if (prevTrace !== undefined) process.env.PW_TRACE = prevTrace;
+    else delete process.env.PW_TRACE;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

@@ -25,8 +25,15 @@ function listCriticalRealFiles() {
   } catch {
     // Diretório ilegível: nada a proteger
   }
-  if (fs.existsSync(path.join(REAL_PROJECT_ROOT, 'ali-coins.lock'))) {
-    names.push('ali-coins.lock');
+  // Lockfiles (agora no diretório do projeto): qualquer ali-coins*.lock
+  try {
+    for (const name of fs.readdirSync(REAL_PROJECT_ROOT)) {
+      if (/^ali-coins.*\.lock$/i.test(name)) {
+        names.push(name);
+      }
+    }
+  } catch {
+    // Diretório ilegível: nada a proteger
   }
   return [...new Set(names)].sort();
 }

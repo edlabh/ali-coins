@@ -4,12 +4,16 @@
  * isso pode truncar relatórios grandes no limite do buffer (~64KB).
  */
 
+// Teto máximo de espera pelo flush: nunca deixa o encerramento travar por um stream entupido
+const FLUSH_TIMEOUT_MS = 5000;
+
 /**
- * Aguarda o flush físico de um stream gravável
+ * Aguarda o flush físico de um stream gravável, com teto de tempo
  * @param {import('stream').Writable} stream
+ * @param {number} [timeoutMs]
  * @returns {Promise<void>}
  */
-function flushStream(stream) {
+function flushStream(stream, timeoutMs = FLUSH_TIMEOUT_MS) {
   return new Promise((resolve) => {
     if (!stream || stream.destroyed || stream.writableEnded) {
       return resolve();
@@ -17,20 +21,41 @@ function flushStream(stream) {
     if (stream.writableLength === 0) {
       return resolve();
     }
-    try {
-      stream.write('', () => resolve());
-    } catch {
+
+    let finished = false;
+    let timer = null;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
       resolve();
+    };
+
+    timer = setTimeout(finish, timeoutMs);
+    try {
+      stream.write('', () => finish());
+    } catch {
+      finish();
     }
   });
 }
 
 /**
- * Aguarda o flush de stdout e stderr, garantindo que relatórios não sejam truncados
+ * Aguarda o flush de stdout e stderr (e do destino do logger, quando aplicável),
+ * garantindo que relatórios não sejam truncados — sem travar indefinidamente.
  * @returns {Promise<void>}
  */
 async function flushStdStreams() {
   await Promise.all([flushStream(process.stdout), flushStream(process.stderr)]);
+  try {
+    // Em modo --json o pino escreve direto no fd 2 via sonic-boom, fora do process.stderr
+    const logger = require('../logger');
+    if (logger && typeof logger.flushLogs === 'function') {
+      logger.flushLogs();
+    }
+  } catch {
+    // Logger indisponível: ignora
+  }
 }
 
 /**
@@ -50,5 +75,6 @@ async function flushAndExit(code = 0) {
 module.exports = {
   flushStream,
   flushStdStreams,
-  flushAndExit
+  flushAndExit,
+  FLUSH_TIMEOUT_MS
 };

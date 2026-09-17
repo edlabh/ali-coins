@@ -79,6 +79,61 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: 'false'
 
+  docker:
+    name: Docker Build & Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate .dockerignore security patterns
+        run: |
+          set -euo pipefail
+          required=(
+            "credentials.env"
+            "session*.json"
+            "session*.enc"
+            "*.enc"
+            "session_meta*.json"
+            "session_token*.txt"
+            "accounts.json"
+            "github_token.env"
+          )
+          for pattern in "${required[@]}"; do
+            if ! grep -qxF "$pattern" .dockerignore; then
+              echo "Padrão de segurança ausente no .dockerignore: $pattern"
+              exit 1
+            fi
+          done
+
+      - name: Build Docker image
+        run: docker build -t ali-coins:ci .
+
+      - name: Smoke test (dry-run sem arquivos reais)
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e ALI_USER=ci@example.com \
+            -e ALI_PASSWORD=ci_placeholder_password \
+            -e SESSION_SECRET=0123456789abcdef0123456789abcdef \
+            ali-coins:ci node all.js --dry-run --json > /tmp/dry-run.json
+          node -e "const j=require('/tmp/dry-run.json'); if(!j.dryRun){process.exit(1)}; console.log('dry-run OK:', j.user)"
+
+      - name: Smoke test (launch do headless shell)
+        run: |
+          docker run --rm --entrypoint node ali-coins:ci -e "
+            const { chromium } = require('playwright');
+            (async () => {
+              const b = await chromium.launch({ headless: true, chromiumSandbox: false, args: ['--disable-dev-shm-usage'] });
+              const p = await b.newPage();
+              await p.setContent('<h1>docker-ok</h1>');
+              console.log('launch OK:', await p.innerText('h1'));
+              await b.close();
+            })();
+          "
+
   codeql:
     name: CodeQL Security Analysis
     runs-on: ubuntu-latest

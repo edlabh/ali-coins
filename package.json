@@ -6,6 +6,19 @@
   "engines": {
     "node": ">=22"
   },
+  "files": [
+    "*.js",
+    "libs/**/*.js",
+    "!libs/extracted/**",
+    "*.sh",
+    "*.bat",
+    "*.ps1",
+    "Dockerfile",
+    ".dockerignore",
+    "credentials.env.example",
+    "CHANGELOG.md",
+    "RELEASING.md"
+  ],
   "scripts": {
     "start": "node all.js",
     "all": "node all.js",

@@ -172,4 +172,18 @@ logger.updateLogLevel = function updateLogLevel(level) {
   }
 };
 
+/**
+ * Força o flush síncrono do destino (sonic-boom) quando aplicável.
+ * Usado no encerramento gracioso para não perder os últimos logs em modo --json.
+ */
+logger.flushLogs = function flushLogs() {
+  try {
+    if (destination && typeof destination.flushSync === 'function') {
+      destination.flushSync();
+    }
+  } catch {
+    // Falha de flush nunca deve impedir o encerramento
+  }
+};
+
 module.exports = logger;

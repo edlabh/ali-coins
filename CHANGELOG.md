@@ -27,6 +27,43 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   swap de 1–2 GB, `SCRYPT_N=32768` (~33 MB de pico em vez de ~134 MB) e as flags
   `--shm-size=256m --memory=768m --memory-swap=1536m` no `docker run`.
 
+### Corrigido
+
+- **Lockfile em diretório privado do projeto:** o lock (primário e secundários) saiu de
+  `/tmp` para o diretório do projeto, eliminando o vetor de DoS/adulteração por outros
+  usuários (diretório no caminho do lock, symlink ou timestamp forjado). Se o caminho
+  estiver ocupado por item não removível, a falha agora é imediata e explícita (antes
+  repetia 5 rodadas de carência até falhar).
+- **`setup_linux.sh`/`setup_macos.sh` não expõem mais o `SESSION_SECRET` gerado no `argv`**
+  (visível via `ps`): a chave é passada por variável de ambiente ao processo Node.
+- **Sinais propagados nos scripts de execução:** `run.sh`/`run_tasks.sh` usam `exec` e o
+  `run_all.sh` encaminha `TERM`/`INT` ao Node filho, evitando Node/Chromium órfãos em
+  `kill`/stop do systemd.
+- **Encerramento nunca trava no flush (`libs/exit.js`):** teto de 5s para stdout/stderr e
+  flush síncrono do destino do pino (`--json`), garantindo que os últimos logs não se
+  percam nem travem a saída.
+- **Fallback progressivo de launch do Chromium:** se o sandbox for indisponível
+  (container/kernel sem user namespaces), o `launchBrowser` repete automaticamente com
+  `--no-sandbox`; se as flags de baixo consumo causarem falha, repete sem elas. O
+  `NO_SANDBOX=true` manual deixa de ser obrigatório.
+- **`os.userInfo()` protegido:** containers com `--user` sem entrada em `/etc/passwd` não
+  quebram mais o boot (tratado como não-root).
+- **Exportação tolerante a caixa da conta:** `expectedUser` e `meta.user` são comparados
+  sem diferenciar maiúsculas/minúsculas quando representam o mesmo identificador.
+- **`positiveInt` rejeita valores não numéricos** (ex: `10abc` deixa de ser aceito como 10).
+- **`PW_SCREENSHOT` funcional:** captura automática de screenshot no encerramento de
+  contexto com falha (`only-on-failure`) ou sempre (`on`) — antes era config morta.
+
+### Adicionado
+
+- **Job `Docker Build & Smoke` no CI:** build da imagem, validação dos padrões de
+  segurança do `.dockerignore`, `--dry-run` e launch do `chrome-headless-shell` dentro do
+  container — pega regressões de Dockerfile/.dockerignore antes do merge.
+- **Allowlist `files` no `package.json`:** evita publicar acidentalmente arquivos de
+  sessão/credenciais em um eventual `npm pack/publish`.
+- **Novos testes:** `.dockerignore` (padrões de segurança e runtime), `PW_SCREENSHOT`,
+  overrides de `buildChromiumArgs` e fallback progressivo de `launchBrowser`.
+
 ### Alterado
 
 - **Imagem Docker mais enxuta e leve:** instala apenas o `chrome-headless-shell`

@@ -82,7 +82,8 @@ if [ -z "$GEN_KEY" ] && command -v node >/dev/null 2>&1; then
 fi
 
 if [ -n "$GEN_KEY" ] && [ -f "$SCRIPT_DIR/credentials.env" ]; then
-  node -e "const fs=require('fs');const p=require('path').join(process.argv[1],'credentials.env');if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');if(/SESSION_SECRET=\"\"/.test(c)){c=c.replace('SESSION_SECRET=\"\"','SESSION_SECRET=\"' + process.argv[2] + '\"');fs.writeFileSync(p,c,'utf8');console.log('[OK] Chave SESSION_SECRET de 32 caracteres gerada e configurada com sucesso.');}}" "$SCRIPT_DIR" "$GEN_KEY"
+  # A chave é passada por variável de ambiente (nunca no argv, que é visível via ps)
+  SCRIPT_DIR="$SCRIPT_DIR" GEN_KEY="$GEN_KEY" node -e 'const fs=require("fs");const p=require("path").join(process.env.SCRIPT_DIR,"credentials.env");if(fs.existsSync(p)){let c=fs.readFileSync(p,"utf8");if(/SESSION_SECRET=""/.test(c)){c=c.replace("SESSION_SECRET=\"\"","SESSION_SECRET=\"" + process.env.GEN_KEY + "\"");fs.writeFileSync(p,c,"utf8");console.log("[OK] Chave SESSION_SECRET de 32 caracteres gerada e configurada com sucesso.");}}'
 fi
 
 # 5. Teste de inicialização do Chromium

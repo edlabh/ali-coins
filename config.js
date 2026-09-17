@@ -25,20 +25,23 @@ const lockUserSuffix =
         .update(os.userInfo().username || 'unknown')
         .digest('hex')
         .slice(0, 8);
-const lockFilePath = path.join(os.tmpdir(), `ali-coins-${lockUserSuffix}.lock`);
+// Lock no próprio diretório do projeto (privado do usuário na VM/container).
+// Evita o vetor de DoS/adulteração por outros usuários em diretórios compartilhados como /tmp
+// (ex: criar um diretório no caminho do lock, symlink ou timestamp forjado).
+const lockFilePath = path.join(__dirname, `ali-coins-${lockUserSuffix}.lock`);
 
 // Carregar variáveis do arquivo credentials.env se existir
 if (fs.existsSync(credentialsEnvPath)) {
   dotenv.config({ path: credentialsEnvPath, quiet: true });
 }
 
-// Helper para número inteiro positivo com valor padrão
+// Helper para número inteiro positivo com valor padrão (rejeita valores não numéricos como '10abc')
 const positiveInt = (defaultVal) =>
   z
     .preprocess((val) => {
       if (val === undefined || val === null || val === '') return defaultVal;
-      const parsed = parseInt(val, 10);
-      return isNaN(parsed) ? defaultVal : parsed;
+      const parsed = typeof val === 'number' ? val : Number(String(val).trim());
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultVal;
     }, z.number().int().positive())
     .default(defaultVal);
 
@@ -564,10 +567,10 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
       sessionMetaPath: isPrimary
         ? path.join(baseDir, 'session_meta.json')
         : path.join(baseDir, `session_meta_${hash}.json`),
-      // Lock também isolado por usuário (evita colisão multiusuário entre contas homônimas)
+      // Lock também isolado por usuário e no diretório do projeto (evita /tmp compartilhado)
       lockPath: isPrimary
         ? lockFilePath
-        : path.join(os.tmpdir(), `ali-coins-${lockUserSuffix}-${hash}.lock`)
+        : path.join(__dirname, `ali-coins-${lockUserSuffix}-${hash}.lock`)
     };
   });
 }

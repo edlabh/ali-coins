@@ -140,14 +140,20 @@ test('config.js - mensagens PT-BR de validação são preservadas no Zod 4 (opç
   }
 });
 
-test('config.js - lockFilePath é isolado por usuário (evita colisão multiusuário em /tmp)', () => {
+test('config.js - lockFilePath fica no diretório privado do projeto (não em /tmp)', () => {
   const os = require('os');
   const path = require('path');
   const { lockFilePath } = require('../config');
 
-  assert.ok(
-    path.dirname(lockFilePath) === os.tmpdir(),
-    `Lock deve ficar no tmpdir, obtido: ${lockFilePath}`
+  assert.strictEqual(
+    path.dirname(lockFilePath),
+    path.resolve(__dirname, '..'),
+    `Lock deve ficar no diretório do projeto, obtido: ${lockFilePath}`
+  );
+  assert.notStrictEqual(
+    path.dirname(lockFilePath),
+    os.tmpdir(),
+    'Lock não deve usar diretório compartilhado /tmp'
   );
   assert.ok(
     path.basename(lockFilePath).startsWith('ali-coins-'),
@@ -161,8 +167,9 @@ test('config.js - lockFilePath é isolado por usuário (evita colisão multiusu�
   }
 });
 
-test('config.js - locks de contas secundárias também são isolados por usuário', () => {
+test('config.js - locks de contas secundárias também ficam no diretório do projeto', () => {
   const os = require('os');
+  const path = require('path');
   const { loadAccounts } = require('../config');
   const original = {
     ALI_USER: process.env.ALI_USER,
@@ -181,7 +188,16 @@ test('config.js - locks de contas secundárias também são isolados por usuári
     assert.strictEqual(accounts.length, 2, 'Duas contas devem ser carregadas');
 
     for (const acc of accounts) {
-      assert.ok(acc.lockPath.startsWith(os.tmpdir()), `Lock deve ficar no tmpdir: ${acc.lockPath}`);
+      assert.strictEqual(
+        path.dirname(acc.lockPath),
+        path.resolve(__dirname, '..'),
+        `Lock deve ficar no diretório do projeto: ${acc.lockPath}`
+      );
+      assert.notStrictEqual(
+        path.dirname(acc.lockPath),
+        os.tmpdir(),
+        `Lock não deve usar /tmp: ${acc.lockPath}`
+      );
       if (typeof process.getuid === 'function') {
         assert.ok(
           acc.lockPath.includes(`u${process.getuid()}`),

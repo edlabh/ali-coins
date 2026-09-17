@@ -194,6 +194,18 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
         'Lockfile ilegível ou inválido detectado após carência de leitura. Removendo para recriar com segurança.'
       );
       await removeLockFile();
+      // Falha rápida e clara se o caminho está ocupado por algo não removível
+      // (ex: diretório deixado por outro usuário), em vez de repetir 5 rodadas
+      const stillOccupied = await fs.promises
+        .lstat(targetLockPath)
+        .then(() => true)
+        .catch(() => false);
+      if (stillOccupied) {
+        throw new Error(
+          `Não foi possível remover o lockfile inválido em "${targetLockPath}". ` +
+            'O caminho está ocupado por um arquivo/diretório não removível (verifique permissões).'
+        );
+      }
       continue;
     }
 

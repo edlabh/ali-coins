@@ -15,7 +15,13 @@ const {
  * Condições: execução como root (UID 0), ambiente CI, ou configuração explícita NO_SANDBOX=true.
  */
 function isNoSandboxRequired() {
-  const isRoot = typeof os.userInfo === 'function' && os.userInfo().uid === 0;
+  // os.userInfo() pode lançar ENOENT em containers com --user sem entrada em /etc/passwd
+  let isRoot = false;
+  try {
+    isRoot = typeof os.userInfo === 'function' && os.userInfo().uid === 0;
+  } catch {
+    isRoot = false;
+  }
   const isCI = Boolean(process.env.CI);
   const isExplicitNoSandbox = Boolean(
     process.env.NO_SANDBOX &&
@@ -56,22 +62,27 @@ function isLowMemoryModeEnabled() {
 }
 
 /**
- * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança
- * e o modo de baixa memória opcional.
+ * Monta os argumentos do Chromium com overrides opcionais (usados no fallback de launch).
+ * @param {object} [overrides={}]
+ * @param {boolean} [overrides.forceNoSandbox=false] Força --no-sandbox mesmo sem root/CI/NO_SANDBOX
+ * @param {boolean} [overrides.lowMemory] Sobrescreve a decisão do modo de baixo consumo
+ * @returns {string[]}
  */
-function getChromiumArgs() {
-  const { isRoot, isCI, isExplicitNoSandbox, shouldDisable } = isNoSandboxRequired();
+function buildChromiumArgs({ forceNoSandbox = false, lowMemory } = {}) {
+  const info = isNoSandboxRequired();
+  const shouldDisable = info.shouldDisable || forceNoSandbox;
+  const useLowMemory = lowMemory !== undefined ? Boolean(lowMemory) : isLowMemoryModeEnabled();
   const args = ['--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
 
   if (shouldDisable) {
     logger.warn(
-      { isRoot, isCI, isExplicitNoSandbox },
+      { ...info, forceNoSandbox },
       'Aplicando --no-sandbox (--disable-setuid-sandbox) ao Chromium.'
     );
     args.push('--no-sandbox', '--disable-setuid-sandbox');
   }
 
-  if (isLowMemoryModeEnabled()) {
+  if (useLowMemory) {
     args.push(...LOW_MEMORY_CHROMIUM_ARGS);
     // Requisito do próprio Chromium: --no-zygote somente com sandbox desabilitado
     if (shouldDisable) {
@@ -79,11 +90,19 @@ function getChromiumArgs() {
     }
   } else {
     logger.info(
-      'Modo de baixo consumo do Chromium desativado explicitamente (CHROMIUM_LOW_MEMORY=false).'
+      'Modo de baixo consumo do Chromium desativado (CHROMIUM_LOW_MEMORY=false ou fallback de launch).'
     );
   }
 
   return args;
+}
+
+/**
+ * Retorna os argumentos de inicialização do Chromium respeitando os requisitos de segurança
+ * e o modo de baixo consumo (padrão: ativado).
+ */
+function getChromiumArgs() {
+  return buildChromiumArgs();
 }
 
 // Política de saneamento do ambiente repassado aos subprocessos do Chromium:
@@ -119,20 +138,65 @@ function getChromiumEnv() {
  * @returns {Promise<import('playwright').Browser>}
  */
 async function launchBrowser(options = {}) {
-  const { shouldDisable } = isNoSandboxRequired();
-  const defaultArgs = getChromiumArgs();
+  const info = isNoSandboxRequired();
   const defaultEnv = getChromiumEnv();
+  const sandboxDefault =
+    options.chromiumSandbox !== undefined ? options.chromiumSandbox : !info.shouldDisable;
+  const extraArgs = options.args || [];
+  const lowMemoryEnabled = isLowMemoryModeEnabled();
 
-  const launchOptions = {
+  const baseLaunchOptions = {
     headless: options.headless !== undefined ? options.headless : true,
-    chromiumSandbox:
-      options.chromiumSandbox !== undefined ? options.chromiumSandbox : !shouldDisable,
-    args: [...defaultArgs, ...(options.args || [])],
     env: { ...defaultEnv, ...(options.env || {}) },
     ...options
   };
 
-  return await chromium.launch(launchOptions);
+  // Sequência de tentativas de launch, da mais restrita à mais permissiva.
+  // Cobre: sandbox indisponível no kernel/container (userns bloqueado) e falha
+  // causada pelas flags de baixo consumo (heap 128MB/renderer único).
+  const candidates = [{ lowMemory: lowMemoryEnabled, noSandbox: false }];
+  if (sandboxDefault) {
+    candidates.push({ lowMemory: lowMemoryEnabled, noSandbox: true });
+  }
+  if (lowMemoryEnabled) {
+    candidates.push({ lowMemory: false, noSandbox: sandboxDefault });
+  }
+
+  const seen = new Set();
+  let lastError = null;
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const key = `${candidate.lowMemory}:${candidate.noSandbox}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const launchOptions = {
+      ...baseLaunchOptions,
+      chromiumSandbox: sandboxDefault && !candidate.noSandbox,
+      args: [
+        ...buildChromiumArgs({
+          forceNoSandbox: candidate.noSandbox,
+          lowMemory: candidate.lowMemory
+        }),
+        ...extraArgs
+      ]
+    };
+
+    try {
+      return await chromium.launch(launchOptions);
+    } catch (err) {
+      lastError = err;
+      if (i < candidates.length - 1) {
+        logger.warn(
+          { attempt: i + 1, reason: String(err && err.message).split('\n')[0] },
+          'Falha ao iniciar o Chromium; tentando configuração de launch mais permissiva...'
+        );
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -384,6 +448,7 @@ async function waitWithScroll(page, maxSeconds = 15, options = {}) {
 module.exports = {
   launchBrowser,
   getChromiumArgs,
+  buildChromiumArgs,
   getChromiumEnv,
   isLowMemoryModeEnabled,
   LOW_MEMORY_CHROMIUM_ARGS,

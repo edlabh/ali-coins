@@ -356,7 +356,7 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
 
 2. **Flags de Baixo Consumo do Chromium (Ativadas por Padrão):**
    O `browser.js` já aplica automaticamente argumentos de redução de footprint em qualquer execução (`./run_all.sh`, `npm start` ou Docker):
-   - `--disable-gpu` e `--disable-software-rasterizer` (desativa GPU em software, economizando ~50–80 MB);
+   - `--disable-gpu` e `--disable-software-rasterizer` (evita o pipeline de rasterização em software);
    - `--renderer-process-limit=1` (restringe a 1 processo de renderização);
    - `--js-flags=--max-old-space-size=128` (limita a heap V8 interna do Chromium a 128 MB);
    - `--disk-cache-size=10485760` (limita cache em 10 MB);
