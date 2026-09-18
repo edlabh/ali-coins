@@ -25,6 +25,22 @@ function isInteractiveOrAppOnly(task) {
 }
 
 /**
+ * Status exibido no relatório quando a verificação de tarefas exclusivas do app está desligada
+ */
+const APP_ONLY_DISABLED_STATUS = 'Desativada (tarefas que exigem o app desligadas)';
+
+/**
+ * O usuário optou por desligar a verificação das tarefas que nunca concluem via web
+ * (Prize Land/regar, minigames, quizzes e avaliações). Definido em config como
+ * SKIP_APP_ONLY_TASKS (padrão true); `undefined` mantém o comportamento antigo.
+ * @param {object} [options={}]
+ * @returns {boolean}
+ */
+function isAppOnlySkippingEnabled(options = {}) {
+  return options.skipAppOnlyTasks === true;
+}
+
+/**
  * Retorna chave única para rastrear tentativas de uma rodada específica da tarefa
  * @param {object} task
  * @returns {string}
@@ -110,7 +126,8 @@ function findNextPendingTask(tasks, attemptsMapArg = {}, maxAttemptsArg = 4, opt
       attemptsMapArg.attemptsMap !== undefined ||
       attemptsMapArg.roundAttemptsMap !== undefined ||
       attemptsMapArg.maxRoundAttempts !== undefined ||
-      attemptsMapArg.failedTasks !== undefined
+      attemptsMapArg.failedTasks !== undefined ||
+      attemptsMapArg.skipAppOnlyTasks !== undefined
     ) {
       options = attemptsMapArg;
       attemptsMap = options.attemptsMap || {};
@@ -121,10 +138,20 @@ function findNextPendingTask(tasks, attemptsMapArg = {}, maxAttemptsArg = 4, opt
   const roundAttemptsMap = options.roundAttemptsMap || {};
   const maxRoundAttempts = options.maxRoundAttempts ?? 3;
   const failedTasks = options.failedTasks || {};
+  const skipAppOnlyTasks = isAppOnlySkippingEnabled(options);
 
   const isEligible = (t) => {
     if (!t || t.isDone) return false;
     if (failedTasks[t.title] || t.failureReason) return false;
+
+    // Tarefas exclusivas do app nunca concluem via web: quando desligadas, são
+    // ignoradas (sem consumir tentativas/ações) e refletidas no relatório.
+    if (skipAppOnlyTasks && isInteractiveOrAppOnly(t)) {
+      if (!failedTasks[t.title]) {
+        failedTasks[t.title] = APP_ONLY_DISABLED_STATUS;
+      }
+      return false;
+    }
 
     const attempts = attemptsMap[t.title] || 0;
     if (attempts >= maxAttempts) {
@@ -207,6 +234,8 @@ function markSpecialOrAppOnly(attemptsMap, title) {
  * @param {object} task
  * @param {object} [options={}]
  * @param {object} [options.failedTasks={}] Mapa de tarefas com desistência/falha
+ * @param {boolean} [options.skipAppOnlyTasks=false] Se true, tarefas exclusivas do app
+ *   são reportadas como desativadas em vez de "requer app"
  * @returns {string} Status descritivo formatado
  */
 function classifyTaskStatus(task, options = {}) {
@@ -228,6 +257,10 @@ function classifyTaskStatus(task, options = {}) {
   }
 
   if (isInteractiveOrAppOnly(task)) {
+    if (isAppOnlySkippingEnabled(options)) {
+      return APP_ONLY_DISABLED_STATUS;
+    }
+
     const titleLower = (task.title || '').toLowerCase();
     const descLower = (task.desc || '').toLowerCase();
 
@@ -270,6 +303,8 @@ function classifyTaskStatus(task, options = {}) {
 
 module.exports = {
   isInteractiveOrAppOnly,
+  isAppOnlySkippingEnabled,
+  APP_ONLY_DISABLED_STATUS,
   findNextPendingTask,
   recordTaskAttempt,
   resetTaskAttempt,

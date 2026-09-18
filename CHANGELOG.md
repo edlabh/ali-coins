@@ -11,6 +11,16 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.1.0] - 2026-09-18
+
+### Adicionado
+
+- **`SKIP_APP_ONLY_TASKS` (padrão `true`):** nova flag que desliga a verificação das tarefas que exigem o app nativo do AliExpress e nunca concluem via web — Prize Land/Fazenda Mágica (regar), minigames (ex: "Complete 1 Merge Boss game order"), quizzes ("Daily quiz challenge") e avaliações de pedidos ("review"/"avalia"). Quando ligada, essas tarefas são ignoradas no loop, **sem consumir tentativas/ações**, e aparecem no relatório final como `Desativada (tarefas que exigem o app desligadas)`. Um aviso é emitido no início da etapa e outro por tarefa ignorada. Defina `SKIP_APP_ONLY_TASKS=false` no `credentials.env` para restaurar o comportamento anterior (tentar todas as tarefas). Documentado em `credentials.env.example` e exibido no resumo do `--dry-run`.
+
+### Notas
+
+- Mudança de comportamento padrão: por ser uma alteração compatível com o fluxo do bot (apenas deixa de insistir em tarefas impossíveis via web), a versão é minor (`1.1.0`).
+
 ## [1.0.2] - 2026-09-18
 
 ### Corrigido

@@ -30,6 +30,29 @@ test('config.js - defaults schema Zod', () => {
   assert.strictEqual(parsed.PW_TRACE, 'retain-on-failure');
   assert.strictEqual(parsed.PW_SCREENSHOT, 'only-on-failure');
   assert.strictEqual(parsed.PW_VIDEO, 'off');
+  assert.strictEqual(
+    parsed.SKIP_APP_ONLY_TASKS,
+    true,
+    'SKIP_APP_ONLY_TASKS default deve ser true (desligar tarefas que exigem o app)'
+  );
+});
+
+test('config.js - SKIP_APP_ONLY_TASKS aceita variações de string para desligar', () => {
+  const base = { ALI_USER: 'test@example.com', ALI_PASSWORD: 'password123' };
+  for (const off of ['false', 'FALSE', '0', 'off', 'no']) {
+    assert.strictEqual(
+      configSchema.parse({ ...base, SKIP_APP_ONLY_TASKS: off }).SKIP_APP_ONLY_TASKS,
+      false,
+      `SKIP_APP_ONLY_TASKS=${off} deve desativar a flag`
+    );
+  }
+  for (const on of ['true', '1', 'on', 'yes']) {
+    assert.strictEqual(
+      configSchema.parse({ ...base, SKIP_APP_ONLY_TASKS: on }).SKIP_APP_ONLY_TASKS,
+      true,
+      `SKIP_APP_ONLY_TASKS=${on} deve manter as tarefas desligadas`
+    );
+  }
 });
 
 test('config.js - preprocessing de strings para boolean e números', () => {

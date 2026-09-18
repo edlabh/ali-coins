@@ -9,6 +9,10 @@ function isInteractiveOrAppOnly(task) {
   return dispatcher.isInteractiveOrAppOnly(task);
 }
 
+function isAppOnlySkippingEnabled(options) {
+  return dispatcher.isAppOnlySkippingEnabled(options);
+}
+
 async function executeSurpriseItems(...args) {
   return await surprise.executeSurpriseItems(...args);
 }
@@ -35,6 +39,8 @@ async function getDrawerTasksWithRetry(...args) {
 
 module.exports = {
   isInteractiveOrAppOnly,
+  isAppOnlySkippingEnabled,
+  APP_ONLY_DISABLED_STATUS: dispatcher.APP_ONLY_DISABLED_STATUS,
   executeSurpriseItems,
   openTaskDrawer,
   extractTasksFromDrawer,

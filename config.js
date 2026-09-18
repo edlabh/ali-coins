@@ -121,6 +121,21 @@ const configSchema = z
     SCROLL_WAIT_SECONDS: positiveInt(10),
     LOCK_STALE_TIMEOUT_MS: positiveInt(30 * 60 * 1000),
 
+    // Tarefas que exigem o app nativo (Prize Land/regar, minigames como Merge Boss,
+    // quizzes e avaliações de pedidos) nunca concluem via web e consomem tentativas.
+    // Por padrão são desligadas (ignoradas no loop e marcadas no relatório).
+    // Defina SKIP_APP_ONLY_TASKS=false para voltar a tentá-las.
+    SKIP_APP_ONLY_TASKS: z
+      .preprocess((val) => {
+        if (typeof val === 'string') {
+          const v = val.trim().toLowerCase();
+          if (['false', '0', 'off', 'no'].includes(v)) return false;
+          if (['true', '1', 'on', 'yes'].includes(v)) return true;
+        }
+        return Boolean(val);
+      }, z.boolean())
+      .default(true),
+
     // Diagnósticos do Playwright.
     // O default efetivo é resolvido em libs/ui/diagnostics.js: em modo de baixo consumo
     // de memória (CHROMIUM_LOW_MEMORY habilitado, padrão) o tracing fica 'off' para
@@ -411,6 +426,7 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TASK_SCROLL_MAX_MS: process.env.TASK_SCROLL_MAX_MS,
     SCROLL_WAIT_SECONDS: process.env.SCROLL_WAIT_SECONDS,
     LOCK_STALE_TIMEOUT_MS: process.env.LOCK_STALE_TIMEOUT_MS,
+    SKIP_APP_ONLY_TASKS: process.env.SKIP_APP_ONLY_TASKS,
     PW_TRACE: process.env.PW_TRACE,
     PW_SCREENSHOT: process.env.PW_SCREENSHOT,
     PW_VIDEO: process.env.PW_VIDEO,
@@ -723,6 +739,9 @@ async function handleDryRun() {
       logger.info(` • Limite por Rodada (TASK_ROUND_MAX_ATTEMPTS): ${cfg.TASK_ROUND_MAX_ATTEMPTS}`);
       logger.info(` • Timeout por Tentativa (TASK_MAX_DURATION_MS): ${cfg.TASK_MAX_DURATION_MS}ms`);
       logger.info(` • Teto de Scroll (TASK_SCROLL_MAX_MS): ${cfg.TASK_SCROLL_MAX_MS}ms`);
+      logger.info(
+        ` • Tarefas exclusivas do app (SKIP_APP_ONLY_TASKS): ${cfg.SKIP_APP_ONLY_TASKS ? 'Desligadas' : 'Ativas'}`
+      );
       logger.info(
         ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? `[CONFIGURADO - ${cfg.SESSION_SECRET.length} chars]` : '[NÃO CONFIGURADO]'}`
       );

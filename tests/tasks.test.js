@@ -2328,3 +2328,42 @@ test('tasks (Risco 3) - assinaturas em lote ($$eval) mantêm cards distintos sem
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - SKIP_APP_ONLY_TASKS ignora tarefas que exigem o app e marca no relatório', () => {
+  const {
+    findNextPendingTask,
+    classifyTaskStatus,
+    APP_ONLY_DISABLED_STATUS
+  } = require('../libs/tasks/state');
+
+  const tasks = [
+    { title: 'Complete 1 Merge Boss game order', desc: '', coins: '+5 moedas', isActionable: true },
+    { title: 'Browse surprise items', desc: 'Tap items', coins: '+5 moedas', isActionable: true }
+  ];
+  const taskAttempts = {};
+  const failedTasks = {};
+
+  // Com a flag ligada, a minigame é ignorada e a próxima tarefa web é escolhida
+  const next = findNextPendingTask(tasks, taskAttempts, 4, {
+    failedTasks,
+    skipAppOnlyTasks: true
+  });
+  assert.strictEqual(next.title, 'Browse surprise items', 'Deve pular a tarefa exclusiva do app');
+  assert.strictEqual(failedTasks['Complete 1 Merge Boss game order'], APP_ONLY_DISABLED_STATUS);
+
+  // O relatório reflete o estado desativado
+  assert.strictEqual(
+    classifyTaskStatus(tasks[0], { failedTasks, skipAppOnlyTasks: true }),
+    APP_ONLY_DISABLED_STATUS
+  );
+
+  // Sem a flag, o comportamento anterior é preservado (tentativa normal)
+  const failedTasksLegacy = {};
+  const legacyNext = findNextPendingTask(tasks, {}, 4, { failedTasks: failedTasksLegacy });
+  assert.strictEqual(legacyNext.title, 'Complete 1 Merge Boss game order');
+  assert.strictEqual(failedTasksLegacy['Complete 1 Merge Boss game order'], undefined);
+  assert.strictEqual(
+    classifyTaskStatus(tasks[0]),
+    'Requer interação direta no App AliExpress (minigame/quiz)'
+  );
+});

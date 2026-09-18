@@ -19,6 +19,7 @@ const {
   getBalanceDesktop,
   openTaskDrawer,
   executeTaskAction,
+  isInteractiveOrAppOnly,
   findNextPendingTask,
   recordTaskAttempt,
   resetTaskAttempt,
@@ -231,8 +232,16 @@ async function runTasks(options = {}) {
       const maxAttemptsPerTask = config.TASK_MAX_ATTEMPTS;
       const maxRoundAttempts = config.TASK_ROUND_MAX_ATTEMPTS || 3;
       const taskMaxDurationMs = config.TASK_MAX_DURATION_MS || 3 * 60 * 1000;
+      const skipAppOnlyTasks = config.SKIP_APP_ONLY_TASKS !== false;
+      const disabledAppOnlyLogged = new Set();
       let totalActions = 0;
       const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
+
+      if (skipAppOnlyTasks) {
+        logger.warn(
+          'Verificação das tarefas exclusivas do app DESLIGADA (SKIP_APP_ONLY_TASKS=true): Prize Land/regar, minigames, quizzes e avaliações serão ignorados.'
+        );
+      }
 
       // Fonte única em libs/tasks/verifier.js (via fachada libs/ui) — sem duplicação local
       const getDrawerTasksWithRetry = (currentPage, { maxRetries = 2, label = 'execução' } = {}) =>
@@ -270,6 +279,22 @@ async function runTasks(options = {}) {
           break;
         }
 
+        if (skipAppOnlyTasks) {
+          for (const t of currentTasks) {
+            if (
+              t &&
+              !t.isDone &&
+              !disabledAppOnlyLogged.has(t.title) &&
+              isInteractiveOrAppOnly(t)
+            ) {
+              disabledAppOnlyLogged.add(t.title);
+              logger.warn(
+                `Tarefa "${t.title}" exige o app e está desativada (SKIP_APP_ONLY_TASKS=true). Ignorando.`
+              );
+            }
+          }
+        }
+
         // Se uma tarefa progrediu de rodada ou status, reseta suas tentativas consecutivas
         for (const t of currentTasks) {
           if (t.completedRounds !== null && t.completedRounds !== undefined) {
@@ -297,7 +322,8 @@ async function runTasks(options = {}) {
         const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask, {
           roundAttemptsMap,
           maxRoundAttempts,
-          failedTasks
+          failedTasks,
+          skipAppOnlyTasks
         });
 
         if (!pendingTask) {
@@ -428,7 +454,7 @@ async function runTasks(options = {}) {
       }
       const results = finalTasks.map((t) => ({
         title: t.title,
-        status: failedTasks[t.title] || classifyTaskStatus(t, { failedTasks }),
+        status: failedTasks[t.title] || classifyTaskStatus(t, { failedTasks, skipAppOnlyTasks }),
         coins: t.coins,
         estimatedCoins: t.estimatedCoins || t.coins
       }));

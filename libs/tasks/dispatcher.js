@@ -7,6 +7,8 @@ const { executeSearchTask } = require('./search');
 const { executePrizeLandTask } = require('./prizeland');
 const {
   isInteractiveOrAppOnly,
+  isAppOnlySkippingEnabled,
+  APP_ONLY_DISABLED_STATUS,
   findNextPendingTask,
   recordTaskAttempt,
   resetTaskAttempt,
@@ -195,6 +197,8 @@ module.exports = {
 
   // Máquina de estados
   isInteractiveOrAppOnly,
+  isAppOnlySkippingEnabled,
+  APP_ONLY_DISABLED_STATUS,
   findNextPendingTask,
   recordTaskAttempt,
   resetTaskAttempt,
