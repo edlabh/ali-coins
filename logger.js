@@ -125,6 +125,24 @@ function sanitizeSensitiveQueryParams(str) {
     .replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]');
 }
 
+/**
+ * Atalho para registros "planos" (apenas primitivos, Error/Buffer e sem chaves sensíveis).
+ * Evita a cópia recursiva de scrubSensitiveFields/sanitizeLogStrings no caminho quente
+ * do logger, preservando a sanitização de strings e de err.message.
+ * @param {object} object
+ * @returns {boolean}
+ */
+function isFlatLogRecord(object) {
+  for (const key of Object.keys(object)) {
+    if (SENSITIVE_KEY_REGEX.test(key)) return false;
+    const value = object[key];
+    if (value === null || typeof value !== 'object') continue;
+    if (value instanceof Error || Buffer.isBuffer(value)) continue;
+    return false;
+  }
+  return true;
+}
+
 const isJsonMode = process.argv.includes('--json');
 const isTest = Boolean(process.env.NODE_TEST_CONTEXT) || process.env.NODE_ENV === 'test';
 const isDev = !process.env.CI && process.env.NODE_ENV !== 'production' && !isTest && !isJsonMode;
@@ -182,6 +200,15 @@ const logger = pino(
         }
         if (typeof sanitized.err === 'string') {
           sanitized.err = sanitizeSensitiveQueryParams(sanitized.err);
+        }
+        if (isFlatLogRecord(object)) {
+          for (const key of Object.keys(sanitized)) {
+            if (key === 'msg' || key === 'err') continue;
+            if (typeof sanitized[key] === 'string') {
+              sanitized[key] = sanitizeSensitiveQueryParams(sanitized[key]);
+            }
+          }
+          return sanitized;
         }
         return sanitizeLogStrings(scrubSensitiveFields(sanitized));
       }

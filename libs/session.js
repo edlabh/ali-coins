@@ -11,8 +11,8 @@ const {
   safeWriteFile,
   cleanOrphanTmpFiles,
   safeChmod600,
-  encryptSession,
-  decryptSession
+  encryptSessionAsync,
+  decryptSessionAsync
 } = require('../security');
 const logger = require('../logger');
 
@@ -107,19 +107,22 @@ async function loadSessionFiles(options = {}) {
     if (encryptedContent !== null) {
       if (secret && secret.length >= 32) {
         try {
-          const decrypted = decryptSession(encryptedContent, secret);
+          const decrypted = await decryptSessionAsync(encryptedContent, secret);
           sessionData = JSON.parse(decrypted);
         } catch (decryptErr) {
           // Se falhou com a chave atual e há chave antiga (rotação), tenta SESSION_SECRET_OLD
           if (oldSecret && oldSecret.length >= 32) {
             try {
-              const decryptedOld = decryptSession(encryptedContent, oldSecret);
+              const decryptedOld = await decryptSessionAsync(encryptedContent, oldSecret);
               sessionData = JSON.parse(decryptedOld);
               logger.info(
                 'Sessão descriptografada com SESSION_SECRET_OLD (rotação detectada). Re-criptografando com a nova chave...'
               );
               // Re-criptografa transparentemente com a chave atual
-              const reEncrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
+              const reEncrypted = await encryptSessionAsync(
+                JSON.stringify(sessionData, null, 2),
+                secret
+              );
               await safeWriteFile(encPath, reEncrypted, 'utf-8');
               safeChmod600(encPath);
             } catch {
@@ -174,7 +177,10 @@ async function loadSessionFiles(options = {}) {
             'Migrando sessão legada em texto claro (session.json) para formato criptografado at-rest (session.json.enc)...'
           );
           try {
-            const encrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
+            const encrypted = await encryptSessionAsync(
+              JSON.stringify(sessionData, null, 2),
+              secret
+            );
             await safeWriteFile(encPath, encrypted, 'utf-8');
             safeChmod600(encPath);
             // Remover o arquivo em texto puro SOMENTE após a migração ser concluída com sucesso
@@ -242,7 +248,7 @@ async function clearSession(options = {}) {
       const raw = await fs.promises.readFile(sPath, 'utf-8');
       if (secret && secret.length >= 32) {
         const bakPath = path.join(targetScratchDir, `session.bak${tag}-${timestamp}.json.enc`);
-        const encData = encryptSession(raw, secret);
+        const encData = await encryptSessionAsync(raw, secret);
         await safeWriteFile(bakPath, encData, 'utf-8');
         safeChmod600(bakPath);
         logger.info({ backup: bakPath }, 'Backup versionado da sessão (.enc) criado com sucesso.');
@@ -434,7 +440,7 @@ async function saveSession(storageState, user, options = {}) {
   safeChmod600(mPath);
 
   if (shouldEncrypt) {
-    const encryptedToken = encryptSession(payloadStr, secret);
+    const encryptedToken = await encryptSessionAsync(payloadStr, secret);
     await safeWriteFile(encPath, encryptedToken, 'utf-8');
     safeChmod600(encPath);
     // Remove o arquivo legado sem criptografia se ainda existir
@@ -670,7 +676,7 @@ async function rotateSessionSecret(options = {}) {
   if (fs.existsSync(encPath)) {
     try {
       const encryptedContent = await fs.promises.readFile(encPath, 'utf-8');
-      rawJson = decryptSession(encryptedContent, oldSecret);
+      rawJson = await decryptSessionAsync(encryptedContent, oldSecret);
       sessionData = JSON.parse(rawJson);
     } catch (err) {
       throw new Error(
@@ -698,14 +704,14 @@ async function rotateSessionSecret(options = {}) {
   await fs.promises.mkdir(targetScratchDir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupPath = path.join(targetScratchDir, `session.bak-${timestamp}.json.enc`);
-  const oldEncrypted = encryptSession(rawJson, oldSecret);
+  const oldEncrypted = await encryptSessionAsync(rawJson, oldSecret);
   await safeWriteFile(backupPath, oldEncrypted, 'utf-8');
   safeChmod600(backupPath);
 
   // Criptografar com a nova chave e validar roundtrip
-  const newEncrypted = encryptSession(JSON.stringify(sessionData, null, 2), newSecret);
+  const newEncrypted = await encryptSessionAsync(JSON.stringify(sessionData, null, 2), newSecret);
   try {
-    const verifiedJson = decryptSession(newEncrypted, newSecret);
+    const verifiedJson = await decryptSessionAsync(newEncrypted, newSecret);
     const parsed = JSON.parse(verifiedJson);
     if (!parsed || !Array.isArray(parsed.cookies)) {
       throw new Error('Verificação roundtrip falhou: cookies inválidos.');
@@ -768,7 +774,7 @@ async function migrateLegacySession(options = {}) {
     return { migrated: false };
   }
 
-  const encrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
+  const encrypted = await encryptSessionAsync(JSON.stringify(sessionData, null, 2), secret);
   await safeWriteFile(encPath, encrypted, 'utf-8');
   safeChmod600(encPath);
 

@@ -209,19 +209,39 @@ async function cleanOrphanTmpFiles(dir = process.cwd(), maxAgeMs = 300000) {
 }
 
 /**
- * Criptografa o payload da sessão usando scrypt + aes-256-gcm com salt aleatório (v3)
- * @param {string} payloadJson
- * @param {string} secret
- * @param {object} [options={}] Opções adicionais de criptografia ({ version: 'v2'|'v3', N, r, p })
- * @returns {string} Token no formato v3:N:r:p:salt:iv:tag:ciphertext:base64 (ou v2:salt:iv:tag:ciphertext:base64)
+ * Derivação assíncrona (crypto.scrypt) para não bloquear o event loop enquanto o
+ * Chromium/Playwright está ativo. Mesmo custo de memória do scryptSync, mas sem
+ * travar I/O e timers do processo durante a derivação (~200ms no N padrão).
+ * @returns {Promise<Buffer>}
  */
-function encryptSession(payloadJson, secret, options = {}) {
+function scryptAsync(secret, salt, keylen, params) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(secret, salt, keylen, params, (err, derivedKey) => {
+      if (err) reject(err);
+      else resolve(derivedKey);
+    });
+  });
+}
+
+/**
+ * Valida o segredo de sessão para operações de criptografia.
+ * @param {string} secret
+ * @param {string} operation
+ */
+function assertValidSecret(secret, operation) {
   if (!secret || typeof secret !== 'string' || secret.length < 32) {
     throw new Error(
-      'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para criptografia segura.'
+      `SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para ${operation}.`
     );
   }
+}
 
+/**
+ * Resolve versão e parâmetros (salt/iv/scrypt) para criptografia.
+ * @param {object} [options={}]
+ * @returns {{ requestedVersion: string, salt: Buffer, iv: Buffer, params: object }}
+ */
+function resolveEncryptContext(options = {}) {
   const requestedVersion = options.version === 'v2' ? 'v2' : 'v3';
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);
@@ -251,8 +271,17 @@ function encryptSession(payloadJson, secret, options = {}) {
     params = sanitizeScryptParams(coercedN, rawR, rawP, SCRYPT_PARAMS_V3);
   }
 
-  const key = crypto.scryptSync(secret, salt, 32, params);
+  return { requestedVersion, salt, iv, params };
+}
 
+/**
+ * Cifra o payload com a chave derivada e serializa o token final.
+ * @param {string} payloadJson
+ * @param {Buffer} key
+ * @param {{ requestedVersion: string, salt: Buffer, iv: Buffer, params: object }} context
+ * @returns {string}
+ */
+function buildEncryptedToken(payloadJson, key, { requestedVersion, salt, iv, params }) {
   let ciphertext;
   let tag;
 
@@ -278,24 +307,56 @@ function encryptSession(payloadJson, secret, options = {}) {
 }
 
 /**
- * Descriptografa o token de sessão usando scrypt + aes-256-gcm.
- * Compatível com tokens modernos v3 (marcador de parâmetros e N=2^17), v2 (salt dinâmico, N=16384)
- * e tokens legados v1 (salt fixo, N=16384).
- * @param {string} tokenString
+ * Criptografa o payload da sessão usando scrypt + aes-256-gcm com salt aleatório (v3)
+ * @param {string} payloadJson
  * @param {string} secret
- * @returns {string} Payload JSON descriptografado
+ * @param {object} [options={}] Opções adicionais de criptografia ({ version: 'v2'|'v3', N, r, p })
+ * @returns {string} Token no formato v3:N:r:p:salt:iv:tag:ciphertext:base64 (ou v2:salt:iv:tag:ciphertext:base64)
  */
-function decryptSession(tokenString, secret) {
+function encryptSession(payloadJson, secret, options = {}) {
+  assertValidSecret(secret, 'criptografia segura');
+  const context = resolveEncryptContext(options);
+  const key = crypto.scryptSync(secret, context.salt, 32, context.params);
+  return buildEncryptedToken(payloadJson, key, context);
+}
+
+/**
+ * Versão assíncrona de encryptSession: usa crypto.scrypt sem bloquear o event loop.
+ * Mesmo formato e mesmas mensagens de erro; API síncrona permanece para compatibilidade.
+ * @param {string} payloadJson
+ * @param {string} secret
+ * @param {object} [options={}]
+ * @returns {Promise<string>}
+ */
+async function encryptSessionAsync(payloadJson, secret, options = {}) {
+  assertValidSecret(secret, 'criptografia segura');
+  const context = resolveEncryptContext(options);
+  const key = await scryptAsync(secret, context.salt, 32, context.params);
+  return buildEncryptedToken(payloadJson, key, context);
+}
+
+/**
+ * Valida as entradas básicas da descriptografia (mensagens idênticas à versão síncrona).
+ */
+function assertValidDecryptInputs(tokenString, secret) {
   if (!secret || typeof secret !== 'string' || secret.length < 32) {
     throw new Error(
       'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para descriptografia.'
     );
   }
-
   if (!tokenString || typeof tokenString !== 'string') {
     throw new Error('Token de sessão não fornecido ou inválido.');
   }
+}
 
+/**
+ * Parseia e sanitiza o token de sessão (v1/v2/v3), decodificando os buffers.
+ * Compatível com tokens modernos v3 (marcador de parâmetros e N=2^17), v2 (salt dinâmico, N=16384)
+ * e tokens legados v1 (salt fixo, N=16384).
+ * @param {string} tokenString
+ * @returns {{ salt: Buffer, iv: Buffer, tag: Buffer, ciphertext: Buffer, scryptParams: object }}
+ */
+function parseSessionToken(tokenString) {
   const trimmed = tokenString.trim();
   const parts = trimmed.split(':');
 
@@ -358,36 +419,84 @@ function decryptSession(tokenString, secret) {
     );
   }
 
-  let key = null;
-  let decryptedStr = null;
+  return { salt, iv, tag, ciphertext, scryptParams };
+}
 
+/**
+ * Zera buffers sensíveis do token após o uso.
+ */
+function zeroDecryptBuffers({ salt, iv, tag, ciphertext }) {
+  if (salt && salt !== APP_SCRYPT_SALT_V1) salt.fill(0);
+  if (iv) iv.fill(0);
+  if (tag) tag.fill(0);
+  if (ciphertext) ciphertext.fill(0);
+}
+
+/**
+ * Decifra com a chave derivada e zera buffers sensíveis no final (sucesso ou falha).
+ */
+function decryptWithKey(key, parsed) {
+  const { iv, tag, ciphertext } = parsed;
+  let decryptedStr = null;
   try {
-    // scryptSync dentro do try: parâmetros inválidos (ex: token compacto + SCRYPT_N alto)
-    // são reportados como falha de autenticação, não como erro cru de parâmetros
-    key = crypto.scryptSync(secret, salt, 32, scryptParams);
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     const decryptedBuf = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     decryptedStr = decryptedBuf.toString('utf-8');
     decryptedBuf.fill(0);
-  } catch (err) {
-    throw new Error(
-      `Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto. Detalhes: ${err.message}`
-    );
   } finally {
-    // Zerar buffers da memória imediatamente após o uso
-    if (key) {
-      key.fill(0);
-    }
-    if (salt !== APP_SCRYPT_SALT_V1) {
-      salt.fill(0);
-    }
-    iv.fill(0);
-    tag.fill(0);
-    ciphertext.fill(0);
+    if (key) key.fill(0);
+    zeroDecryptBuffers(parsed);
   }
-
   return decryptedStr;
+}
+
+/**
+ * Normaliza qualquer falha (scrypt ou autenticação) na mensagem pública de erro.
+ */
+function toDecryptAuthError(err) {
+  return new Error(
+    `Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto. Detalhes: ${err.message}`
+  );
+}
+
+/**
+ * Descriptografa o token de sessão usando scrypt + aes-256-gcm (síncrono).
+ * @param {string} tokenString
+ * @param {string} secret
+ * @returns {string} Payload JSON descriptografado
+ */
+function decryptSession(tokenString, secret) {
+  assertValidDecryptInputs(tokenString, secret);
+  const parsed = parseSessionToken(tokenString);
+  try {
+    // scryptSync dentro do try: parâmetros inválidos (ex: token compacto + SCRYPT_N alto)
+    // são reportados como falha de autenticação, não como erro cru de parâmetros
+    const key = crypto.scryptSync(secret, parsed.salt, 32, parsed.scryptParams);
+    return decryptWithKey(key, parsed);
+  } catch (err) {
+    zeroDecryptBuffers(parsed);
+    throw toDecryptAuthError(err);
+  }
+}
+
+/**
+ * Versão assíncrona de decryptSession: usa crypto.scrypt sem bloquear o event loop.
+ * Mesmo formato, mesmas mensagens de erro e mesma limpeza de buffers.
+ * @param {string} tokenString
+ * @param {string} secret
+ * @returns {Promise<string>}
+ */
+async function decryptSessionAsync(tokenString, secret) {
+  assertValidDecryptInputs(tokenString, secret);
+  const parsed = parseSessionToken(tokenString);
+  try {
+    const key = await scryptAsync(secret, parsed.salt, 32, parsed.scryptParams);
+    return decryptWithKey(key, parsed);
+  } catch (err) {
+    zeroDecryptBuffers(parsed);
+    throw toDecryptAuthError(err);
+  }
 }
 
 // Schemas Zod para validação rigorosa da sessão
@@ -627,7 +736,9 @@ module.exports = {
   safeWriteFile,
   cleanOrphanTmpFiles,
   encryptSession,
+  encryptSessionAsync,
   decryptSession,
+  decryptSessionAsync,
   validateSessionPayload,
   validateSession,
   isCookieExpired,

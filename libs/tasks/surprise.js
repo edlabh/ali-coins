@@ -91,6 +91,48 @@ async function getCardSignature(card, fallbackIndex = 0) {
 }
 
 /**
+ * Extrai as assinaturas de TODOS os cards em um único roundtrip CDP ($$eval),
+ * evitando 1 evaluate por card candidato a cada toque (economia de CPU/latência).
+ * Retorna null quando o page não suporta $$eval ou a contagem diverge, permitindo
+ * o fallback individual via getCardSignature.
+ * @param {import('playwright').Page} page
+ * @param {number} cardCount
+ * @returns {Promise<string[]|null>}
+ */
+async function getCardSignatures(page, cardCount) {
+  if (
+    !page ||
+    typeof page.$$eval !== 'function' ||
+    !Number.isInteger(cardCount) ||
+    cardCount <= 0
+  ) {
+    return null;
+  }
+  try {
+    const signatures = await page.$$eval(SELECTORS.tasks.productCard, (els) =>
+      els.map((el, idx) => {
+        const link = el.tagName === 'A' ? el : el.querySelector && el.querySelector('a');
+        const href = link ? link.getAttribute('href') || link.href || '' : '';
+        const dataId =
+          (el.getAttribute &&
+            (el.getAttribute('data-item-id') ||
+              el.getAttribute('data-product-id') ||
+              el.getAttribute('data-id'))) ||
+          '';
+        const text = (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+        const imgEl = el.querySelector && el.querySelector('img');
+        const img = imgEl ? imgEl.getAttribute('src') || '' : '';
+        return dataId || href || el.id || text || img || `card-idx-${idx}`;
+      })
+    );
+    if (Array.isArray(signatures) && signatures.length === cardCount) return signatures;
+  } catch {
+    // Fallback individual cuida da assinatura
+  }
+  return null;
+}
+
+/**
  * Toca em 3 produtos na página de anúncios de ofertas/tarefas
  * Re-consulta elementos dinamicamente a cada toque para evitar stale element reference
  * pós goBack() e suporta paginação por scroll em múltiplas rodadas sem repetir cards já tocados.
@@ -155,6 +197,14 @@ async function executeSurpriseItems(
   let clickedCount = 0;
   const targetClicks = 3;
 
+  // Carrega cards + assinaturas em lote (1 $$ + 1 $$eval por consulta) e cai no modo
+  // individual (getCardSignature) quando o page não suporta $$eval.
+  const loadCards = async () => {
+    const cards = typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+    const signatures = await getCardSignatures(page, cards.length);
+    return { cards, signatures };
+  };
+
   for (let i = 0; i < targetClicks; i++) {
     if (signal && signal.aborted) {
       logger.warn('Execução de itens surpresa cancelada por timeout.');
@@ -163,8 +213,7 @@ async function executeSurpriseItems(
     const targetIdx = startIndex + i;
 
     // Obtém cards disponíveis no DOM com tentativa de scroll caso faltem cards
-    let currentCards =
-      typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+    let { cards: currentCards, signatures: currentSignatures } = await loadCards();
 
     for (let scrollAttempt = 0; scrollAttempt < 2; scrollAttempt++) {
       if (currentCards.length <= targetIdx || currentCards.length <= touchedCardsSet.size) {
@@ -174,8 +223,7 @@ async function executeSurpriseItems(
         if (typeof page.waitForTimeout === 'function') {
           await page.waitForTimeout(600).catch(() => {});
         }
-        currentCards =
-          typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+        ({ cards: currentCards, signatures: currentSignatures } = await loadCards());
       } else {
         break;
       }
@@ -185,8 +233,7 @@ async function executeSurpriseItems(
       if (typeof page.waitForSelector === 'function') {
         await page.waitForSelector(SELECTORS.tasks.productCard, { timeout: 3000 }).catch(() => {});
       }
-      currentCards =
-        typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+      ({ cards: currentCards, signatures: currentSignatures } = await loadCards());
       if (currentCards.length === 0) {
         logger.warn(
           `Nenhum card de produto encontrado no DOM para o clique ${i + 1}/${targetClicks}.`
@@ -194,6 +241,12 @@ async function executeSurpriseItems(
         break;
       }
     }
+
+    // Assinatura do índice: usa o lote quando disponível; senão avalia só o card candidato
+    const signatureAt = async (idx) =>
+      currentSignatures && currentSignatures[idx] !== undefined
+        ? currentSignatures[idx]
+        : await getCardSignature(currentCards[idx], idx);
 
     // Seleção de card sem wrap: encontra um card novo (não tocado ainda)
     let card = null;
@@ -203,7 +256,7 @@ async function executeSurpriseItems(
     // 1. Tenta pegar a partir de targetIdx se ainda não tocado
     if (targetIdx < currentCards.length) {
       const cand = currentCards[targetIdx];
-      const sig = await getCardSignature(cand, targetIdx);
+      const sig = await signatureAt(targetIdx);
       if (!touchedCardsSet.has(sig)) {
         card = cand;
         cardIndex = targetIdx;
@@ -214,10 +267,9 @@ async function executeSurpriseItems(
     // 2. Se não disponível ou já tocado, busca o primeiro card livre na lista
     if (!card) {
       for (let cIdx = 0; cIdx < currentCards.length; cIdx++) {
-        const cand = currentCards[cIdx];
-        const sig = await getCardSignature(cand, cIdx);
+        const sig = await signatureAt(cIdx);
         if (!touchedCardsSet.has(sig)) {
-          card = cand;
+          card = currentCards[cIdx];
           cardIndex = cIdx;
           cardSig = sig;
           break;
@@ -231,13 +283,11 @@ async function executeSurpriseItems(
       if (typeof page.waitForTimeout === 'function') {
         await page.waitForTimeout(800).catch(() => {});
       }
-      currentCards =
-        typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+      ({ cards: currentCards, signatures: currentSignatures } = await loadCards());
       for (let cIdx = 0; cIdx < currentCards.length; cIdx++) {
-        const cand = currentCards[cIdx];
-        const sig = await getCardSignature(cand, cIdx);
+        const sig = await signatureAt(cIdx);
         if (!touchedCardsSet.has(sig)) {
-          card = cand;
+          card = currentCards[cIdx];
           cardIndex = cIdx;
           cardSig = sig;
           break;
@@ -397,5 +447,6 @@ module.exports = {
   executeSurpriseItems,
   normalizeFeedUrl,
   isFeedUrl,
-  getCardSignature
+  getCardSignature,
+  getCardSignatures
 };

@@ -524,3 +524,47 @@ test('browser.js - heap do Chromium é limitado a [64, 2048] MB e erro final pre
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - flags de economia de CPU e bloqueio de service workers (padrão e opt-out)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const {
+    getChromiumArgs,
+    BACKGROUND_CPU_SAVING_ARGS,
+    isServiceWorkerBlockingEnabled
+  } = require('../browser');
+  const originalLowMemory = process.env.CHROMIUM_LOW_MEMORY;
+  const originalSw = process.env.PW_BLOCK_SERVICE_WORKERS;
+
+  try {
+    delete process.env.CHROMIUM_LOW_MEMORY;
+
+    const args = getChromiumArgs();
+    for (const flag of BACKGROUND_CPU_SAVING_ARGS) {
+      assert.ok(args.includes(flag), `Flag de economia de CPU ausente: ${flag}`);
+    }
+    // BackForwardCache deve permanecer habilitado para não alterar o goBack() das surpresas
+    assert.strictEqual(
+      BACKGROUND_CPU_SAVING_ARGS.join(' ').includes('BackForwardCache'),
+      false,
+      'BackForwardCache não deve ser desabilitado'
+    );
+
+    // Bloqueio de service workers: habilitado por padrão
+    delete process.env.PW_BLOCK_SERVICE_WORKERS;
+    assert.strictEqual(isServiceWorkerBlockingEnabled(), true);
+    for (const offValue of ['false', '0', 'off', 'no']) {
+      process.env.PW_BLOCK_SERVICE_WORKERS = offValue;
+      assert.strictEqual(
+        isServiceWorkerBlockingEnabled(),
+        false,
+        `PW_BLOCK_SERVICE_WORKERS=${offValue} deve desativar o bloqueio`
+      );
+    }
+  } finally {
+    if (originalLowMemory !== undefined) process.env.CHROMIUM_LOW_MEMORY = originalLowMemory;
+    else delete process.env.CHROMIUM_LOW_MEMORY;
+    if (originalSw !== undefined) process.env.PW_BLOCK_SERVICE_WORKERS = originalSw;
+    else delete process.env.PW_BLOCK_SERVICE_WORKERS;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

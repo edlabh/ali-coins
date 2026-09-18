@@ -2272,3 +2272,59 @@ test('tasks (Risco 3) - clique falho não marca o card como tocado e permite ret
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks (Risco 3) - assinaturas em lote ($$eval) mantêm cards distintos sem repetição', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const feedUrl = 'https://m.aliexpress.com/p/coin-index/adclick.html?taskId=batch';
+
+    const clickedCardIds = [];
+    const createMockCard = (id) => ({
+      id,
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCardIds.push(id);
+      }
+    });
+
+    const cardsPool = [
+      createMockCard('batch-1'),
+      createMockCard('batch-2'),
+      createMockCard('batch-3'),
+      createMockCard('batch-4'),
+      createMockCard('batch-5'),
+      createMockCard('batch-6')
+    ];
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => cardsPool,
+      // Simula o $$eval real: executa o callback com os elementos do DOM
+      $$eval: async (_selector, fn) => fn(cardsPool),
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => feedUrl,
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    const touchedCards = new Set();
+    const countR1 = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 0,
+      touchedCards
+    });
+    const countR2 = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 3,
+      touchedCards
+    });
+
+    assert.strictEqual(countR1 + countR2, 6, 'Deve tocar 6 cards ao longo das duas rodadas');
+    assert.strictEqual(new Set(clickedCardIds).size, 6, 'Nenhum card deve ser repetido');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

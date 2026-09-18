@@ -99,6 +99,33 @@ test('logger.js - mascara chaves sensíveis por prefixo/sufixo e em objetos anin
   }
 });
 
+test('logger.js - erro em registro plano tem a mensagem sanitizada (fast-path)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const script = `
+      process.argv.push('--json');
+      const logger = require('./logger');
+      const fakeToken = ['TOKEN', 'FALSO', 'DE', 'TESTE'].join('_') + '_1234567890';
+      logger.warn({ err: new Error('falha ao acessar https://x/y?token=' + fakeToken) }, 'erro plano');
+    `;
+
+    const res = spawnSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8'
+    });
+
+    assert.strictEqual(res.status, 0);
+    assert.strictEqual(
+      res.stderr.includes('TOKEN_FALSO_DE_TESTE_1234567890'),
+      false,
+      'token no err.message não deve vazar'
+    );
+    assert.ok(res.stderr.includes('token=[REDACTED]'), 'token no err.message deve ser mascarado');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('logger.js - sanitiza query strings sensíveis em campos estruturados (ex: url)', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {

@@ -5,7 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   encryptSession,
+  encryptSessionAsync,
   decryptSession,
+  decryptSessionAsync,
   validateSession,
   isCookieExpired,
   validateSessionPayload,
@@ -553,6 +555,40 @@ test('security.js - token v3 compacto com SCRYPT_N alto falha como erro de auten
     );
   } finally {
     SCRYPT_PARAMS_V3.N = originalN;
+  }
+});
+
+test('security.js - encryptSessionAsync/decryptSessionAsync são compatíveis com as versões síncronas', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const payload = JSON.stringify({
+      session: { cookies: [{ name: 'xman_us_t', value: 'tok', domain: '.aliexpress.com' }] },
+      meta: { user: 'async@example.com' }
+    });
+
+    // async encrypt -> sync decrypt
+    const tokenAsync = await encryptSessionAsync(payload, VALID_SECRET);
+    assert.strictEqual(decryptSession(tokenAsync, VALID_SECRET), payload);
+
+    // sync encrypt -> async decrypt (compatibilidade retroativa de tokens)
+    const tokenSync = encryptSession(payload, VALID_SECRET);
+    assert.strictEqual(await decryptSessionAsync(tokenSync, VALID_SECRET), payload);
+
+    // v2 async + validações com as mesmas mensagens
+    const tokenV2 = await encryptSessionAsync(payload, VALID_SECRET, { version: 'v2' });
+    assert.strictEqual(await decryptSessionAsync(tokenV2, VALID_SECRET), payload);
+
+    await assert.rejects(
+      () => encryptSessionAsync('{}', SHORT_SECRET),
+      /SESSION_SECRET é obrigatório/
+    );
+    await assert.rejects(() => decryptSessionAsync('', VALID_SECRET), /não fornecido ou inválido/);
+    await assert.rejects(
+      () => decryptSessionAsync('v2:AAAA:BBBB:CCCC:DDDD:base64', VALID_SECRET),
+      /Falha na autenticação\/descriptografia/
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
   }
 });
 

@@ -73,6 +73,38 @@ function getLowMemoryChromiumArgs() {
 // Por isso a flag só é aplicada quando o sandbox já está desabilitado (root/CI/NO_SANDBOX=true).
 const NO_ZYGOTE_ARG = '--no-zygote';
 
+// Flags de economia de CPU/rede aplicadas SEMPRE (inofensivas para o fluxo de automação):
+// desligam serviços internos do Chromium (updates, sync, crashpad, mídia) que consomem
+// recursos sem qualquer benefício para as tarefas. Não incluem BackForwardCache para
+// preservar o comportamento de goBack() usado no fluxo de surpresas.
+const BACKGROUND_CPU_SAVING_ARGS = [
+  '--disable-background-networking',
+  '--disable-component-update',
+  '--disable-sync',
+  '--disable-breakpad',
+  '--mute-audio',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-default-apps',
+  '--disable-client-side-phishing-detection',
+  '--metrics-recording-only',
+  '--disable-features=Translate,AcceptCHFrame,MediaRouter,OptimizationHints'
+];
+
+// Service workers rodam em background e podem escapar do context.route (bloqueio de mídia),
+// consumindo CPU/RAM. Bloqueados por padrão; opt-out com PW_BLOCK_SERVICE_WORKERS=false.
+const SERVICE_WORKERS_DISABLED_REGEX = /^(0|false|off|no)$/i;
+
+/**
+ * Indica se o bloqueio de service workers está habilitado (padrão: true).
+ * @returns {boolean}
+ */
+function isServiceWorkerBlockingEnabled() {
+  return !SERVICE_WORKERS_DISABLED_REGEX.test(
+    String(process.env.PW_BLOCK_SERVICE_WORKERS || '').trim()
+  );
+}
+
 /**
  * Indica se o modo de baixo consumo do Chromium está habilitado (padrão: true).
  * Apenas valores explícitos de desativação (false/0/off) o desligam.
@@ -93,7 +125,11 @@ function buildChromiumArgs({ forceNoSandbox = false, lowMemory } = {}) {
   const info = isNoSandboxRequired();
   const shouldDisable = info.shouldDisable || forceNoSandbox;
   const useLowMemory = lowMemory !== undefined ? Boolean(lowMemory) : isLowMemoryModeEnabled();
-  const args = ['--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'];
+  const args = [
+    '--disable-dev-shm-usage',
+    '--disable-blink-features=AutomationControlled',
+    ...BACKGROUND_CPU_SAVING_ARGS
+  ];
 
   if (shouldDisable) {
     logger.warn(
@@ -332,6 +368,7 @@ async function newMobileContext(browser, storageState = null, options = {}) {
   let contextOptions = {
     ...pixel7,
     locale: 'pt-BR',
+    serviceWorkers: isServiceWorkerBlockingEnabled() ? 'block' : 'allow',
     ...(resolvedStorage ? { storageState: resolvedStorage } : {}),
     ...options
   };
@@ -361,6 +398,7 @@ async function newDesktopContext(browser, storageState = null, options = {}) {
   const resolvedStorage = await resolveStorageState(storageState);
   let contextOptions = {
     locale: 'pt-BR',
+    serviceWorkers: isServiceWorkerBlockingEnabled() ? 'block' : 'allow',
     ...(resolvedStorage ? { storageState: resolvedStorage } : {}),
     ...options
   };
@@ -500,6 +538,8 @@ module.exports = {
   getChromiumJsHeapMb,
   DEFAULT_JS_HEAP_MB,
   NO_ZYGOTE_ARG,
+  BACKGROUND_CPU_SAVING_ARGS,
+  isServiceWorkerBlockingEnabled,
   SENSITIVE_ENV_KEY_REGEX,
   SENSITIVE_ENV_KEY_PREFIX_REGEX,
   newMobileContext,

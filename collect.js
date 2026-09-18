@@ -176,17 +176,20 @@ async function runCheckin(options = {}) {
           throw loginErr;
         }
 
-        // Aguardar o redirecionamento pós-login concluir e assegurar navegação para o coin-index
+        // Aguardar o redirecionamento pós-login concluir e assegurar navegação para o coin-index.
+        // 'networkidle' foi removido: no msite ele pode esperar até 30s por requisições de
+        // telemetria e carrega bookkeeping pesado no Playwright; a estabilização do SPA é
+        // garantida pelos waits explícitos de seletor/login-pending logo abaixo.
         await page.waitForURL(/coin-index/, { timeout: config.NAV_TIMEOUT_SHORT }).catch(() => {});
         await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForLoadState('networkidle').catch(() => {});
+        await page.waitForTimeout(1000).catch(() => {});
 
         if (!page.url().includes('coin-index')) {
           await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
             waitUntil: 'domcontentloaded',
             timeout: config.NAV_TIMEOUT
           }).catch(() => {});
-          await page.waitForLoadState('networkidle').catch(() => {});
+          await page.waitForTimeout(1000).catch(() => {});
         }
       }
 
