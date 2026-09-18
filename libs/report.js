@@ -423,7 +423,15 @@ function renderCheckinReport(checkinResult, options = {}) {
   if (options.json) {
     const payload = { type: 'checkin', ...checkinResult };
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
-    sendWebhookNotification(payload).catch(() => {});
+    // Mascara o e-mail antes de enviar a webhooks de terceiros (Discord/Telegram) — o stdout
+    // local mantém o valor cru, que é o comportamento já esperado por quem consome --json.
+    const webhookPayload = {
+      ...payload,
+      userEmail: checkinResult.userEmail
+        ? maskUser(checkinResult.userEmail)
+        : checkinResult.userEmail
+    };
+    sendWebhookNotification(webhookPayload).catch(() => {});
     return;
   }
 
@@ -711,7 +719,7 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
     }
 
     if (res.tasksResult && res.tasksResult.results) {
-      logger.info(`  • Tarefas executadas: ${res.tasksResult.totalActions || 0}`);
+      logger.info(`  • Tarefas executadas: ${res.tasksResult.results.length}`);
       for (const r of res.tasksResult.results) {
         logger.info(`    - ${r.title}: ${r.status} (${r.coins || ''})`);
       }

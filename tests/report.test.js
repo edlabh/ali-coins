@@ -963,3 +963,121 @@ test('report.js - renderUnifiedReport e renderMultiAccountReport exibem (+0 moed
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/report.js - renderMultiAccountReport exibe a quantidade correta de tarefas executadas (results.length)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    renderMultiAccountReport(
+      [
+        {
+          account: { maskedUser: 'test***@example.com' },
+          checkinResult: {
+            alreadyCollected: true,
+            coinsGainedToday: '0',
+            streakDays: 10,
+            totalBalance: '1000',
+            duration: '2s'
+          },
+          tasksResult: {
+            results: [
+              { title: 'Task 1', status: 'Concluída', coins: '+5 moedas' },
+              { title: 'Task 2', status: 'Concluída', coins: '+10 moedas' },
+              { title: 'Task 3', status: 'Falhou' }
+            ],
+            coinsGained: 15,
+            finalCoins: '1015 moedas',
+            duration: '12s'
+          },
+          duration: '14s'
+        }
+      ],
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '14s' }
+    );
+
+    const out = messages.join('\n');
+    assert.ok(
+      out.includes('• Tarefas executadas: 3'),
+      `Deve reportar 3 tarefas executadas (results.length): ${out}`
+    );
+    assert.strictEqual(
+      out.includes('• Tarefas executadas: 0'),
+      false,
+      'Não deve reportar 0 tarefas executadas quando há resultados'
+    );
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - renderCheckinReport no modo --json mascara e-mail enviado ao webhook mas preserva no stdout', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalWrite = process.stdout.write;
+  const originalFetch = global.fetch;
+  const originalWebhookEnv = process.env.NOTIFY_WEBHOOK_URL;
+  let stdoutCaptured = '';
+  let webhookPayloadCaptured = null;
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://webhook.example.com/test';
+
+    process.stdout.write = (chunk, encoding, callback) => {
+      stdoutCaptured += chunk;
+      return originalWrite.call(process.stdout, chunk, encoding, callback);
+    };
+
+    global.fetch = async (url, options) => {
+      if (options && options.body) {
+        webhookPayloadCaptured = JSON.parse(options.body);
+      }
+      return { ok: true, status: 200 };
+    };
+
+    renderCheckinReport(
+      {
+        userEmail: 'alice.bob@example.com',
+        alreadyCollected: false,
+        coinsGainedToday: '40',
+        streakDays: 7,
+        totalBalance: '1540',
+        duration: '3s'
+      },
+      { json: true }
+    );
+
+    // Aguardar microtasks da promise sendWebhookNotification
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // 1. stdout local preserva e-mail original/cru (não mascarado)
+    assert.ok(
+      stdoutCaptured.includes('"userEmail": "alice.bob@example.com"'),
+      `stdout deve conter e-mail não mascarado: ${stdoutCaptured}`
+    );
+    assert.ok(stdoutCaptured.includes('"type": "checkin"'));
+
+    // 2. webhook de terceiros recebe e-mail devidamente mascarado (PII protection)
+    assert.ok(webhookPayloadCaptured, 'Webhook deve ter sido acionado');
+    assert.strictEqual(webhookPayloadCaptured.type, 'checkin');
+    assert.notStrictEqual(webhookPayloadCaptured.userEmail, 'alice.bob@example.com');
+    assert.strictEqual(webhookPayloadCaptured.userEmail, 'al***@example.com');
+  } finally {
+    process.stdout.write = originalWrite;
+    global.fetch = originalFetch;
+    if (originalWebhookEnv !== undefined) {
+      process.env.NOTIFY_WEBHOOK_URL = originalWebhookEnv;
+    } else {
+      delete process.env.NOTIFY_WEBHOOK_URL;
+    }
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

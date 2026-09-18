@@ -18,7 +18,6 @@ const {
   closeModals,
   getBalanceDesktop,
   openTaskDrawer,
-  extractTasksFromDrawer,
   executeTaskAction,
   findNextPendingTask,
   recordTaskAttempt,
@@ -230,54 +229,17 @@ async function runTasks(options = {}) {
       let totalActions = 0;
       const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
 
-      async function getDrawerTasksWithRetry(
-        currentPage,
-        { maxRetries = 2, label = 'execução' } = {}
-      ) {
-        let activePage = currentPage;
-        for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
-          activePage = await ensureMainPage(activePage);
-          const drawerOpened = await openTaskDrawer(activePage);
-          if (!drawerOpened) {
-            logger.warn(
-              `[${label}] Tentativa ${attempt}/${maxRetries + 1}: painel de tarefas fechado ou não detectado.`
-            );
-            if (attempt <= maxRetries) {
-              if (typeof activePage.waitForTimeout === 'function') {
-                await activePage.waitForTimeout(1200).catch(() => {});
-              }
-              continue;
-            }
-            return {
-              page: activePage,
-              tasks: [],
-              error: new Error('Painel "Ganhe mais moedas" inacessível após tentativas.')
-            };
-          }
-
-          const tasks = await extractTasksFromDrawer(activePage);
-          if (tasks.error) {
-            logger.warn(
-              { err: tasks.error.message },
-              `[${label}] Tentativa ${attempt}/${maxRetries + 1}: falha na leitura dos elementos de tarefas.`
-            );
-            if (attempt <= maxRetries) {
-              if (typeof activePage.waitForTimeout === 'function') {
-                await activePage.waitForTimeout(1200).catch(() => {});
-              }
-              continue;
-            }
-            return { page: activePage, tasks: [], error: tasks.error };
-          }
-
-          return { page: activePage, tasks, error: null };
-        }
-        return {
-          page: activePage,
-          tasks: [],
-          error: new Error('Tentativas esgotadas ao abrir gaveta de tarefas.')
-        };
-      }
+      // Fonte única em libs/tasks/verifier.js (via fachada libs/ui) — sem duplicação local
+      const getDrawerTasksWithRetry = (currentPage, { maxRetries = 2, label = 'execução' } = {}) =>
+        getDrawerTasksWithRetryFn({
+          page: currentPage,
+          context,
+          maxRetries,
+          label,
+          config,
+          logger,
+          ensureMainPageFn: ensureMainPage
+        });
 
       while (totalActions < MAX_TOTAL_ACTIONS) {
         const {

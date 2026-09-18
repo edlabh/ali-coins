@@ -15,6 +15,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Corrigido
 
+- **Contagem de tarefas executadas no relatório multi-conta (`libs/report.js`):** Correção da referência ao campo inexistente `res.tasksResult.totalActions` em `renderMultiAccountReport()`, que causava exibição constante de `"Tarefas executadas: 0"` mesmo com tarefas concluídas. O log agora consome `res.tasksResult.results.length`, exibindo a quantidade correta de tarefas processadas por conta.
+- **Proteção de PII no webhook de check-in em modo JSON (`libs/report.js`):** Em `renderCheckinReport()` com `options.json = true`, o e-mail da conta agora passa por `maskUser` antes do despacho a `sendWebhookNotification()`, prevenindo vazamento de credenciais a webhooks externos (Discord/Telegram) e mantendo o valor cru apenas no `stdout` local para consumidores de pipeline.
+
 - **Isolamento de abas, recuperação pós-timeout e auto-cura em "Browse surprise items" (`libs/tasks/surprise.js`, `do_tasks.js`, `libs/tasks/verifier.js`):**
   - O fallback de captura de novas abas via `context.pages()` em `surprise.js` agora armazena um snapshot (`pagesBeforeClick`) antes de cada toque e filtra estritamente por páginas abertas _após_ o clique. Isso elimina o fechamento acidental da página principal de execução (`mainPage`) e da página de feed de surpresas (`activePage`), que causava o erro catastrófico `page.$$eval: Target page, context or browser has been closed`.
   - Nova rotina de auto-cura `ensureMainPage` (`libs/tasks/verifier.js`, exportada em `do_tasks.js` e `libs/ui/tasks.js`): detecta se a página principal foi fechada ou navegou para fora da central de moedas, recriando a página transparentemente a partir do contexto do browser e reabrindo o msite sem interromper o loop de tarefas.
