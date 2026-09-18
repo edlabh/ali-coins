@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { configSchema, ConfigValidationError, loadConfig, maskChatId } = require('../config');
+const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
 
 test('config.js - defaults schema Zod', () => {
   const minimalData = {
@@ -216,14 +217,14 @@ test('config.js - locks de contas secundárias também ficam no diretório do pr
     process.env.ALI_USER_2 = 'lock_b@example.com';
     process.env.ALI_PASSWORD_2 = 'pwd_b';
 
-    const accounts = loadAccounts(process.env, __dirname);
+    const accounts = loadAccounts(process.env, process.cwd());
     assert.strictEqual(accounts.length, 2, 'Duas contas devem ser carregadas');
 
     for (const acc of accounts) {
       assert.strictEqual(
         path.dirname(acc.lockPath),
-        path.resolve(__dirname, '..'),
-        `Lock deve ficar no diretório do projeto: ${acc.lockPath}`
+        process.cwd(),
+        `Lock deve ficar no baseDir informado: ${acc.lockPath}`
       );
       assert.notStrictEqual(
         path.dirname(acc.lockPath),
@@ -236,6 +237,20 @@ test('config.js - locks de contas secundárias também ficam no diretório do pr
           `Lock deve conter o uid: ${acc.lockPath}`
         );
       }
+    }
+
+    // Lock secundário segue o baseDir customizado (não o diretório do módulo).
+    // A conta primária mantém o lock global do projeto (lockFilePath).
+    const tmpDir = createIsolatedTestDir('ali-locks-basedir-');
+    try {
+      const custom = loadAccounts(process.env, tmpDir);
+      assert.strictEqual(
+        path.dirname(custom[1].lockPath),
+        tmpDir,
+        `Lock secundário deve seguir o baseDir: ${custom[1].lockPath}`
+      );
+    } finally {
+      cleanupIsolatedTestDir(tmpDir);
     }
   } finally {
     for (const [key, value] of Object.entries(original)) {

@@ -19,7 +19,8 @@ const {
   performMobileLogin,
   getStreakFromCoinPage,
   getBalanceDesktop,
-  getCheckinCoinsFromStreak
+  getCheckinCoinsFromStreak,
+  closeCachedDesktopContext
 } = require('./libs/ui');
 const { renderCheckinReport } = require('./libs/report');
 const logger = require('./logger');
@@ -508,6 +509,8 @@ async function runCheckin(options = {}) {
       throw flowErr;
     }
   } finally {
+    // Fecha contexto desktop cacheado (opt-in) para não reter RAM entre contas
+    await closeCachedDesktopContext().catch(() => {});
     if (isInternalBrowser && browser) {
       await browser.close().catch(() => {});
     }

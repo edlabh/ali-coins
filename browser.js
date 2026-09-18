@@ -202,13 +202,19 @@ async function launchBrowser(options = {}) {
   const extraArgs = options.args || [];
   const lowMemoryEnabled = isLowMemoryModeEnabled();
 
-  // `env` sanitizado tem precedência: options.env (se houver) é mesclado sobre ele e
-  // NÃO substitui o env do Chromium, evitando vazar segredos do processo em usos futuros.
+  // `options.env` é mesclado sobre o env sanitizado e passa pelo MESMO filtro de segredos,
+  // evitando reintroduzir SESSION_SECRET/ALI_PASSWORD/tokens no processo do Chromium.
   const { env: callerEnv, ...restOptions } = options;
+  const sanitizedCallerEnv = {};
+  for (const [key, value] of Object.entries(callerEnv || {})) {
+    if (value === undefined) continue;
+    if (SENSITIVE_ENV_KEY_REGEX.test(key) || SENSITIVE_ENV_KEY_PREFIX_REGEX.test(key)) continue;
+    sanitizedCallerEnv[key] = value;
+  }
   const baseLaunchOptions = {
     ...restOptions,
     headless: restOptions.headless !== undefined ? restOptions.headless : true,
-    env: { ...defaultEnv, ...(callerEnv || {}) }
+    env: { ...defaultEnv, ...sanitizedCallerEnv }
   };
 
   // Sequência de tentativas de launch, da mais restrita à mais permissiva.

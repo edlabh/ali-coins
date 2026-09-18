@@ -76,7 +76,7 @@ function getEncryptionConfig(options = {}) {
 
 /**
  * Carrega de forma segura os arquivos de sessão e metadados se existirem
- * Suporta leitura transparente de .enc (AES-256-GCM v2) com fallback para .json legado,
+ * Suporta leitura transparente de .enc (AES-256-GCM) com fallback para .json legado,
  * migração automática para formato criptografado e rotação de chave via SESSION_SECRET_OLD.
  * @param {object} [options={}]
  * @returns {Promise<{ sessionData: object|null, metaData: object|null }>}

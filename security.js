@@ -134,17 +134,21 @@ function sanitizeScryptParams(rawN, rawR, rawP, fallback = SCRYPT_PARAMS_V3) {
   let r = clampInt(rawR, 1, SCRYPT_MAX_R, fallbackR);
   const p = clampInt(rawP, 1, SCRYPT_MAX_P, fallbackP);
 
-  // Aplica teto de memória combinada (128*N*r). Reduz N à metade até caber no limite;
-  // se ainda exceder com N no piso, cai para parâmetros mínimos seguros.
-  while (N > SCRYPT_MIN_N && 128 * N * r > SCRYPT_MEMORY_CAP_BYTES) {
+  // Aplica teto de memória combinada. O OpenSSL usa 128*N*r*p + 128*r*p bytes; reduz
+  // N à metade até caber no limite e rejeita (fallback de piso) o que ainda exceder,
+  // impedindo esgotamento de memória a partir de token forjado.
+  const scryptMemoryBytes = (n, rFactor, pFactor) =>
+    128 * n * rFactor * pFactor + 128 * rFactor * pFactor;
+  while (N > SCRYPT_MIN_N && scryptMemoryBytes(N, r, p) > SCRYPT_MEMORY_CAP_BYTES) {
     N = N >> 1;
   }
-  if (128 * N * r > SCRYPT_MEMORY_CAP_BYTES) {
+  if (scryptMemoryBytes(N, r, p) > SCRYPT_MEMORY_CAP_BYTES) {
     N = SCRYPT_MIN_N;
     r = 1;
   }
 
-  return { N, r, p, maxmem: Math.max(SCRYPT_MEMORY_CAP_BYTES, 128 * N * r * 2) };
+  // maxmem nunca excede o cap e cobre a memória real do scrypt com 2× de headroom
+  return { N, r, p, maxmem: Math.min(SCRYPT_MEMORY_CAP_BYTES, scryptMemoryBytes(N, r, p) * 2) };
 }
 
 /**
@@ -195,6 +199,21 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
 
     await fs.promises.rename(tmpPath, filePath);
     safeChmod600(filePath);
+
+    // Durabilidade do rename: fsync do diretório (best-effort; pode não ser suportado
+    // em todos os sistemas de arquivos/Windows, por isso é silenciosamente tolerado).
+    if (durable) {
+      try {
+        const dirHandle = await fs.promises.open(path.dirname(filePath), 'r');
+        try {
+          await dirHandle.sync();
+        } finally {
+          await dirHandle.close();
+        }
+      } catch {
+        // Diretório não sincronizável neste SO: ignora
+      }
+    }
   } catch (err) {
     if (handle) {
       try {

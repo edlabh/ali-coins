@@ -21,7 +21,11 @@ if (fs.existsSync(credentialsEnvPath)) {
 }
 
 // Allowlist compartilhada com libs/session.js (fonte única em libs/storage_filter.js)
-const { ALLOWED_STORAGE_KEY_PATTERNS, isAllowedStorageKey } = require('./libs/storage_filter');
+const {
+  ALLOWED_STORAGE_KEY_PATTERNS,
+  isAllowedStorageKey,
+  filterStorageState
+} = require('./libs/storage_filter');
 
 class ExportSessionError extends Error {
   constructor(message) {
@@ -38,7 +42,7 @@ class ExportSessionError extends Error {
  */
 async function exportSession(options = {}) {
   logger.info('===================================================================');
-  logger.info('         EXPORTAÇÃO SEGURA DE SESSÃO ALIEXPRESS (AES-256-GCM v2)');
+  logger.info('         EXPORTAÇÃO SEGURA DE SESSÃO ALIEXPRESS (AES-256-GCM v3)');
   logger.info('===================================================================');
 
   const baseDir = options.baseDir;
@@ -65,8 +69,9 @@ async function exportSession(options = {}) {
       );
     }
     expectedUser = target.user;
-    sPath = target.sessionPath;
-    mPath = target.sessionMetaPath;
+    // Caminhos explícitos passados pelo chamador têm precedência sobre os da conta alvo
+    if (!options.sessionPath) sPath = target.sessionPath;
+    if (!options.sessionMetaPath) mPath = target.sessionMetaPath;
     if (!options.sessionTokenPath) {
       tPath =
         target.index === 1
@@ -113,13 +118,9 @@ async function exportSession(options = {}) {
     throw new ExportSessionError(`Sessão inválida para exportação: ${validation.reason}`);
   }
 
-  // Filtragem estrita de localStorage via allowlist
+  // Filtragem estrita de localStorage via allowlist compartilhada (null-safe)
   if (session.origins && Array.isArray(session.origins)) {
-    session.origins.forEach((o) => {
-      if (o.localStorage && Array.isArray(o.localStorage)) {
-        o.localStorage = o.localStorage.filter((i) => isAllowedStorageKey(i.name));
-      }
-    });
+    session.origins = filterStorageState(session).origins;
   }
 
   const now = new Date();

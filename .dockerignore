@@ -1,6 +1,8 @@
 # Dependências e artefatos de build
 node_modules/
 scratch/
+# Libs extraídas localmente (LD_LIBRARY_PATH); no container valem as libs do apt
+libs/extracted/
 
 # SEGURANÇA (nunca remover): credenciais, sessões, tokens e metadados
 credentials.env

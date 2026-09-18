@@ -45,6 +45,14 @@ test('.dockerignore - mantém TODOS os padrões de segurança de sessão/credenc
   }
 });
 
+test('.dockerignore - exclui libs/extracted (libs locais não devem ir para a imagem)', () => {
+  const patterns = ignoredPatterns();
+  assert.ok(
+    patterns.includes('libs/extracted/') || patterns.includes('libs/extracted'),
+    'libs/extracted deve ser excluído para não sobrepor as libs do apt no container'
+  );
+});
+
 test('.dockerignore - não exclui arquivos necessários em runtime', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {

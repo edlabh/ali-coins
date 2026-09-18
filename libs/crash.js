@@ -1,5 +1,22 @@
 const logger = require('../logger');
 const { flushAndExit } = require('./exit');
+
+/**
+ * Converte um motivo de crash não-Error em texto útil (evita "[object Object]").
+ * @param {unknown} value
+ * @returns {string}
+ */
+function describeNonError(value) {
+  if (value === undefined || value === null) return String(value);
+  if (typeof value === 'string') return value;
+  try {
+    const json = JSON.stringify(value);
+    if (json && json !== '{}') return json;
+  } catch {
+    // Valor circular: cai no String()
+  }
+  return String(value);
+}
 const { sendTelegram } = require('./notify');
 const { sendHeartbeat } = require('./heartbeat');
 
@@ -29,7 +46,7 @@ function setupGlobalCrashHandler(getContext = () => ({})) {
     }, 15000);
     if (emergencyTimer.unref) emergencyTimer.unref();
 
-    const err = error instanceof Error ? error : new Error(String(error));
+    const err = error instanceof Error ? error : new Error(describeNonError(error));
     logger.fatal(
       { err: err.stack || err.message, crashType: type },
       `Falha global não tratada detectada (${type}). Finalizando execução com código 6.`

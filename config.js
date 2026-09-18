@@ -623,10 +623,11 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
       sessionMetaPath: isPrimary
         ? path.join(baseDir, 'session_meta.json')
         : path.join(baseDir, `session_meta_${hash}.json`),
-      // Lock também isolado por usuário e no diretório do projeto (evita /tmp compartilhado)
+      // Lock isolado por usuário; contas secundárias seguem o baseDir das sessões
+      // (antes ignoravam baseDir customizado). Primária mantém o lock global do projeto.
       lockPath: isPrimary
         ? lockFilePath
-        : path.join(__dirname, `ali-coins-${lockUserSuffix}-${hash}.lock`)
+        : path.join(baseDir, `ali-coins-${lockUserSuffix}-${hash}.lock`)
     };
   });
 }

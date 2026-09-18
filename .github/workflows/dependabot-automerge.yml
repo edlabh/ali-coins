@@ -1,6 +1,10 @@
 name: Dependabot Auto-merge
 
-on: pull_request
+# pull_request_target: em PRs do Dependabot o GITHUB_TOKEN do evento `pull_request`
+# é rebaixado para somente-leitura (as permissions do workflow são ignoradas), fazendo
+# `gh pr merge --auto` falhar com 403. Este workflow NÃO faz checkout/execução do código
+# do PR (usa apenas gh api/fetch-metadata), então o trigger é seguro.
+on: pull_request_target
 
 permissions:
   contents: write

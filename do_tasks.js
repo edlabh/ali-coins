@@ -17,6 +17,7 @@ const {
   gotoWithRetry,
   closeModals,
   getBalanceDesktop,
+  closeCachedDesktopContext,
   openTaskDrawer,
   executeTaskAction,
   isInteractiveOrAppOnly,
@@ -543,6 +544,8 @@ async function runTasks(options = {}) {
       throw flowErr;
     }
   } finally {
+    // Fecha contexto desktop cacheado (opt-in) para não reter RAM entre contas
+    await closeCachedDesktopContext().catch(() => {});
     if (isInternalBrowser && browser) {
       await browser.close().catch(() => {});
     }

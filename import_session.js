@@ -36,7 +36,7 @@ async function readTokenFromInput(customFilePath = null) {
       continue;
     } else if (arg.startsWith('-')) {
       continue;
-    } else if (args[i - 1] === '--from-file') {
+    } else if (args[i - 1] === '--from-file' || args[i - 1] === '--account') {
       continue;
     } else {
       logger.warn(
@@ -123,7 +123,7 @@ async function readTokenFromInput(customFilePath = null) {
 }
 
 /**
- * Migra um arquivo session.json legado em texto puro para session.json.enc (AES-256-GCM v2)
+ * Migra um arquivo session.json legado em texto puro para session.json.enc (AES-256-GCM)
  * @param {object} [options={}]
  * @returns {Promise<{ user: string, cookiesCount: number, migrated: boolean, encrypted: boolean }>}
  */
@@ -172,7 +172,7 @@ async function migrateLegacySession(options = {}) {
   safeChmod600(mPath);
 
   logger.info(
-    `[SUCESSO] Sessão legada "${sPath}" migrada com sucesso para "${encPath}" (AES-256-GCM v2, 0o600).`
+    `[SUCESSO] Sessão legada "${sPath}" migrada com sucesso para "${encPath}" (AES-256-GCM, 0o600).`
   );
   return {
     user: metaData.user,
@@ -347,7 +347,7 @@ async function importSession(options = {}) {
       logger.info(`[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`);
     }
     logger.info(
-      `[SUCESSO] Arquivo "${path.basename(encPath)}" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, criptografia AES-256-GCM v2 at-rest).`
+      `[SUCESSO] Arquivo "${path.basename(encPath)}" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, criptografia AES-256-GCM at-rest).`
     );
     logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
   } else {

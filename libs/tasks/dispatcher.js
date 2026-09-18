@@ -145,7 +145,7 @@ async function executeTaskAction(
     titleLower.includes('0.1') ||
     descLower.includes('0.1')
   ) {
-    await executePrizeLandTask({ page, logger });
+    await executePrizeLandTask({ page, logger, signal });
     return { isSpecialOrAppOnly: true };
   }
 

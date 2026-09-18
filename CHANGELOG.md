@@ -60,14 +60,29 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Reuso opcional de contexto desktop (`libs/ui/balance.js`):** `options.context`/`options.reuseContext` + `closeCachedDesktopContext()`; **desligado por padrão** para não manter contexto vivo e elevar o pico de RAM durante o fluxo mobile.
 - **Webhooks em módulo leve (`libs/webhooks.js`):** `libs/exit.js` deixa de carregar o Playwright (via `report.js`) em toda saída, reduzindo latência/memória de `import_session`, `export_session`, `--help` e `--dry-run`.
 
+### Onda 5 (endurecimento final)
+
+- **Revalidação de card em `findTaskElement` (`libs/tasks/verifier.js`):** o caminho otimizado por `$$eval` revalida o título do elemento resolvido antes de retornar, evitando clicar em outro card se a lista re-renderizar entre as duas consultas.
+- **Cancelamento do Prize Land (`libs/tasks/prizeland.js`, `libs/tasks/dispatcher.js`):** o `AbortSignal` agora é propagado e o clique é abortado se a tarefa estourar o tempo.
+- **Cache de contexto desktop fechado no teardown (`collect.js`, `do_tasks.js`, `libs/ui/balance.js`):** `closeCachedDesktopContext()` é chamado ao final, evitando reter RAM/cookies entre contas quando o reuso opt-in está ativo.
+- **`export_session` com caminho explícito (`export_session.js`):** `options.sessionPath`/`sessionMetaPath` têm precedência sobre os caminhos derivados de `--account`.
+- **`accounts.json`/storage filtrados de forma null-safe (`export_session.js`):** reutiliza `filterStorageState`, eliminando `TypeError` com entradas `null` e a divergência com `libs/storage_filter.js`.
+- **`libs/crash.js`:** motivo de crash não-`Error` passa a ser serializado (e não `[object Object]`).
+- **`security.js`:** `fsync` best-effort do diretório após o rename (durabilidade do rename) e pré-checagem de memória do scrypt (`128*N*r*p + 128*r*p`) impedindo que `maxmem` clampeado gere "memory limit exceeded".
+- **`config.js`:** locks de contas secundárias seguem o `baseDir` (antes ignoravam baseDir customizado); primária mantém o lock global.
+- **`.dockerignore`:** exclui `libs/extracted/` (libs locais não devem sobrepor as libs do apt no container).
+- **Rótulos de formato de token (`export_session.js`, `import_session.js`, `libs/session.js`):** textos passam a `AES-256-GCM`/`v3` em vez de "v2".
+- **`--account` não gera mais falso aviso de argumento posicional (`import_session.js`).**
+- **`dependabot-automerge.yml`:** trigger migrado para `pull_request_target` (sem checkout/execução do código do PR), evitando 403 do `GITHUB_TOKEN` rebaixado em PRs do Dependabot.
+
 ### Adicionado
 
 - **`SESSION_STRICT_STORAGE`** (padrão `true`), **`SCRYPT_N`** auto, **`options.durable`** em `safeWriteFile`, **`options.context`/`options.reuseContext`/`closeCachedDesktopContext()`** em `getBalanceDesktop`, **`flushWebhooks()`**, **`tasksError`** no `meta` do relatório unificado e exportação de `isProcessAlive`/`getEffectiveDefaultScryptN`.
 
 ### Testes
 
-- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js`, `tests/heartbeat.test.js`, `tests/exit.test.js`, `tests/security.test.js`, `tests/session.test.js`, `tests/tasks.test.js`, `tests/balance.test.js`, `tests/report.test.js`, `tests/time_utils.test.js`, `tests/import_stdin.test.js` e `tests/webhooks.test.js` — **293/293**.
-- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), 5m37s, pico **511MiB**, 2/2 contas, 0 riscos; host de 1024 MB autodetectado para scrypt `N=32768`; filtro de storage manteve apenas chaves permitidas; `libs/webhooks.js` não carrega Playwright.
+- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js`, `tests/heartbeat.test.js`, `tests/exit.test.js`, `tests/security.test.js`, `tests/session.test.js`, `tests/tasks.test.js`, `tests/balance.test.js`, `tests/report.test.js`, `tests/time_utils.test.js`, `tests/import_stdin.test.js`, `tests/webhooks.test.js` e `tests/dockerignore.test.js` — **296/296**; `actionlint` sem erros nos workflows.
+- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), ~5m30s, pico **~520MiB**, 2/2 contas, 0 riscos; host de 1024 MB autodetectado para scrypt `N=32768`; filtro de storage manteve apenas chaves permitidas; `libs/webhooks.js` não carrega Playwright.
 
 ## [1.1.0] - 2026-09-18
 

@@ -398,14 +398,32 @@ async function acquireLock(
     // Restaura o comportamento padrão dos sinais após a liberação do lock
     removeSignalHandlers();
     try {
-      const content = await fs.promises.readFile(targetLockPath, 'utf-8');
-      const currentLock = JSON.parse(content);
-      // lockId identifica a geração do lock; locks legados (sem lockId) usam o PID
-      const isOurs = currentLock.lockId
-        ? currentLock.lockId === lockData.lockId
-        : currentLock.pid === process.pid;
+      // Remoção atômica condicional: move o lock para um caminho privado (rename atômico),
+      // confere se ainda é o nosso e só então apaga. Se outro dono assumiu entre a leitura
+      // e a remoção, restaura o lock alheio em vez de apagá-lo (elimina o TOCTOU).
+      const claimPath = `${targetLockPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+      try {
+        await fs.promises.rename(targetLockPath, claimPath);
+      } catch {
+        return; // lock já não existe
+      }
+
+      let isOurs = false;
+      try {
+        const content = await fs.promises.readFile(claimPath, 'utf-8');
+        const currentLock = JSON.parse(content);
+        // lockId identifica a geração do lock; locks legados (sem lockId) usam o PID
+        isOurs = currentLock.lockId
+          ? currentLock.lockId === lockData.lockId
+          : currentLock.pid === process.pid;
+      } catch {
+        isOurs = false;
+      }
+
       if (isOurs) {
-        await fs.promises.unlink(targetLockPath).catch(() => {});
+        await fs.promises.unlink(claimPath).catch(() => {});
+      } else {
+        await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
       }
     } catch {
       // Ignorar erros na remoção

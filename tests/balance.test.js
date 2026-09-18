@@ -290,3 +290,44 @@ test('libs/ui/balance.js - getCheckinCoinsFromStreak mapeia streak para quantida
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/ui/balance.js - closeCachedDesktopContext fecha o contexto reutilizado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { getBalanceDesktop, closeCachedDesktopContext } = require('../libs/ui/balance');
+  let closed = false;
+  let newPageCalls = 0;
+
+  try {
+    const page = {
+      goto: async () => {},
+      waitForSelector: async () => {},
+      innerText: async () => 'Minhas moedas\n321\n',
+      screenshot: async () => {},
+      close: async () => {}
+    };
+    const context = {
+      isClosed: () => closed,
+      route: async () => {},
+      tracing: { start: async () => {}, stop: async () => {} },
+      newPage: async () => {
+        newPageCalls++;
+        return page;
+      },
+      close: async () => {
+        closed = true;
+      }
+    };
+    const browser = { newContext: async () => context };
+
+    // reuseContext cria e cacheia; segunda chamada reutiliza a mesma página
+    await getBalanceDesktop(browser, { cookies: [] }, { reuseContext: true });
+    await getBalanceDesktop(browser, { cookies: [] }, { reuseContext: true });
+    assert.strictEqual(newPageCalls, 1, 'deve reutilizar a página cacheada');
+
+    await closeCachedDesktopContext();
+    assert.strictEqual(closed, true, 'closeCachedDesktopContext deve fechar o contexto');
+  } finally {
+    await closeCachedDesktopContext().catch(() => {});
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

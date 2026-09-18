@@ -107,6 +107,29 @@ test('tasks - executePrizeLandTask clica no botão de rega se presente', async (
   }
 });
 
+test('tasks - executePrizeLandTask não clica quando o AbortSignal já foi abortado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let clicked = false;
+    const controller = new AbortController();
+    controller.abort();
+
+    const mockPage = {
+      $: async () => ({ click: async () => {} }),
+      evaluate: async (fn, el) => {
+        clicked = true;
+      },
+      waitForTimeout: async () => {}
+    };
+
+    const result = await executePrizeLandTask({ page: mockPage, signal: controller.signal });
+    assert.strictEqual(result, false);
+    assert.strictEqual(clicked, false, 'clique tardio não deve ocorrer após timeout');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('tasks - executeSurpriseItems simula toques em produtos', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {

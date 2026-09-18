@@ -273,7 +273,27 @@ async function findTaskElement(page, targetTitle, fallbackIndex = 0) {
       .catch(() => fallbackIndex);
 
     const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
-    return currentTaskEls[index] || currentTaskEls[fallbackIndex] || null;
+    const candidate = currentTaskEls[index] || currentTaskEls[fallbackIndex] || null;
+
+    // Revalida o título: a lista pode ter re-renderizado entre o $$eval e o $$,
+    // deslocando o índice. Sem $eval (mocks), devolve o candidato direto.
+    if (!candidate || typeof candidate.$eval !== 'function') {
+      return candidate;
+    }
+    const candidateTitle = await candidate
+      .$eval(SELECTORS.tasks.taskTitle, (el) => el.innerText.trim())
+      .catch(() => '');
+    if (candidateTitle === targetTitle) {
+      return candidate;
+    }
+    for (const el of currentTaskEls) {
+      if (typeof el.$eval !== 'function') continue;
+      const t = await el
+        .$eval(SELECTORS.tasks.taskTitle, (e) => e.innerText.trim())
+        .catch(() => '');
+      if (t === targetTitle) return el;
+    }
+    return currentTaskEls[fallbackIndex] || null;
   }
 
   const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
