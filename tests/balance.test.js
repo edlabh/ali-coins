@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   extractStreakFromText,
   getStreakFromCheckinCoins,
+  getCheckinCoinsFromStreak,
   getStreakFromDesktopHistory,
   getStreakFromCoinPage,
   getBalanceDesktop
@@ -194,6 +195,35 @@ test('libs/ui/balance.js - getBalanceDesktop calcula desktopStreak via históric
     // tier dá 7, histórico dá 2 -> Math.max(2, 7) = 7
     assert.strictEqual(result.desktopStreak, 7);
     assert.strictEqual(typeof result.desktopStreak, 'number');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - getCheckinCoinsFromStreak mapeia streak para quantidade de moedas oficial', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    assert.strictEqual(getCheckinCoinsFromStreak(1), 10);
+    assert.strictEqual(getCheckinCoinsFromStreak(2), 15);
+    assert.strictEqual(getCheckinCoinsFromStreak(3), 20);
+    assert.strictEqual(getCheckinCoinsFromStreak(4), 25);
+    assert.strictEqual(getCheckinCoinsFromStreak(5), 30);
+    assert.strictEqual(getCheckinCoinsFromStreak(6), 35);
+    assert.strictEqual(getCheckinCoinsFromStreak(7), 40);
+    assert.strictEqual(getCheckinCoinsFromStreak(30), 40);
+    assert.strictEqual(getCheckinCoinsFromStreak(212), 40);
+
+    // Suporte a strings
+    assert.strictEqual(getCheckinCoinsFromStreak('1'), 10);
+    assert.strictEqual(getCheckinCoinsFromStreak('4 dias'), 25);
+    assert.strictEqual(getCheckinCoinsFromStreak('7 dias seguidos'), 40);
+
+    // Valores nulos/indefinidos/inválidos -> piso mínimo 10
+    assert.strictEqual(getCheckinCoinsFromStreak(null), 10);
+    assert.strictEqual(getCheckinCoinsFromStreak(undefined), 10);
+    assert.strictEqual(getCheckinCoinsFromStreak('N/D'), 10);
+    assert.strictEqual(getCheckinCoinsFromStreak(0), 10);
+    assert.strictEqual(getCheckinCoinsFromStreak(-5), 10);
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }

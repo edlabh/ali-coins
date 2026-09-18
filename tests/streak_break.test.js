@@ -205,3 +205,149 @@ test('collect.js - Bug 14: previousStreakDays não contamina conta nova quando p
     'Não deve alertar quebra de streak na primeira execução da nova conta'
   );
 });
+
+test('collect.js - streak incrementa +1 quando check-in é realizado com sucesso hoje (justCollected=true)', () => {
+  function resolveStreak(
+    previousStreakDays,
+    detectedStreak,
+    { justCollected = false, alreadyCollected = false } = {}
+  ) {
+    let streakDays = detectedStreak !== null ? detectedStreak : 'N/D';
+
+    if (typeof previousStreakDays === 'number' && previousStreakDays > 0) {
+      const parsedDetected =
+        typeof detectedStreak === 'number'
+          ? detectedStreak
+          : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+
+      const isSpuriousWeeklyCycle =
+        !isNaN(parsedDetected) &&
+        previousStreakDays > 7 &&
+        parsedDetected <= 7 &&
+        parsedDetected > 1;
+
+      if (justCollected) {
+        if (
+          detectedStreak === null ||
+          isNaN(parsedDetected) ||
+          isSpuriousWeeklyCycle ||
+          parsedDetected <= previousStreakDays
+        ) {
+          streakDays = previousStreakDays + 1;
+        } else {
+          streakDays = parsedDetected;
+        }
+      } else if (alreadyCollected) {
+        if (
+          detectedStreak === null ||
+          isNaN(parsedDetected) ||
+          isSpuriousWeeklyCycle ||
+          parsedDetected < previousStreakDays
+        ) {
+          streakDays = previousStreakDays;
+        } else {
+          streakDays = parsedDetected;
+        }
+      } else {
+        streakDays = !isNaN(parsedDetected) ? parsedDetected : previousStreakDays;
+      }
+    } else if (justCollected) {
+      const parsedDetected =
+        typeof detectedStreak === 'number'
+          ? detectedStreak
+          : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+      streakDays = !isNaN(parsedDetected) && parsedDetected >= 1 ? parsedDetected : 1;
+    }
+
+    return streakDays;
+  }
+
+  // 1. Check-in bem-sucedido hoje com previousStreak = 212
+  // UI ainda não atualizou (lido 212) -> deve incrementar para 213
+  assert.strictEqual(resolveStreak(212, 212, { justCollected: true }), 213);
+
+  // Leitura espúria do ciclo semanal (7) -> deve incrementar para 213
+  assert.strictEqual(resolveStreak(212, 7, { justCollected: true }), 213);
+
+  // Leitura ausente / nula -> deve incrementar para 213
+  assert.strictEqual(resolveStreak(212, null, { justCollected: true }), 213);
+
+  // UI já atualizou para 213 -> preserva 213
+  assert.strictEqual(resolveStreak(212, 213, { justCollected: true }), 213);
+
+  // Streak menor (5 dias) -> incrementa para 6
+  assert.strictEqual(resolveStreak(5, 5, { justCollected: true }), 6);
+
+  // Primeira execução sem histórico prévio -> 1
+  assert.strictEqual(resolveStreak(null, null, { justCollected: true }), 1);
+  assert.strictEqual(resolveStreak(null, 1, { justCollected: true }), 1);
+
+  // 2. Re-execução no mesmo dia (alreadyCollected = true) -> NÃO incrementa novamente
+  assert.strictEqual(resolveStreak(212, 212, { alreadyCollected: true }), 212);
+  assert.strictEqual(resolveStreak(212, 7, { alreadyCollected: true }), 212);
+});
+
+test('collect.js - coinsGainedToday é "0" quando alreadyCollected=true e valor real quando justCollected=true', () => {
+  const { getCheckinCoinsFromStreak } = require('../libs/ui/balance');
+
+  function determineCoinsGainedToday({
+    alreadyCollected = false,
+    wasAlreadyCollectedToday = false,
+    justCollected = false,
+    todayCheckinCoins = null,
+    mobileCheckinCoins = null,
+    streakDays = 'N/D'
+  } = {}) {
+    const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
+    const isAlreadyCollected = (alreadyCollected || wasAlreadyCollectedToday) && !justCollected;
+
+    let checkinCoinsNum = null;
+    if (todayCheckinCoins) {
+      const p = parseInt(String(todayCheckinCoins).replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(p) && p > 0) checkinCoinsNum = p;
+    }
+    if (checkinCoinsNum === null && mobileCheckinCoins) {
+      checkinCoinsNum = mobileCheckinCoins;
+    }
+    if (checkinCoinsNum === null && isCollected) {
+      checkinCoinsNum = getCheckinCoinsFromStreak(streakDays);
+    }
+
+    return isAlreadyCollected
+      ? '0'
+      : checkinCoinsNum !== null
+        ? String(checkinCoinsNum)
+        : isCollected
+          ? String(getCheckinCoinsFromStreak(streakDays))
+          : '0';
+  }
+
+  // Check-in acabou de ser feito hoje (justCollected = true)
+  assert.strictEqual(
+    determineCoinsGainedToday({ justCollected: true, todayCheckinCoins: '40', streakDays: 15 }),
+    '40',
+    'justCollected=true com ledger desktop deve retornar 40'
+  );
+  assert.strictEqual(
+    determineCoinsGainedToday({ justCollected: true, streakDays: 35 }),
+    '40',
+    'justCollected=true com streak 35 deve retornar 40 (teto do ciclo semanal)'
+  );
+  assert.strictEqual(
+    determineCoinsGainedToday({ justCollected: true, streakDays: 3 }),
+    '20',
+    'justCollected=true com streak 3 deve retornar 20'
+  );
+
+  // Check-in já havia ocorrido hoje (alreadyCollected = true)
+  assert.strictEqual(
+    determineCoinsGainedToday({ alreadyCollected: true, todayCheckinCoins: '40', streakDays: 15 }),
+    '0',
+    'alreadyCollected=true não deve contabilizar moedas (deve ser 0)'
+  );
+  assert.strictEqual(
+    determineCoinsGainedToday({ wasAlreadyCollectedToday: true, streakDays: 35 }),
+    '0',
+    'wasAlreadyCollectedToday=true não deve contabilizar moedas (deve ser 0)'
+  );
+});

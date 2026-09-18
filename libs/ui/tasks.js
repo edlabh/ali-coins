@@ -9,25 +9,20 @@ function isInteractiveOrAppOnly(task) {
   return dispatcher.isInteractiveOrAppOnly(task);
 }
 
-async function executeSurpriseItems(targetPage, context, startIndex = 0) {
-  return await surprise.executeSurpriseItems({ page: targetPage, context, startIndex });
+async function executeSurpriseItems(...args) {
+  return await surprise.executeSurpriseItems(...args);
 }
 
-async function openTaskDrawer(page) {
-  return await dispatcher.openTaskDrawer({ page });
+async function openTaskDrawer(...args) {
+  return await dispatcher.openTaskDrawer(...args);
 }
 
-async function extractTasksFromDrawer(page) {
-  return await dispatcher.extractTasksFromDrawer({ page });
+async function extractTasksFromDrawer(...args) {
+  return await dispatcher.extractTasksFromDrawer(...args);
 }
 
-async function executeTaskAction(activePage, context, pendingTask, config) {
-  return await dispatcher.executeTaskAction({
-    page: activePage,
-    context,
-    task: pendingTask,
-    config
-  });
+async function executeTaskAction(...args) {
+  return await dispatcher.executeTaskAction(...args);
 }
 
 module.exports = {

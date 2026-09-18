@@ -697,3 +697,269 @@ test('report.js - computeFinalBalance trata saldo ausente ou N/D como N/D (sem "
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('report.js - computeCheckinCoinsGained recupera moedas do streak quando coinsGainedToday é N/D e alreadyCollected=false', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { computeCheckinCoinsGained } = require('../libs/report');
+    assert.strictEqual(
+      computeCheckinCoinsGained({
+        alreadyCollected: false,
+        coinsGainedToday: 'N/D',
+        streakDays: 33
+      }),
+      40,
+      'Streak 33 dias deve fornecer 40 moedas de checkin como fallback'
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({
+        alreadyCollected: false,
+        coinsGainedToday: 'N/D',
+        streakDays: 3
+      }),
+      20,
+      'Streak 3 dias deve fornecer 20 moedas'
+    );
+    assert.strictEqual(
+      computeCheckinCoinsGained({
+        alreadyCollected: true,
+        coinsGainedToday: 'N/D',
+        streakDays: 33
+      }),
+      0,
+      'alreadyCollected=true deve sempre retornar 0 independente de streak'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - tarefas não absorvem moedas do check-in no extrato (isolamento contábil)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { buildUnifiedReportPayload, buildMultiAccountReportPayload } = require('../libs/report');
+
+    // Cenário: Saldo inicial era 1000. Check-in ganhou +40 moedas. Saldo pós-checkin = 1040.
+    // Tarefas ganharam +5 moedas. Saldo final = 1045 moedas.
+    // Se o initialBalance das tarefas recebeu 1000 (pré-checkin), tasks.coinsGained calculou 45 (1045 - 1000).
+    // O relatório unificado DEVE isolar as moedas: check-in = 40, tarefas = 5, total = 45.
+    const checkin = {
+      alreadyCollected: false,
+      coinsGainedToday: '40',
+      streakDays: 20,
+      totalBalance: '1040',
+      duration: '10s'
+    };
+
+    const tasksTainted = {
+      results: [{ title: 'Explore sponsored items', status: 'Concluída', coins: '+5 moedas' }],
+      initialBalance: 1000,
+      finalBalance: 1045,
+      coinsGained: 45, // 1045 - 1000 (absorveu indevidamente as 40 moedas do check-in)
+      finalCoins: '1045 moedas',
+      duration: '1m'
+    };
+
+    const payload = buildUnifiedReportPayload(checkin, tasksTainted);
+    assert.strictEqual(
+      payload.meta.checkinCoinsGained,
+      40,
+      'Check-in contabilizado exatamente em 40'
+    );
+    assert.strictEqual(
+      payload.meta.tasksCoinsGained,
+      5,
+      'Tarefas não devem somar as moedas do check-in (deve ser 5, não 45)'
+    );
+    assert.strictEqual(
+      payload.meta.totalCoinsGained,
+      45,
+      'Total deve ser 40 + 5 = 45 (sem duplicação)'
+    );
+
+    // Cenário Multi-Conta idêntico
+    const multiPayload = buildMultiAccountReportPayload([
+      {
+        account: { maskedUser: 'us***@example.com' },
+        checkinResult: checkin,
+        tasksResult: tasksTainted
+      }
+    ]);
+    assert.strictEqual(multiPayload.accounts[0].meta.checkinCoinsGained, 40);
+    assert.strictEqual(multiPayload.accounts[0].meta.tasksCoinsGained, 5);
+    assert.strictEqual(multiPayload.accounts[0].meta.totalCoinsGained, 45);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - renderCheckinReport exibe (+0 moedas) quando alreadyCollected=true e valor real quando coletado hoje', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    // Caso 1: Já coletado hoje -> não deve contabilizar moedas (+0 moedas)
+    renderCheckinReport(
+      {
+        alreadyCollected: true,
+        coinsGainedToday: '0',
+        streakDays: 35,
+        totalBalance: '1500',
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: '5s'
+      },
+      { skipWebhook: true }
+    );
+
+    const out1 = messages.join('\n');
+    assert.ok(
+      out1.includes('já estava coletado (+0 moedas)'),
+      `Extrato checkin deve conter (+0 moedas): ${out1}`
+    );
+    assert.strictEqual(out1.includes('(+40 moedas)'), false);
+
+    messages.length = 0;
+
+    // Caso 2: Coletado com sucesso hoje -> deve exibir o valor ganho
+    renderCheckinReport(
+      {
+        alreadyCollected: false,
+        coinsGainedToday: '40',
+        streakDays: 35,
+        totalBalance: '1540',
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: '10s'
+      },
+      { skipWebhook: true }
+    );
+
+    const out2 = messages.join('\n');
+    assert.ok(out2.includes('40 moedas'), `Extrato checkin deve conter 40 moedas: ${out2}`);
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('report.js - renderUnifiedReport e renderMultiAccountReport exibem (+0 moedas) quando alreadyCollected=true', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    // Relatório Unificado: alreadyCollected=true
+    renderUnifiedReport(
+      {
+        userEmail: 'user@example.com',
+        alreadyCollected: true,
+        coinsGainedToday: '0',
+        streakDays: 35,
+        totalBalance: '1500',
+        duration: '5s'
+      },
+      {
+        results: [{ title: 'Explore items', status: 'Concluída', coins: '+5 moedas' }],
+        initialBalance: 1500,
+        finalBalance: 1505,
+        coinsGained: 5,
+        finalCoins: '1505 moedas',
+        duration: '20s'
+      },
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '25s' }
+    );
+
+    const unifOut = messages.join('\n');
+    assert.ok(
+      unifOut.includes('Check-in Diário: Já coletado hoje (+0 moedas)'),
+      `Unificado deve exibir (+0 moedas): ${unifOut}`
+    );
+    assert.ok(
+      unifOut.includes('Moedas Ganhas Hoje:     +5 moedas (check-in +0 / tarefas +5)'),
+      `Total não pode contabilizar check-in: ${unifOut}`
+    );
+    assert.strictEqual(unifOut.includes('check-in +40'), false);
+
+    messages.length = 0;
+
+    // Relatório Multi-Conta: Conta 1 (alreadyCollected=true), Conta 2 (coletado com sucesso)
+    renderMultiAccountReport(
+      [
+        {
+          account: { maskedUser: 'co1***@example.com' },
+          checkinResult: {
+            alreadyCollected: true,
+            coinsGainedToday: '0',
+            streakDays: 35,
+            totalBalance: '1500',
+            duration: '5s'
+          },
+          tasksResult: {
+            results: [{ title: 'Explore items', status: 'Concluída', coins: '+5 moedas' }],
+            coinsGained: 5,
+            finalCoins: '1505 moedas',
+            duration: '20s'
+          },
+          duration: '25s'
+        },
+        {
+          account: { maskedUser: 'co2***@example.com' },
+          checkinResult: {
+            alreadyCollected: false,
+            coinsGainedToday: '70',
+            streakDays: 45,
+            totalBalance: '2070',
+            duration: '8s'
+          },
+          tasksResult: {
+            results: [{ title: 'Explore items', status: 'Concluída', coins: '+5 moedas' }],
+            coinsGained: 5,
+            finalCoins: '2075 moedas',
+            duration: '20s'
+          },
+          duration: '28s'
+        }
+      ],
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '55s' }
+    );
+
+    const multiOut = messages.join('\n');
+    // Conta 1
+    assert.ok(
+      multiOut.includes('Check-in: Já coletado (+0 moedas)'),
+      `Conta 1 deve exibir (+0 moedas): ${multiOut}`
+    );
+    assert.ok(
+      multiOut.includes('Moedas Ganhas Hoje: +5 moedas (check-in +0 / tarefas +5)'),
+      `Conta 1 deve somar 0 do check-in: ${multiOut}`
+    );
+    // Conta 2
+    assert.ok(
+      multiOut.includes('Check-in: Coletado com sucesso (+70 moedas)'),
+      `Conta 2 deve exibir (+70 moedas): ${multiOut}`
+    );
+    assert.ok(
+      multiOut.includes('Moedas Ganhas Hoje: +75 moedas (check-in +70 / tarefas +5)'),
+      `Conta 2 deve somar 70 do check-in: ${multiOut}`
+    );
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

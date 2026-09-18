@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const { formatDate, formatTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
+const { getCheckinCoinsFromStreak } = require('./ui/balance');
 const logger = require('../logger');
 
 /**
@@ -156,27 +157,50 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
  * @returns {number}
  */
 function computeCheckinCoinsGained(checkin) {
-  if (
-    !checkin ||
-    !checkin.coinsGainedToday ||
-    checkin.coinsGainedToday === 'N/D' ||
-    checkin.alreadyCollected !== false
-  ) {
+  if (!checkin || checkin.alreadyCollected !== false) {
     return 0;
   }
-  const parsed = parseInt(String(checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
-  return !isNaN(parsed) ? parsed : 0;
+  if (checkin.coinsGainedToday && checkin.coinsGainedToday !== 'N/D') {
+    const parsed = parseInt(String(checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  // Fallback se coinsGainedToday for ausente/N/D mas streakDays estiver presente
+  if (checkin.streakDays && checkin.streakDays !== 'N/D') {
+    const fromStreak = getCheckinCoinsFromStreak(checkin.streakDays);
+    if (typeof fromStreak === 'number' && fromStreak > 0) return fromStreak;
+  }
+  return 0;
 }
 
 /**
- * Calcula as moedas ganhas pelas tarefas (somente valores numéricos válidos)
+ * Calcula as moedas ganhas pelas tarefas (somente valores numéricos válidos).
+ * Se o check-in foi realizado nesta execução e o saldo inicial das tarefas
+ * não tiver sido ajustado (correspondendo ao saldo pré-checkin), desconta as moedas
+ * do check-in para que o extrato das tarefas reflita estritamente o ganho das tarefas.
  * @param {object|null} tasks
+ * @param {object|null} [checkin=null]
  * @returns {number}
  */
-function computeTasksCoinsGained(tasks) {
-  return tasks && typeof tasks.coinsGained === 'number' && Number.isFinite(tasks.coinsGained)
-    ? tasks.coinsGained
-    : 0;
+function computeTasksCoinsGained(tasks, checkin = null) {
+  if (!tasks || typeof tasks.coinsGained !== 'number' || !Number.isFinite(tasks.coinsGained)) {
+    return 0;
+  }
+  const rawCoins = tasks.coinsGained;
+  if (!checkin) return rawCoins;
+
+  const checkinCoins = computeCheckinCoinsGained(checkin);
+  if (checkinCoins <= 0) return rawCoins;
+
+  const initBal = parseInt(String(tasks.initialBalance || '').replace(/\D/g, ''), 10);
+  const checkinBal = parseInt(String(checkin.totalBalance || '').replace(/\D/g, ''), 10);
+
+  // Se o saldo inicial das tarefas corresponde ao saldo pré-checkin (totalBalance - checkinCoins),
+  // a diferença de saldo das tarefas absorveu as moedas do check-in. Descontamos para evitar soma/duplicação.
+  if (!isNaN(initBal) && !isNaN(checkinBal) && initBal === checkinBal - checkinCoins) {
+    return Math.max(0, rawCoins - checkinCoins);
+  }
+
+  return rawCoins;
 }
 
 /**
@@ -205,7 +229,7 @@ function computeFinalBalance(checkin, tasks) {
 function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
   const finalBalance = computeFinalBalance(checkinResult, tasksResult);
   const checkinCoinsGained = computeCheckinCoinsGained(checkinResult);
-  const tasksCoinsGained = computeTasksCoinsGained(tasksResult);
+  const tasksCoinsGained = computeTasksCoinsGained(tasksResult, checkinResult);
   const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
 
   let totalDuration = meta.totalDuration;
@@ -323,8 +347,9 @@ async function sendWebhookNotification(payload, customUrl = null) {
       let coinsText = 'N/D';
       if (typeof payload.meta?.totalCoinsGained === 'number') {
         coinsText = `+${payload.meta.totalCoinsGained} moedas (check-in +${payload.meta.checkinCoinsGained || 0} / tarefas +${payload.meta.tasksCoinsGained || 0})`;
-      } else if (payload.coinsGainedToday) {
-        coinsText = `+${payload.coinsGainedToday} moedas`;
+      } else if (payload.coinsGainedToday !== undefined || payload.alreadyCollected !== undefined) {
+        const checkinCoins = computeCheckinCoinsGained(payload);
+        coinsText = `+${checkinCoins} moedas`;
       } else if (typeof payload.coinsGained === 'number') {
         coinsText = `+${payload.coinsGained} moedas`;
       }
@@ -402,9 +427,10 @@ function renderCheckinReport(checkinResult, options = {}) {
     return;
   }
 
+  const checkinGained = computeCheckinCoinsGained(checkinResult);
   const reportLine1 = checkinResult.alreadyCollected
-    ? `já estava coletado (+${checkinResult.coinsGainedToday} moedas)`
-    : `${checkinResult.coinsGainedToday} moedas`;
+    ? 'já estava coletado (+0 moedas)'
+    : `${checkinGained > 0 ? checkinGained : checkinResult.coinsGainedToday} moedas`;
   const reportLine2 = `${checkinResult.totalBalance} moedas`;
   const reportLine3 =
     checkinResult.streakDays !== 'N/D'
@@ -487,12 +513,22 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   logger.info('===============================================================');
 
   if (checkinResult) {
+    const dailyTier =
+      (checkinResult.streakDays && checkinResult.streakDays !== 'N/D'
+        ? getCheckinCoinsFromStreak(checkinResult.streakDays)
+        : null) ||
+      (checkinResult.coinsGainedToday && checkinResult.coinsGainedToday !== '0'
+        ? checkinResult.coinsGainedToday
+        : 70);
+
     logger.info(`Conta: ${maskUser(checkinResult.userEmail)}`);
     logger.info(
-      `Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${checkinResult.coinsGainedToday} moedas/dia)`
+      `Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${dailyTier} moedas/dia)`
     );
+    const checkinGained =
+      jsonOutput.meta.checkinCoinsGained ?? computeCheckinCoinsGained(checkinResult);
     logger.info(
-      `Check-in Diário: ${checkinResult.alreadyCollected ? 'Já coletado hoje' : 'Coletado com sucesso'} (+${checkinResult.coinsGainedToday} moedas)`
+      `Check-in Diário: ${checkinResult.alreadyCollected ? 'Já coletado hoje (+0 moedas)' : `Coletado com sucesso (+${checkinGained} moedas)`}`
     );
   }
 
@@ -501,7 +537,9 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
     for (const r of tasksResult.results) {
       logger.info(`  • ${r.title}: ${r.status} (${r.coins || r.estimatedCoins || ''})`);
     }
-    logger.info(`Ganho Real pelas Tarefas: +${tasksResult.coinsGained || 0} moedas`);
+    logger.info(
+      `Ganho Real pelas Tarefas: +${jsonOutput.meta.tasksCoinsGained ?? tasksResult.coinsGained ?? 0} moedas`
+    );
   }
 
   logger.info('---------------------------------------------------------------');
@@ -534,9 +572,9 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
     const checkin = item.checkinResult;
     const tasks = item.tasksResult;
     const finalBalance = computeFinalBalance(checkin, tasks);
-    // Mesmo cálculo compartilhado do relatório unificado: respeita alreadyCollected
+    // Mesmo cálculo compartilhado do relatório unificado: respeita alreadyCollected e isola moedas do check-in
     const checkinCoinsGained = computeCheckinCoinsGained(checkin);
-    const tasksCoinsGained = computeTasksCoinsGained(tasks);
+    const tasksCoinsGained = computeTasksCoinsGained(tasks, checkin);
     const totalCoinsGained = checkinCoinsGained + tasksCoinsGained;
 
     let accountDuration = item.duration;
@@ -651,12 +689,24 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
       return;
     }
 
+    const accMeta = jsonOutput.accounts[idx]?.meta;
+
     if (res.checkinResult) {
+      const dailyTier =
+        (res.checkinResult.streakDays && res.checkinResult.streakDays !== 'N/D'
+          ? getCheckinCoinsFromStreak(res.checkinResult.streakDays)
+          : null) ||
+        (res.checkinResult.coinsGainedToday && res.checkinResult.coinsGainedToday !== '0'
+          ? res.checkinResult.coinsGainedToday
+          : 70);
+
       logger.info(
-        `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${res.checkinResult.coinsGainedToday} moedas/dia)`
+        `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${dailyTier} moedas/dia)`
       );
+      const accCheckinGained =
+        accMeta?.checkinCoinsGained ?? computeCheckinCoinsGained(res.checkinResult);
       logger.info(
-        `  • Check-in: ${res.checkinResult.alreadyCollected ? 'Já coletado' : 'Coletado com sucesso'} (+${res.checkinResult.coinsGainedToday} moedas)`
+        `  • Check-in: ${res.checkinResult.alreadyCollected ? 'Já coletado (+0 moedas)' : `Coletado com sucesso (+${accCheckinGained} moedas)`}`
       );
     }
 
@@ -674,6 +724,12 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
           ? `${res.checkinResult.totalBalance} moedas`
           : 'N/D';
     logger.info(`  • Saldo Final: ${finalBal}`);
+
+    if (accMeta) {
+      logger.info(
+        `  • Moedas Ganhas Hoje: +${accMeta.totalCoinsGained || 0} moedas (check-in +${accMeta.checkinCoinsGained || 0} / tarefas +${accMeta.tasksCoinsGained || 0})`
+      );
+    }
   });
 
   logger.info('\n---------------------------------------------------------------');

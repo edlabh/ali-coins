@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const { formatDate, formatDateTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
-const { computeCheckinCoinsGained } = require('./report');
+const { computeCheckinCoinsGained, computeTasksCoinsGained } = require('./report');
 const logger = require('../logger');
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -361,28 +361,32 @@ function buildMessage({
         }
 
         const streak = toSafeStreak(acc.checkin?.streakDays);
-        // Fonte única de cálculo (respeita alreadyCollected quando o meta não está disponível)
+        // Fonte única de cálculo centralizada em report.js
         const checkinCoins = toSafeInt(
           acc.meta?.checkinCoinsGained ?? computeCheckinCoinsGained(acc.checkin)
         );
-        const balanceAfterCheckin = parseInt(
-          String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
-          10
-        );
-        const balanceFinal = parseInt(
-          String(
-            acc.meta?.finalBalance || acc.tasks?.finalBalance || acc.tasks?.finalCoins || ''
-          ).replace(/\D/g, ''),
-          10
-        );
-        const taskGain =
-          !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
-            ? Math.max(0, balanceFinal - balanceAfterCheckin)
-            : 0;
-
-        const tasksCoins = toSafeInt(
-          taskGain > 0 ? taskGain : (acc.meta?.tasksCoinsGained ?? acc.tasks?.coinsGained ?? 0)
-        );
+        let tasksCoins = 0;
+        if (acc.meta?.tasksCoinsGained !== undefined) {
+          tasksCoins = toSafeInt(acc.meta.tasksCoinsGained);
+        } else if (acc.tasks && typeof acc.tasks.coinsGained === 'number') {
+          tasksCoins = toSafeInt(computeTasksCoinsGained(acc.tasks, acc.checkin));
+        } else {
+          const balanceAfterCheckin = parseInt(
+            String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
+            10
+          );
+          const balanceFinal = parseInt(
+            String(
+              acc.meta?.finalBalance || acc.tasks?.finalBalance || acc.tasks?.finalCoins || ''
+            ).replace(/\D/g, ''),
+            10
+          );
+          const rawDiff =
+            !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
+              ? Math.max(0, balanceFinal - balanceAfterCheckin)
+              : 0;
+          tasksCoins = toSafeInt(rawDiff);
+        }
         const totalCoins = toSafeInt(acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins);
         const balance =
           acc.meta?.finalBalance ||
@@ -432,36 +436,34 @@ function buildMessage({
         ? Number(report.meta.checkinCoinsGained) || 0
         : computeCheckinCoinsGained(report.checkin);
 
-    // Cálculo determinístico por diferença de saldo (delta real entre após check-in e final)
-    const balanceAfterCheckin = parseInt(
-      String(report.tasks?.initialBalance || report.checkin?.totalBalance || '').replace(/\D/g, ''),
-      10
-    );
-    const balanceFinal = parseInt(
-      String(
-        report.meta?.finalBalance || report.tasks?.finalBalance || report.tasks?.finalCoins || ''
-      ).replace(/\D/g, ''),
-      10
-    );
-    const taskGain =
-      !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
-        ? Math.max(0, balanceFinal - balanceAfterCheckin)
-        : 0;
-
     let tasksCoins = 0;
-    if (taskGain > 0) {
-      tasksCoins = taskGain;
-    } else if (report.meta?.tasksCoinsGained !== undefined) {
+    if (report.meta?.tasksCoinsGained !== undefined) {
       tasksCoins = Number(report.meta.tasksCoinsGained) || 0;
     } else if (report.tasks && typeof report.tasks.coinsGained === 'number') {
-      tasksCoins = report.tasks.coinsGained;
+      tasksCoins = computeTasksCoinsGained(report.tasks, report.checkin);
+    } else {
+      const balanceAfterCheckin = parseInt(
+        String(report.tasks?.initialBalance || report.checkin?.totalBalance || '').replace(
+          /\D/g,
+          ''
+        ),
+        10
+      );
+      const balanceFinal = parseInt(
+        String(
+          report.meta?.finalBalance || report.tasks?.finalBalance || report.tasks?.finalCoins || ''
+        ).replace(/\D/g, ''),
+        10
+      );
+      const rawDiff =
+        !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
+          ? Math.max(0, balanceFinal - balanceAfterCheckin)
+          : 0;
+      tasksCoins = rawDiff;
     }
 
     let totalCoins = 0;
-    if (
-      report.meta?.totalCoinsGained !== undefined &&
-      Number(report.meta.totalCoinsGained) >= checkinCoins + tasksCoins
-    ) {
+    if (report.meta?.totalCoinsGained !== undefined) {
       totalCoins = Number(report.meta.totalCoinsGained);
     } else {
       totalCoins = checkinCoins + tasksCoins;
@@ -536,7 +538,8 @@ function buildMessage({
 
     const checkinCoins = computeCheckinCoinsGained({
       coinsGainedToday: report.coinsGainedToday,
-      alreadyCollected: report.alreadyCollected
+      alreadyCollected: report.alreadyCollected,
+      streakDays: report.streakDays
     });
 
     const streakDays =

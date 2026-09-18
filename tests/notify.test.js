@@ -888,3 +888,138 @@ test('libs/notify.js - multi-conta sem meta não conta check-in fantasma (alread
   assert.ok(msg.includes('+0 (+0/+0)'), `Ganho não pode ser inflado por check-in já feito: ${msg}`);
   assert.strictEqual(msg.includes('+70'), false, 'Valor fantasma de 70 não pode aparecer');
 });
+
+test('libs/notify.js - notificação Telegram exibe extrato separado (check-in e tarefas) sem soma indevida', () => {
+  const { buildUnifiedReportPayload, buildMultiAccountReportPayload } = require('../libs/report');
+
+  const checkin = {
+    alreadyCollected: false,
+    coinsGainedToday: '40',
+    streakDays: 35,
+    totalBalance: '1040',
+    duration: '15s'
+  };
+
+  const tasksTainted = {
+    results: [{ title: 'Explore sponsored items', status: 'Concluída', coins: '+5 moedas' }],
+    initialBalance: 1000,
+    finalBalance: 1045,
+    coinsGained: 45, // Absorveu as 40 moedas do check-in
+    finalCoins: '1045 moedas',
+    duration: '1m'
+  };
+
+  // 1. Relatório Unificado
+  const unifiedPayload = buildUnifiedReportPayload(checkin, tasksTainted, {
+    user: 'us***@example.com'
+  });
+  const singleMsg = buildMessage({ report: unifiedPayload, event: 'success' });
+  assert.ok(
+    singleMsg.includes('🪙 Ganhas hoje: +45 moedas (check-in +40 / tarefas +5)'),
+    `Notificação unificada deve mostrar check-in +40 e tarefas +5: ${singleMsg}`
+  );
+  assert.ok(singleMsg.includes('📅 Sequência: 35 dias'));
+
+  // 2. Relatório Multi-Conta
+  const multiPayload = buildMultiAccountReportPayload([
+    {
+      account: { maskedUser: 'us***@example.com' },
+      checkinResult: checkin,
+      tasksResult: tasksTainted
+    }
+  ]);
+  const multiMsg = buildMessage({ report: multiPayload, event: 'success' });
+  assert.ok(
+    multiMsg.includes('🪙 +45 (+40/+5)'),
+    `Notificação multi-conta deve exibir +45 (+40/+5): ${multiMsg}`
+  );
+  assert.ok(multiMsg.includes('Streak: 35'));
+});
+
+test('libs/notify.js - extrato e notificações não contabilizam nada de check-in quando alreadyCollected=true', () => {
+  const { buildUnifiedReportPayload, buildMultiAccountReportPayload } = require('../libs/report');
+
+  const checkinAlready = {
+    alreadyCollected: true,
+    coinsGainedToday: '0',
+    streakDays: 35,
+    totalBalance: '1000',
+    duration: '10s'
+  };
+
+  const tasks = {
+    results: [{ title: 'Explore sponsored items', status: 'Concluída', coins: '+5 moedas' }],
+    initialBalance: 1000,
+    finalBalance: 1005,
+    coinsGained: 5,
+    finalCoins: '1005 moedas',
+    duration: '1m'
+  };
+
+  // 1. Relatório apenas check-in (alreadyCollected=true)
+  const checkinMsg = buildMessage({
+    report: {
+      type: 'checkin',
+      alreadyCollected: true,
+      coinsGainedToday: '0',
+      streakDays: 35,
+      totalBalance: '1000',
+      duration: '5s'
+    },
+    event: 'already_collected'
+  });
+  assert.ok(
+    checkinMsg.includes('🪙 Ganhas hoje: +0 moedas (check-in +0 / tarefas +0)'),
+    `Check-in notification não deve contabilizar moedas: ${checkinMsg}`
+  );
+
+  // 2. Relatório unificado (alreadyCollected=true com tarefas)
+  const unifiedPayload = buildUnifiedReportPayload(checkinAlready, tasks, {
+    user: 'us***@example.com'
+  });
+  const unifMsg = buildMessage({ report: unifiedPayload, event: 'success' });
+  assert.ok(
+    unifMsg.includes('🪙 Ganhas hoje: +5 moedas (check-in +0 / tarefas +5)'),
+    `Notificação unificada deve exibir check-in +0 e tarefas +5: ${unifMsg}`
+  );
+
+  // 3. Relatório multi-conta (Conta 1 alreadyCollected=true, Conta 2 coletado hoje)
+  const multiPayload = buildMultiAccountReportPayload([
+    {
+      account: { maskedUser: 'co1***@example.com' },
+      checkinResult: checkinAlready,
+      tasksResult: tasks
+    },
+    {
+      account: { maskedUser: 'co2***@example.com' },
+      checkinResult: {
+        alreadyCollected: false,
+        coinsGainedToday: '70',
+        streakDays: 45,
+        totalBalance: '2070',
+        duration: '8s'
+      },
+      tasksResult: {
+        results: [{ title: 'Explore items', status: 'Concluída', coins: '+5 moedas' }],
+        initialBalance: 2070,
+        finalBalance: 2075,
+        coinsGained: 5,
+        finalCoins: '2075 moedas',
+        duration: '1m'
+      }
+    }
+  ]);
+  const multiMsg = buildMessage({ report: multiPayload, event: 'success' });
+  assert.ok(
+    multiMsg.includes(
+      '<code>co1***@example.com</code>: 💰 <b>1005 moedas</b> | 🪙 +5 (+0/+5) | Streak: 35 dias'
+    ),
+    `Conta 1 deve exibir (+0/+5): ${multiMsg}`
+  );
+  assert.ok(
+    multiMsg.includes(
+      '<code>co2***@example.com</code>: 💰 <b>2075 moedas</b> | 🪙 +75 (+70/+5) | Streak: 45 dias'
+    ),
+    `Conta 2 deve exibir (+70/+5): ${multiMsg}`
+  );
+});

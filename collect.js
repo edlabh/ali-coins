@@ -18,7 +18,8 @@ const {
   closeModals,
   performMobileLogin,
   getStreakFromCoinPage,
-  getBalanceDesktop
+  getBalanceDesktop,
+  getCheckinCoinsFromStreak
 } = require('./libs/ui');
 const { renderCheckinReport } = require('./libs/report');
 const logger = require('./logger');
@@ -73,6 +74,7 @@ async function runCheckin(options = {}) {
 
     // 2. Checagem prévia rápida no desktop se já foi coletado hoje
     let earlyDesktopStreak = null;
+    let earlyTotalBalance = null;
     if (hasValidSession) {
       try {
         const desktopCheck = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
@@ -84,6 +86,9 @@ async function runCheckin(options = {}) {
         }
         if (desktopCheck.desktopStreak !== null && desktopCheck.desktopStreak !== undefined) {
           earlyDesktopStreak = desktopCheck.desktopStreak;
+        }
+        if (desktopCheck.totalBalance && desktopCheck.totalBalance !== 'N/D') {
+          earlyTotalBalance = desktopCheck.totalBalance;
         }
       } catch (checkErr) {
         logger.debug({ err: checkErr.message }, 'Checagem prévia de desktop ignorada.');
@@ -226,6 +231,28 @@ async function runCheckin(options = {}) {
         }
       }
 
+      let mobileCheckinCoins = null;
+      if (justCollected) {
+        try {
+          mobileCheckinCoins = await page.evaluate(() => {
+            const modalEls = document.querySelectorAll(
+              '[class*="modal"], [class*="dialog"], [class*="popup"], [class*="toast"], [role="dialog"], [class*="aecoin-"]'
+            );
+            for (const el of modalEls) {
+              const text = el.innerText || '';
+              const m = text.match(/\+([0-9]+)\s*(?:moedas?|coins?)?/i);
+              if (m) {
+                const val = parseInt(m[1], 10);
+                if (!isNaN(val) && val > 0) return val;
+              }
+            }
+            return null;
+          });
+        } catch {
+          // Ignorar
+        }
+      }
+
       // Tentar capturar o streak imediatamente (modal de sucesso ainda visível se houve clique)
       mobileStreak = await getStreakFromCoinPage(page);
 
@@ -273,14 +300,6 @@ async function runCheckin(options = {}) {
         wasAlreadyCollectedToday = true;
       }
 
-      const totalBalance = desktopResult.totalBalance;
-      const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
-      const coinsGainedToday = desktopResult.todayCheckinCoins
-        ? desktopResult.todayCheckinCoins
-        : isCollected
-          ? 'N/D'
-          : '0';
-
       let detectedStreak =
         mobileStreak !== null && mobileStreak !== 'N/D'
           ? mobileStreak
@@ -292,7 +311,7 @@ async function runCheckin(options = {}) {
 
       let streakDays = detectedStreak !== null ? detectedStreak : 'N/D';
 
-      // Proteção contra regressão espúria de streak (ex: leitura 7 do ciclo semanal quando previousStreakDays é 212)
+      // Proteção contra regressão espúria de streak e garantia de incremento ao realizar check-in
       if (typeof previousStreakDays === 'number' && previousStreakDays > 0) {
         const parsedDetected =
           typeof detectedStreak === 'number'
@@ -305,38 +324,106 @@ async function runCheckin(options = {}) {
           parsedDetected <= 7 &&
           parsedDetected > 1;
 
-        if (detectedStreak === null || isNaN(parsedDetected) || isSpuriousWeeklyCycle) {
-          if (alreadyCollected || wasAlreadyCollectedToday) {
+        if (justCollected) {
+          // Quando o check-in acabou de ser realizado hoje, o streak DEVE subir (+1).
+          // Se a leitura da tela for espúria (<= 7), ausente, ou ainda não tiver sido atualizada pela UI (<= previousStreakDays),
+          // incrementamos o streak anterior.
+          if (
+            detectedStreak === null ||
+            isNaN(parsedDetected) ||
+            isSpuriousWeeklyCycle ||
+            parsedDetected <= previousStreakDays
+          ) {
+            logger.info(
+              { detectedStreak, previousStreak: previousStreakDays },
+              'Check-in realizado com sucesso hoje. Incrementando streak anterior (+1).'
+            );
+            streakDays = previousStreakDays + 1;
+          } else {
+            streakDays = parsedDetected;
+          }
+        } else if (alreadyCollected || wasAlreadyCollectedToday) {
+          // Re-execução no mesmo dia: preservar streak já consolidado
+          if (
+            detectedStreak === null ||
+            isNaN(parsedDetected) ||
+            isSpuriousWeeklyCycle ||
+            parsedDetected < previousStreakDays
+          ) {
             logger.info(
               { detectedStreak, previousStreak: previousStreakDays },
               'Streak detectado na tela é espúrio (<= 7) ou ausente em re-execução. Preservando streak real da sessão.'
             );
             streakDays = previousStreakDays;
-          } else if (justCollected) {
-            logger.info(
-              { detectedStreak, previousStreak: previousStreakDays },
-              'Check-in realizado com sucesso hoje, mas o streak lido na tela é espúrio (<= 7). Incrementando streak anterior.'
-            );
-            streakDays = previousStreakDays + 1;
           } else {
-            streakDays = previousStreakDays;
+            streakDays = parsedDetected;
           }
-        } else if (
-          (alreadyCollected || wasAlreadyCollectedToday) &&
-          parsedDetected < previousStreakDays
+        } else {
+          streakDays = !isNaN(parsedDetected) ? parsedDetected : previousStreakDays;
+        }
+      } else if (justCollected) {
+        // Primeira execução sem histórico prévio de streak
+        const parsedDetected =
+          typeof detectedStreak === 'number'
+            ? detectedStreak
+            : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+        streakDays = !isNaN(parsedDetected) && parsedDetected >= 1 ? parsedDetected : 1;
+      }
+
+      const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
+      const isAlreadyCollected = (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected;
+
+      // Determinação das moedas recebidas no check-in
+      let checkinCoinsNum = null;
+      if (desktopResult.todayCheckinCoins) {
+        const p = parseInt(String(desktopResult.todayCheckinCoins).replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(p) && p > 0) checkinCoinsNum = p;
+      }
+      if (checkinCoinsNum === null && mobileCheckinCoins) {
+        checkinCoinsNum = mobileCheckinCoins;
+      }
+      if (checkinCoinsNum === null && isCollected) {
+        checkinCoinsNum = getCheckinCoinsFromStreak(streakDays);
+      }
+
+      // Se o check-in já havia ocorrido hoje, não contabiliza nada nesta execução (+0 moedas)
+      const coinsGainedToday = isAlreadyCollected
+        ? '0'
+        : checkinCoinsNum !== null
+          ? String(checkinCoinsNum)
+          : isCollected
+            ? String(getCheckinCoinsFromStreak(streakDays))
+            : '0';
+
+      let totalBalance = desktopResult.totalBalance;
+      // Se acabou de coletar o check-in e o saldo desktop não refletiu ainda a adição das moedas
+      // (ex: desktopResult foi consultado antes do ledger registrar ou desktopCheck tinha o mesmo saldo)
+      if (justCollected && checkinCoinsNum && totalBalance !== 'N/D') {
+        const currentBalNum = parseInt(String(totalBalance).replace(/[^0-9]/g, ''), 10);
+        const earlyBalNum =
+          earlyTotalBalance !== null && earlyTotalBalance !== 'N/D'
+            ? parseInt(String(earlyTotalBalance).replace(/[^0-9]/g, ''), 10)
+            : NaN;
+        if (
+          (!isNaN(earlyBalNum) && currentBalNum <= earlyBalNum) ||
+          (!desktopResult.hasAppCheckinToday && !isNaN(currentBalNum))
         ) {
+          totalBalance = String(currentBalNum + checkinCoinsNum);
           logger.info(
-            { detectedStreak, previousStreak: previousStreakDays },
-            'Re-execução com streak detectado menor que o da sessão. Preservando streak anterior.'
+            {
+              baseBalance: currentBalNum,
+              checkinCoins: checkinCoinsNum,
+              updatedBalance: totalBalance
+            },
+            'Saldo pós-checkin sincronizado com as moedas recebidas no check-in.'
           );
-          streakDays = previousStreakDays;
         }
       }
 
       const hasStreak = streakDays !== 'N/D' && streakDays !== null;
       const hasTotalBalance = totalBalance !== 'N/D' && totalBalance !== null;
       const hasCheckinCoins =
-        desktopResult.todayCheckinCoins !== null || (isCollected && coinsGainedToday !== '0');
+        desktopResult.todayCheckinCoins !== null || isCollected || coinsGainedToday !== '0';
 
       if (
         (!hasStreak && !hasTotalBalance && !hasCheckinCoins) ||
@@ -384,7 +471,7 @@ async function runCheckin(options = {}) {
 
       const result = {
         userEmail,
-        alreadyCollected: (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected,
+        alreadyCollected: isAlreadyCollected,
         coinsGainedToday,
         totalBalance,
         streakDays,

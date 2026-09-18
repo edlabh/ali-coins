@@ -76,6 +76,40 @@ function getStreakFromCheckinCoins(coins) {
 }
 
 /**
+ * Mapeia o dia da sequência (streak) para a quantidade esperada de moedas ganhas no check-in.
+ * Ciclo oficial do AliExpress Coin Check-in:
+ * Dia 1: +10 moedas
+ * Dia 2: +15 moedas
+ * Dia 3: +20 moedas
+ * Dia 4: +25 moedas
+ * Dia 5: +30 moedas
+ * Dia 6: +35 moedas
+ * Dia 7+: +40 moedas
+ * @param {string|number|null} streak
+ * @returns {number}
+ */
+function getCheckinCoinsFromStreak(streak) {
+  if (streak === null || streak === undefined || streak === 'N/D') return 10;
+  const num =
+    typeof streak === 'number' ? streak : parseInt(String(streak).replace(/[^0-9]/g, ''), 10);
+  if (isNaN(num) || num <= 1) return 10;
+  switch (num) {
+    case 2:
+      return 15;
+    case 3:
+      return 20;
+    case 4:
+      return 25;
+    case 5:
+      return 30;
+    case 6:
+      return 35;
+    default:
+      return 40;
+  }
+}
+
+/**
  * Extrai a sequência de check-ins consecutivos a partir do texto do histórico de moedas no desktop.
  * Analisa as transações com "App daily check-in" ou "Check-in diário no app" e conta dias consecutivos.
  * @param {string} desktopText
@@ -309,5 +343,6 @@ module.exports = {
   getBalanceDesktop,
   extractStreakFromText,
   getStreakFromCheckinCoins,
+  getCheckinCoinsFromStreak,
   getStreakFromDesktopHistory
 };

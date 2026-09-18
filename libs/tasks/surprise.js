@@ -19,7 +19,11 @@ async function executeSurpriseItems(
   signalArg = null
 ) {
   let page, context, startIndex, logger, signal;
-  if (pageOrParams && pageOrParams.page) {
+  if (
+    pageOrParams &&
+    typeof pageOrParams === 'object' &&
+    ('page' in pageOrParams || 'startIndex' in pageOrParams)
+  ) {
     ({
       page,
       context = null,
@@ -40,6 +44,7 @@ async function executeSurpriseItems(
     return 0;
   }
 
+  const feedUrl = typeof page.url === 'function' ? page.url() : '';
   logger.info(`Executando tarefa: tocar em 3 itens (a partir do card #${startIndex + 1})...`);
   if (typeof page.waitForSelector === 'function') {
     await page.waitForSelector(SELECTORS.tasks.productCard, { timeout: 4000 }).catch(() => {});
@@ -95,6 +100,7 @@ async function executeSurpriseItems(
       await page.waitForTimeout(400).catch(() => {});
     }
 
+    const beforeUrl = typeof page.url === 'function' ? page.url() : '';
     let itemTab = null;
     if (context && typeof context.waitForEvent === 'function') {
       const tabPromise = context.waitForEvent('page', { timeout: 3500 }).catch(() => null);
@@ -114,6 +120,17 @@ async function executeSurpriseItems(
       });
     }
 
+    // Fallback para captura de nova aba se o waitForEvent não capturou
+    if (!itemTab && context && typeof context.pages === 'function') {
+      const allPages = context.pages();
+      if (allPages && allPages.length > 1) {
+        itemTab =
+          allPages.find(
+            (p) => p !== page && (typeof p.isClosed === 'function' ? !p.isClosed() : true)
+          ) || null;
+      }
+    }
+
     if (itemTab) {
       if (typeof itemTab.waitForLoadState === 'function') {
         await itemTab.waitForLoadState('domcontentloaded').catch(() => {});
@@ -124,14 +141,34 @@ async function executeSurpriseItems(
       if (typeof itemTab.close === 'function') {
         await itemTab.close().catch(() => {});
       }
-    } else if (typeof page.url === 'function' && !page.url().includes('adclick.html')) {
-      if (typeof page.waitForTimeout === 'function') {
-        await page.waitForTimeout(1500).catch(() => {});
-      }
-      if (typeof page.goBack === 'function') {
-        await page.goBack().catch(() => {});
-        if (typeof page.waitForLoadState === 'function') {
-          await page.waitForLoadState('domcontentloaded').catch(() => {});
+    } else {
+      const currentUrl = typeof page.url === 'function' ? page.url() : '';
+      const hasNavigatedAway = Boolean(
+        (currentUrl && beforeUrl && currentUrl !== beforeUrl) ||
+        (currentUrl && currentUrl.includes('adclick.html')) ||
+        (currentUrl && (currentUrl.includes('/item/') || currentUrl.includes('/detail/'))) ||
+        (feedUrl && currentUrl && currentUrl !== feedUrl)
+      );
+
+      if (hasNavigatedAway) {
+        if (typeof page.waitForTimeout === 'function') {
+          await page.waitForTimeout(1500).catch(() => {});
+        }
+        if (typeof page.goBack === 'function') {
+          await page.goBack().catch(() => {});
+          if (typeof page.waitForLoadState === 'function') {
+            await page.waitForLoadState('domcontentloaded').catch(() => {});
+          }
+        }
+        // Se ainda estiver na página de anúncio/redirecionamento após goBack(), força retorno à feedUrl
+        const urlAfterBack = typeof page.url === 'function' ? page.url() : '';
+        if (
+          feedUrl &&
+          urlAfterBack &&
+          urlAfterBack.includes('adclick.html') &&
+          typeof page.goto === 'function'
+        ) {
+          await page.goto(feedUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
         }
         if (typeof page.waitForSelector === 'function') {
           await page

@@ -11,6 +11,22 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.0.1] - 2026-09-18
+
+### Corrigido
+
+- **Despacho de tarefas na fachada de UI (`libs/ui/tasks.js`):** Correção da incompatibilidade de assinatura em `executeTaskAction` (que recebia 4 parâmetros posicionais em `libs/ui/tasks.js` enquanto `do_tasks.js` passava um objeto de parâmetros `{ page, context, task, config, signal }`). A fachada agora propaga os argumentos transparentemente via `...args` para `dispatcher.executeTaskAction` (e em `executeSurpriseItems`, `openTaskDrawer` e `extractTasksFromDrawer`), restaurando a identificação da tarefa "Browse surprise items" (que caía indevidamente no fallback genérico de scroll com título vazio `""`), além de garantir a propagação do `AbortSignal`.
+- **Navegação e retorno de anúncios em "Browse surprise items" (`libs/tasks/surprise.js`):** Correção da inversão lógica booleana (`!page.url().includes('adclick.html')`) que impedia o retorno via `page.goBack()` quando o toque em um card de produto navegava na mesma aba para URLs de anúncio/redirecionamento (`adclick.html`). O fluxo agora detecta redirecionamento para `adclick.html`, páginas de item (`/item/`, `/detail/`) ou URLs que saem do feed, aguarda o registro de tracking (1,5s), executa `page.goBack()` e, caso o histórico fique retido em `adclick.html`, força `page.goto(feedUrl)`.
+- **Captura resiliente de novas abas em ambientes de baixa memória (`libs/tasks/surprise.js`):** Adicionado fallback via `context.pages()` para capturar e fechar abas filhas quando `context.waitForEvent('page')` expira por latência ou concorrência em hosts restritos (como instâncias com 1 GB de RAM).
+
+- **Incremento de streak (+1) ao realizar check-in com sucesso (`collect.js`):** Quando o check-in é realizado hoje (`justCollected === true`), se a interface móvel/desktop do AliExpress reportar leitura espúria (<= 7), ausente ou não atualizada ainda pelo DOM (<= `previousStreakDays`), o streak anterior é incrementado com segurança (`previousStreakDays + 1`), garantindo que o streak não fique congelado no dia anterior nem seja confundido com quebra de sequência. Em re-execuções no mesmo dia (`alreadyCollected === true`), a sequência consolidada é preservada sem incremento repetido.
+- **Isolamento de moedas do check-in no extrato de tarefas (`collect.js`, `libs/report.js`, `libs/notify.js`):** Correção da regressão da versão 1.0.0 em que o valor recebido no check-in estava sendo somado ao total do extrato das tarefas:
+  1. `collect.js` sincroniza o saldo total pós-checkin (`totalBalance`) considerando as moedas recebidas caso a página desktop ainda não tenha registrado a transação no momento da checagem pós-mobile.
+  2. `computeTasksCoinsGained` (`libs/report.js`) detecta se o saldo inicial das tarefas correspondeu ao saldo pré-checkin e desconta as moedas do check-in, garantindo que o extrato e relatórios de tarefas reflitam estritamente as moedas ganhas pelas tarefas tanto em conta única quanto em multi-contas.
+  3. `libs/notify.js` prioriza o cálculo centralizado e validado de `meta.tasksCoinsGained`, eliminando sobrescrevimento indevido por deltas brutos.
+  4. Nova função `getCheckinCoinsFromStreak` (`libs/ui/balance.js`) para inferir a tabela oficial de moedas do AliExpress a partir do dia do streak como fallback caso o ledger desktop venha temporariamente como `N/D`, impedindo que novo check-in contabilize zero moedas.
+- **Contabilização de check-in zerada quando já coletado no dia (`collect.js`, `libs/report.js`, `libs/notify.js`):** Em re-execuções no mesmo dia (`alreadyCollected === true`), o extrato no console (`renderCheckinReport`, `renderUnifiedReport`, `renderMultiAccountReport`), webhooks e notificações do Telegram reportam explicitamente `check-in +0` / `Já coletado (+0 moedas)` e não contabilizam valor fantasma no total diário de moedas ganhas, preservando integralmente o extrato das tarefas tanto em execuções de conta única quanto multi-contas.
+
 ## [1.0.0] - 2026-09-17
 
 > **Notas de migração (0.9.x → 1.0.0):** o contrato público está congelado — CLI e exit

@@ -1267,3 +1267,330 @@ test('tasks - statusText de progresso tem prioridade sobre aviso de botão desco
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - libs/ui.executeTaskAction despacha objeto para executeSurpriseItems (regressão)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeTaskAction: uiExecuteTaskAction } = require('../libs/ui');
+    let clickedCards = 0;
+    const mockCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCards++;
+      }
+    };
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => [mockCard, mockCard, mockCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/surprise.html',
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    let closedTab = false;
+    const mockTab = {
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      close: async () => {
+        closedTab = true;
+      }
+    };
+
+    const mockContext = {
+      waitForEvent: async () => mockTab
+    };
+
+    // Chamada exatamente como feita em do_tasks.js
+    const res = await uiExecuteTaskAction({
+      page: mockPage,
+      context: mockContext,
+      task: { title: 'Browse surprise items', desc: 'Tap 3 items', completedRounds: 0 },
+      config: {},
+      signal: null
+    });
+
+    assert.deepStrictEqual(res, {});
+    assert.strictEqual(clickedCards, 3, 'Deve tocar em 3 produtos na primeira rodada');
+    assert.strictEqual(closedTab, true, 'Deve fechar as abas abertas');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSurpriseItems lida com navegação em mesma aba para adclick.html e chama goBack()', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    let currentUrl = 'https://m.aliexpress.com/p/coin-index/surprise.html';
+    let clickedCards = 0;
+    let goBackCalls = 0;
+
+    const mockCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCards++;
+        // Simula navegação na mesma aba para página de anúncio (adclick.html)
+        currentUrl = `https://ad.aliexpress.com/adclick.html?id=${clickedCards}`;
+      }
+    };
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => [mockCard, mockCard, mockCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => currentUrl,
+      goBack: async () => {
+        goBackCalls++;
+        // goBack retorna à página de feed de surpresas
+        currentUrl = 'https://m.aliexpress.com/p/coin-index/surprise.html';
+      },
+      waitForLoadState: async () => {}
+    };
+
+    // context sem waitForEvent (navegação em mesma aba)
+    const count = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 0
+    });
+
+    assert.strictEqual(count, 3, 'Deve clicar em todos os 3 produtos');
+    assert.strictEqual(clickedCards, 3);
+    assert.strictEqual(
+      goBackCalls,
+      3,
+      'Deve ter chamado goBack() para cada navegação em adclick.html'
+    );
+    assert.strictEqual(currentUrl, 'https://m.aliexpress.com/p/coin-index/surprise.html');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSurpriseItems força goto(feedUrl) caso goBack() não saia de adclick.html', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    const feedUrl = 'https://m.aliexpress.com/p/coin-index/surprise.html';
+    let currentUrl = feedUrl;
+    let clickedCards = 0;
+    const gotoCalls = [];
+
+    const mockCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCards++;
+        currentUrl = 'https://ad.aliexpress.com/adclick.html';
+      }
+    };
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => [mockCard, mockCard, mockCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => currentUrl,
+      goBack: async () => {
+        // Simula histórico preso onde goBack() não altera o URL (location.replace)
+      },
+      goto: async (targetUrl) => {
+        gotoCalls.push(targetUrl);
+        currentUrl = targetUrl;
+      },
+      waitForLoadState: async () => {}
+    };
+
+    const count = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 0
+    });
+
+    assert.strictEqual(count, 3);
+    assert.strictEqual(clickedCards, 3);
+    assert.strictEqual(
+      gotoCalls.length,
+      3,
+      'Deve ter forçado goto() para feedUrl em cada falha de goBack()'
+    );
+    assert.strictEqual(gotoCalls[0], feedUrl);
+    assert.strictEqual(currentUrl, feedUrl);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSurpriseItems captura nova aba via fallback context.pages() se waitForEvent expirar', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    let clickedCards = 0;
+    let closedTabCount = 0;
+
+    const mockCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCards++;
+      }
+    };
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => [mockCard, mockCard, mockCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/surprise.html',
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    const mockTab = {
+      isClosed: () => false,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      close: async () => {
+        closedTabCount++;
+      }
+    };
+
+    const mockContext = {
+      // waitForEvent expira com timeout (retorna null)
+      waitForEvent: async () => null,
+      // Mas a aba existe em context.pages()
+      pages: () => [mockPage, mockTab]
+    };
+
+    const count = await executeSurpriseItems({
+      page: mockPage,
+      context: mockContext,
+      startIndex: 0
+    });
+
+    assert.strictEqual(count, 3);
+    assert.strictEqual(clickedCards, 3);
+    assert.strictEqual(
+      closedTabCount,
+      3,
+      'Deve fechar as abas capturadas via fallback context.pages()'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSurpriseItems respeita cancelamento cooperativo via AbortSignal', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    let clickedCards = 0;
+
+    const mockCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCards++;
+      }
+    };
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => [mockCard, mockCard, mockCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/surprise.html'
+    };
+
+    // Caso 1: Signal já abortado antes de iniciar
+    const controller1 = new AbortController();
+    controller1.abort();
+
+    const count1 = await executeSurpriseItems({
+      page: mockPage,
+      signal: controller1.signal
+    });
+
+    assert.strictEqual(count1, 0, 'Deve retornar 0 cliques com signal já abortado');
+    assert.strictEqual(clickedCards, 0, 'Nenhum clique deve ser efetuado');
+
+    // Caso 2: Abortado cooperativamente durante a execução (após primeiro clique)
+    const controller2 = new AbortController();
+    const abortingCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCards++;
+        controller2.abort();
+      }
+    };
+
+    const mockPage2 = {
+      waitForSelector: async () => {},
+      $$: async () => [abortingCard, abortingCard, abortingCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/surprise.html'
+    };
+
+    const count2 = await executeSurpriseItems({
+      page: mockPage2,
+      signal: controller2.signal
+    });
+
+    assert.strictEqual(count2, 1, 'Deve interromper após o clique que disparou o abort');
+    assert.strictEqual(clickedCards, 1);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - libs/ui preserva assinatura híbrida (posicional e objeto) para todas as funções', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const ui = require('../libs/ui');
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => [],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html'
+    };
+
+    // executeTaskAction posicional via libs/ui
+    const posRes = await ui.executeTaskAction(mockPage, null, { title: 'Merge Boss game' }, {});
+    assert.strictEqual(posRes.isSpecialOrAppOnly, true);
+
+    // executeTaskAction por objeto via libs/ui
+    const objRes = await ui.executeTaskAction({
+      page: mockPage,
+      task: { title: 'Merge Boss game' }
+    });
+    assert.strictEqual(objRes.isSpecialOrAppOnly, true);
+
+    // executeSurpriseItems posicional via libs/ui
+    const mockCard = {
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {}
+    };
+    const mockSurprisePage = {
+      waitForSelector: async () => {},
+      $$: async () => [mockCard, mockCard, mockCard],
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/surprise.html'
+    };
+    const surprisePos = await ui.executeSurpriseItems(mockSurprisePage, null, 0);
+    assert.strictEqual(surprisePos, 3);
+
+    // executeSurpriseItems por objeto via libs/ui
+    const surpriseObj = await ui.executeSurpriseItems({
+      page: mockSurprisePage,
+      startIndex: 0
+    });
+    assert.strictEqual(surpriseObj, 3);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
