@@ -78,7 +78,9 @@ USER appuser
 # Verificação de saúde real: valida credentials.env/schema sem fallback enganoso.
 # Se o arquivo não estiver montado ou a configuração estiver inválida, o container fica unhealthy.
 # Intervalo de 5 min: o job roda 1x/dia; checagens a cada 30s só gastariam CPU/RAM à toa.
-HEALTHCHECK --interval=5m --timeout=15s --start-period=30s --retries=3 \
+# Timeout/retries folgados: sob pressão de CPU/RAM durante o run, o dry-run pode passar de
+# 15s e marcar o container como unhealthy sem falha real de configuração.
+HEALTHCHECK --interval=5m --timeout=30s --start-period=60s --retries=5 \
     CMD node all.js --dry-run --json > /dev/null 2>&1
 
 CMD ["npm", "start"]

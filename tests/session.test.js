@@ -865,3 +865,48 @@ test('libs/session.js - metadados são gravados antes da sessão (falha de sess�
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/session.js - existingSessionData em memória evita nova descriptografia/migração (skipSession)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-skip-');
+
+  try {
+    const inMemoryState = {
+      cookies: [
+        { name: 'xman_us_t', value: 'tok_memoria', expires: Math.floor(Date.now() / 1000) + 3600 }
+      ],
+      origins: []
+    };
+
+    // Sessão legada em texto claro + meta (simula fluxo pós-check-in com arquivo em disco)
+    await saveSession(inMemoryState, 'skip.test@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+    const plainPath = path.join(tmpDir, 'session.json');
+    const encPath = `${plainPath}.enc`;
+    assert.ok(fs.existsSync(plainPath), 'Pré-condição: session.json em texto claro existe');
+
+    // Com sessão em memória, validateAndRefresh não deve migrar/criptografar o arquivo
+    const res = await validateAndRefresh('skip.test@example.com', inMemoryState, {
+      baseDir: tmpDir,
+      secret: TEST_SECRET_1
+    });
+    assert.strictEqual(res.valid, true, 'Sessão em memória válida deve ser aceita');
+    assert.strictEqual(res.sessionData.cookies[0].value, 'tok_memoria');
+    assert.ok(
+      fs.existsSync(plainPath),
+      'skipSession não deve migrar o arquivo em texto claro quando a sessão já está em memória'
+    );
+    assert.ok(!fs.existsSync(encPath), 'skipSession não deve criar session.json.enc');
+
+    // Caminho padrão (sem sessão em memória) continua migrando normalmente
+    const loaded = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+    assert.strictEqual(loaded.sessionData.cookies[0].value, 'tok_memoria');
+    assert.ok(fs.existsSync(encPath), 'Caminho padrão deve migrar para session.json.enc');
+    assert.ok(!fs.existsSync(plainPath), 'Caminho padrão deve remover o session.json após migrar');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

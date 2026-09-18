@@ -555,3 +555,25 @@ test('security.js - token v3 compacto com SCRYPT_N alto falha como erro de auten
     SCRYPT_PARAMS_V3.N = originalN;
   }
 });
+
+test('security.js - validateSession aceita usuário com caixa diferente (case-insensitive)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const sessionData = {
+      cookies: [{ name: 'xman_us_t', value: 'tok_caixa', expires: 0 }]
+    };
+
+    const res = validateSession(sessionData, { user: 'User@Example.com' }, 'user@example.com');
+    assert.strictEqual(res.valid, true, 'Diferença de caixa no e-mail não deve invalidar a sessão');
+
+    const mismatch = validateSession(
+      sessionData,
+      { user: 'outro@example.com' },
+      'user@example.com'
+    );
+    assert.strictEqual(mismatch.valid, false);
+    assert.match(mismatch.reason, /não corresponde/);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

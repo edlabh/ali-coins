@@ -11,6 +11,22 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.0.2] - 2026-09-18
+
+### Corrigido
+
+- **PII no webhook de tarefas (`libs/report.js`):** `renderTasksReport()` em modo `--json` agora mascara `userEmail` antes do despacho a webhooks externos, mantendo a política já aplicada ao check-in e o valor cru apenas no `stdout` local.
+- **Falso positivo de "Sign in" com sessão válida (`collect.js`, `do_tasks.js`):** os indícios textuais de tela de login (`Email or phone number`, `Sign in`, `Entrar`) só são considerados quando a URL confirma página de login/passport, evitando re-login desnecessário (e risco de 2FA) em rodapés/menus.
+- **Comparação de conta case-insensitive (`security.js`, `libs/session.js`):** e-mails/IDs com caixa diferente não invalidam mais sessões legítimas.
+- **Fallback de sessão importada em multi-conta (`libs/notify.js`):** o fallback que lê o `session_meta.json` primário não é mais aplicado a relatórios multi-conta; os flags por conta continuam sendo a fonte de verdade.
+- **Clique de card em "Browse surprise items" (`libs/tasks/surprise.js`):** um card só é marcado como tocado quando o clique foi de fato disparado (nativo ou fallback via `evaluate`); falhas totais de clique não "queimam" o card e permitem nova tentativa.
+- **HEALTHCHECK do container (`Dockerfile`):** timeout ampliado para 30s e `--retries=5` para não marcar `unhealthy` sob pressão de CPU/RAM durante a execução.
+
+### Desempenho
+
+- **Tracing do Playwright desligado por padrão em modo de baixo consumo (`libs/ui/diagnostics.js`):** as opções `PW_TRACE`/`PW_SCREENSHOT`/`PW_VIDEO` passam a ser resolvidas em um único ponto, com default `off` de tracing quando `CHROMIUM_LOW_MEMORY` está habilitado (padrão). A env explícita continua tendo precedência. Elimina gravação contínua de screenshots e snapshots de DOM em hosts de 1 GB.
+- **Sessão em memória não é descriptografada duas vezes (`libs/session.js`):** `validateAndRefresh()` agora usa `skipSession` quando recebe `existingSessionData`, evitando um segundo scrypt (N=2^17) por conta no fluxo unificado check-in → tarefas, sem alterar a migração/rotação do caminho padrão.
+
 ## [1.0.1] - 2026-09-18
 
 ### Corrigido

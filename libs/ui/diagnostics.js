@@ -3,6 +3,33 @@ const path = require('path');
 const logger = require('../../logger');
 const { safeChmod600, safeWriteFile } = require('../../security');
 
+// O modo de baixo consumo do Chromium é habilitado por padrão (mesma semântica de browser.js).
+// Nele o tracing fica DESLIGADO por padrão: traces gravam screenshots + snapshots de DOM
+// continuamente em todos os contextos, com custo alto de CPU/RAM/disco em hosts de 1 GB.
+const LOW_MEMORY_DISABLED_REGEX = /^(0|false|off|no)$/i;
+
+/**
+ * Indica se o modo de baixo consumo está habilitado (padrão: true).
+ * @returns {boolean}
+ */
+function isLowMemoryHost() {
+  return !LOW_MEMORY_DISABLED_REGEX.test(String(process.env.CHROMIUM_LOW_MEMORY || '').trim());
+}
+
+/**
+ * Resolve uma opção de diagnóstico: variável de ambiente explícita tem precedência;
+ * sem env, aplica o default específico para host de baixa memória.
+ * @param {string} name
+ * @param {string} lowMemoryDefault
+ * @param {string} normalDefault
+ * @returns {string}
+ */
+function resolveDiagnosticOption(name, lowMemoryDefault, normalDefault) {
+  const raw = process.env[name];
+  if (raw !== undefined && String(raw).trim() !== '') return String(raw).trim();
+  return isLowMemoryHost() ? lowMemoryDefault : normalDefault;
+}
+
 /**
  * Retorna o diretório de saída para artefatos de diagnóstico (traces, prints, vídeos)
  * @returns {string}
@@ -27,7 +54,7 @@ function getDiagnosticsDir() {
  * @returns {object}
  */
 function applyDiagnosticOptions(baseOptions = {}) {
-  const pwVideo = process.env.PW_VIDEO || 'off';
+  const pwVideo = resolveDiagnosticOption('PW_VIDEO', 'off', 'off');
   const outDir = getDiagnosticsDir();
 
   const options = { ...baseOptions };
@@ -50,7 +77,7 @@ function applyDiagnosticOptions(baseOptions = {}) {
  * @param {import('playwright').BrowserContext} context
  */
 async function startContextTracing(context) {
-  const pwTrace = process.env.PW_TRACE || 'retain-on-failure';
+  const pwTrace = resolveDiagnosticOption('PW_TRACE', 'off', 'retain-on-failure');
   if (pwTrace !== 'off') {
     await context.tracing.start({ screenshots: true, snapshots: true }).catch(() => {});
   }
@@ -68,8 +95,12 @@ const pagesWithManualScreenshot = new WeakSet();
 
 async function closeContextWithDiagnostics(context, { failed = false, name = 'context' } = {}) {
   if (!context) return;
-  const pwTrace = process.env.PW_TRACE || 'retain-on-failure';
-  const pwScreenshot = process.env.PW_SCREENSHOT || 'only-on-failure';
+  const pwTrace = resolveDiagnosticOption('PW_TRACE', 'off', 'retain-on-failure');
+  const pwScreenshot = resolveDiagnosticOption(
+    'PW_SCREENSHOT',
+    'only-on-failure',
+    'only-on-failure'
+  );
   const outDir = getDiagnosticsDir();
 
   // PW_SCREENSHOT: captura automática no encerramento (sem duplicar prints manuais da mesma página)

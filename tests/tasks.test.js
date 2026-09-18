@@ -2195,3 +2195,80 @@ test('tasks (Risco 1) - getDrawerTasksWithRetry recupera falha transitória de a
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks (Risco 3) - clique falho não marca o card como tocado e permite retry', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const feedUrl = 'https://m.aliexpress.com/p/coin-index/adclick.html?taskId=retry';
+
+    // Caso 1: click nativo e fallback via evaluate falham -> card NÃO entra em touchedCards
+    const alwaysFailCard = {
+      id: 'card-sempre-falha',
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        throw new Error('elemento coberto');
+      }
+    };
+
+    const failPage = {
+      waitForSelector: async () => {},
+      $$: async () => [alwaysFailCard],
+      evaluate: async () => {
+        throw new Error('evaluate indisponível');
+      },
+      waitForTimeout: async () => {},
+      url: () => feedUrl,
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    const touchedFail = new Set();
+    await executeSurpriseItems({
+      page: failPage,
+      context: null,
+      startIndex: 0,
+      touchedCards: touchedFail
+    });
+    assert.strictEqual(
+      touchedFail.size,
+      0,
+      'Card com clique falho nas duas vias não deve ser marcado como tocado'
+    );
+
+    // Caso 2: click nativo falha mas o fallback via evaluate dispara -> card é marcado
+    let clickCalls = 0;
+    const fallbackCard = {
+      id: 'card-fallback',
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickCalls++;
+        if (clickCalls === 1) throw new Error('elemento coberto');
+      }
+    };
+
+    const fallbackPage = {
+      waitForSelector: async () => {},
+      $$: async () => [fallbackCard],
+      evaluate: async (fn, el) => fn(el),
+      waitForTimeout: async () => {},
+      url: () => feedUrl,
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    const touchedFallback = new Set();
+    await executeSurpriseItems({
+      page: fallbackPage,
+      context: null,
+      startIndex: 0,
+      touchedCards: touchedFallback
+    });
+    assert.strictEqual(
+      touchedFallback.size,
+      1,
+      'Clique disparado via fallback deve marcar o card como tocado'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

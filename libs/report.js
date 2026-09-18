@@ -474,7 +474,13 @@ function renderTasksReport(tasksResult, options = {}) {
   if (options.json) {
     const payload = { type: 'tasks', ...tasksResult };
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
-    sendWebhookNotification(payload).catch(() => {});
+    // Mascara o e-mail antes de enviar a webhooks de terceiros (mesma política do check-in);
+    // o stdout local mantém o valor cru para quem consome --json.
+    const webhookPayload = {
+      ...payload,
+      userEmail: payload.userEmail ? maskUser(payload.userEmail) : payload.userEmail
+    };
+    sendWebhookNotification(webhookPayload).catch(() => {});
     return;
   }
 

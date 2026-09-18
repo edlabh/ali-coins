@@ -253,7 +253,6 @@ async function executeSurpriseItems(
       break;
     }
 
-    touchedCardsSet.add(cardSig);
     logger.info(`Tocando item ${i + 1}/3 (card #${cardIndex + 1})...`);
 
     if (card && card.scrollIntoViewIfNeeded) {
@@ -265,6 +264,10 @@ async function executeSurpriseItems(
 
     const beforeUrl = typeof page.url === 'function' ? page.url() : '';
     let itemTab = null;
+    // Só considera o card "tocado" quando o clique foi de fato disparado (click nativo ou
+    // fallback via evaluate). Um clique que falhou nos dois caminhos não queima o card,
+    // permitindo nova tentativa na mesma execução.
+    let clickSucceeded = false;
 
     // Snapshot das páginas abertas ANTES do clique — protege mainPage e activePage de fechamento
     const pagesBeforeClick = new Set(
@@ -274,19 +277,35 @@ async function executeSurpriseItems(
     if (context && typeof context.waitForEvent === 'function') {
       const tabPromise = context.waitForEvent('page', { timeout: 2500 }).catch(() => null);
       if (card && card.click) {
-        await card.click({ delay: 50, timeout: 3000 }).catch(async () => {
+        try {
+          await card.click({ delay: 50, timeout: 3000 });
+          clickSucceeded = true;
+        } catch {
           if (typeof page.evaluate === 'function') {
-            await page.evaluate((el) => el.click(), card).catch(() => {});
+            clickSucceeded = await page
+              .evaluate((el) => el.click(), card)
+              .then(() => true)
+              .catch(() => false);
           }
-        });
+        }
       }
       itemTab = await tabPromise;
     } else if (card && card.click) {
-      await card.click({ delay: 50, timeout: 3000 }).catch(async () => {
+      try {
+        await card.click({ delay: 50, timeout: 3000 });
+        clickSucceeded = true;
+      } catch {
         if (typeof page.evaluate === 'function') {
-          await page.evaluate((el) => el.click(), card).catch(() => {});
+          clickSucceeded = await page
+            .evaluate((el) => el.click(), card)
+            .then(() => true)
+            .catch(() => false);
         }
-      });
+      }
+    }
+
+    if (clickSucceeded) {
+      touchedCardsSet.add(cardSig);
     }
 
     // Fallback estrito: busca APENAS entre páginas criadas APÓS o clique

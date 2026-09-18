@@ -142,15 +142,19 @@ async function runCheckin(options = {}) {
         });
       }
 
-      // Verificar se precisa autenticar
+      // Verificar se precisa autenticar.
+      // Com sessão válida, indícios textuais ("Sign in"/"Entrar" em rodapé/menu) só contam
+      // quando a URL confirma uma página de login/passport — evita re-login desnecessário.
       let loginInput = await page.$(SELECTORS.login.usernameInput);
       const bodyText = await page.innerText('body').catch(() => '');
+      const loginUrl = /login|sign-?in|passport/i.test(page.url());
       const needsLogin =
         !hasValidSession ||
         loginInput !== null ||
-        bodyText.includes('Email or phone number') ||
-        bodyText.includes('Sign in') ||
-        bodyText.includes('Entrar');
+        (loginUrl &&
+          (bodyText.includes('Email or phone number') ||
+            bodyText.includes('Sign in') ||
+            bodyText.includes('Entrar')));
 
       if (needsLogin) {
         attemptedLogin = true;

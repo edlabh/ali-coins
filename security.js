@@ -468,7 +468,9 @@ function validateSession(sessionData, metaData, expectedUser) {
         reason: 'Metadados de sessão ausentes ou sem identificação da conta vinculada.'
       };
     }
-    if (metaData.user !== expectedUser) {
+    // Comparação case-insensitive: e-mails/IDs não diferenciam maiúsculas de minúsculas
+    const normalizeUser = (value) => String(value).trim().toLowerCase();
+    if (normalizeUser(metaData.user) !== normalizeUser(expectedUser)) {
       return {
         valid: false,
         reason: `Conta da sessão ativa ("${metaData.user}") não corresponde à conta configurada ("${expectedUser}").`

@@ -88,7 +88,12 @@ function checkIfImportedSessionExpired(error = null, report = null) {
     return true;
   }
 
-  // Fallback: verificar se session_meta.json indica sessão importada e o erro foi de login/autenticação
+  // Fallback: verificar se session_meta.json indica sessão importada e o erro foi de login/autenticação.
+  // Restrito a relatórios de conta única: em multi-conta os flags por conta já foram avaliados
+  // acima, e o meta primário poderia atribuir a sessão da conta 1 a falhas de outras contas.
+  const isMultiAccountReport = Boolean(report && Array.isArray(report.accounts));
+  if (isMultiAccountReport) return false;
+
   try {
     const { sessionMetaPath } = require('../config');
     if (sessionMetaPath && fs.existsSync(sessionMetaPath)) {

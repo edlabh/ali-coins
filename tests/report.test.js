@@ -1081,3 +1081,63 @@ test('libs/report.js - renderCheckinReport no modo --json mascara e-mail enviado
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/report.js - renderTasksReport no modo --json mascara e-mail enviado ao webhook mas preserva no stdout', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalWrite = process.stdout.write;
+  const originalFetch = global.fetch;
+  const originalWebhookEnv = process.env.NOTIFY_WEBHOOK_URL;
+  let stdoutCaptured = '';
+  let webhookPayloadCaptured = null;
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://webhook.example.com/test';
+
+    process.stdout.write = (chunk, encoding, callback) => {
+      stdoutCaptured += chunk;
+      return originalWrite.call(process.stdout, chunk, encoding, callback);
+    };
+
+    global.fetch = async (url, options) => {
+      if (options && options.body) {
+        webhookPayloadCaptured = JSON.parse(options.body);
+      }
+      return { ok: true, status: 200 };
+    };
+
+    renderTasksReport(
+      {
+        userEmail: 'alice.bob@example.com',
+        results: [{ title: 'Browse surprise items', status: 'Concluída', coins: '+5 moedas' }],
+        finalCoins: '1540 moedas',
+        duration: '8s'
+      },
+      { json: true }
+    );
+
+    // Aguardar microtasks da promise sendWebhookNotification
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // 1. stdout local preserva e-mail original/cru (não mascarado)
+    assert.ok(
+      stdoutCaptured.includes('"userEmail": "alice.bob@example.com"'),
+      `stdout deve conter e-mail não mascarado: ${stdoutCaptured}`
+    );
+    assert.ok(stdoutCaptured.includes('"type": "tasks"'));
+
+    // 2. webhook de terceiros recebe e-mail devidamente mascarado (PII protection)
+    assert.ok(webhookPayloadCaptured, 'Webhook deve ter sido acionado');
+    assert.strictEqual(webhookPayloadCaptured.type, 'tasks');
+    assert.notStrictEqual(webhookPayloadCaptured.userEmail, 'alice.bob@example.com');
+    assert.strictEqual(webhookPayloadCaptured.userEmail, 'al***@example.com');
+  } finally {
+    process.stdout.write = originalWrite;
+    global.fetch = originalFetch;
+    if (originalWebhookEnv !== undefined) {
+      process.env.NOTIFY_WEBHOOK_URL = originalWebhookEnv;
+    } else {
+      delete process.env.NOTIFY_WEBHOOK_URL;
+    }
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

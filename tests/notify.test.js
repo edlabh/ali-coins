@@ -1023,3 +1023,54 @@ test('libs/notify.js - extrato e notificações não contabilizam nada de check-
     `Conta 2 deve exibir (+70/+5): ${multiMsg}`
   );
 });
+
+test('libs/notify.js - fallback de sessão importada não usa o meta primário em relatório multi-conta', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const config = require('../config');
+  const {
+    createIsolatedTestDir,
+    cleanupIsolatedTestDir,
+    snapshotRealFiles,
+    assertRealFilesUntouched
+  } = require('./test_helper');
+
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('notify-multi-meta-');
+  const originalMetaPath = config.sessionMetaPath;
+
+  try {
+    const metaPath = path.join(tmpDir, 'session_meta.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ user: 'primary@example.com', isImported: true }));
+    config.sessionMetaPath = metaPath;
+
+    // Conta única (sem report.accounts): fallback no meta continua valendo
+    assert.strictEqual(
+      checkIfImportedSessionExpired(new Error('Falha de login no AliExpress')),
+      true,
+      'Conta única deve continuar usando o fallback do meta para sessão importada'
+    );
+
+    // Multi-conta: meta primário NÃO deve ser aplicado a falhas de outras contas
+    assert.strictEqual(
+      checkIfImportedSessionExpired(new Error('Falha de login no AliExpress'), {
+        type: 'multi_account_report',
+        accounts: [{ user: 'acc2***@example.com' }]
+      }),
+      false,
+      'Relatório multi-conta sem flags por conta não deve herdar o meta da conta primária'
+    );
+
+    // Flags por conta continuam funcionando
+    assert.strictEqual(
+      checkIfImportedSessionExpired(null, {
+        accounts: [{ user: 'acc2***@example.com', isImportedSessionExpired: true }]
+      }),
+      true
+    );
+  } finally {
+    config.sessionMetaPath = originalMetaPath;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

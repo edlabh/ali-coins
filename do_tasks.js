@@ -176,10 +176,15 @@ async function runTasks(options = {}) {
 
       const loginInput = await page.$(SELECTORS.login.usernameInput);
       const bodyText = await page.innerText('body').catch(() => '');
+      const loginUrl = /login|sign-?in|passport/i.test(page.url());
+      // Indícios textuais só contam em página de login/passport: "Sign in" em rodapé/menu
+      // com sessão válida não deve derrubar a etapa de tarefas.
       if (
         loginInput !== null ||
-        bodyText.includes('Email or phone number') ||
-        bodyText.includes('Sign in')
+        (loginUrl &&
+          (bodyText.includes('Email or phone number') ||
+            bodyText.includes('Sign in') ||
+            bodyText.includes('Entrar')))
       ) {
         if (isImported) {
           logger.error(

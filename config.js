@@ -121,7 +121,10 @@ const configSchema = z
     SCROLL_WAIT_SECONDS: positiveInt(10),
     LOCK_STALE_TIMEOUT_MS: positiveInt(30 * 60 * 1000),
 
-    // Diagnósticos do Playwright
+    // Diagnósticos do Playwright.
+    // O default efetivo é resolvido em libs/ui/diagnostics.js: em modo de baixo consumo
+    // de memória (CHROMIUM_LOW_MEMORY habilitado, padrão) o tracing fica 'off' para
+    // economizar CPU/RAM/disco; a env explícita sempre tem precedência.
     PW_TRACE: z
       .enum(['off', 'on', 'retain-on-failure', 'on-first-retry'])
       .default('retain-on-failure'),

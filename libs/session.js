@@ -85,11 +85,15 @@ async function loadSessionFiles(options = {}) {
   const { secret, oldSecret, shouldEncrypt } = getEncryptionConfig(options);
   let sessionData = null;
   let metaData = null;
+  // Quando o chamador já possui a sessão em memória (ex: fluxo unificado check-in -> tarefas),
+  // skipSession evita re-descriptografar o .enc (scrypt é caro em CPU/memória) e pula a
+  // migração de texto claro; os metadados continuam sendo lidos normalmente.
+  const skipSession = options.skipSession === true;
 
   // 1. Tentar ler arquivo criptografado .enc se existir.
   // Erros de I/O (EACCES/EMFILE/EINTR) NUNCA removem o arquivo: apenas falhas de
   // parse/autenticação são definitivas, pois podem ser transitórias.
-  if (fs.existsSync(encPath)) {
+  if (!skipSession && fs.existsSync(encPath)) {
     let encryptedContent = null;
     try {
       encryptedContent = await fs.promises.readFile(encPath, 'utf-8');
@@ -139,7 +143,7 @@ async function loadSessionFiles(options = {}) {
   }
 
   // 2. Fallback: ler arquivo legado em texto plano (session.json)
-  if (!sessionData && fs.existsSync(sPath)) {
+  if (!skipSession && !sessionData && fs.existsSync(sPath)) {
     let plainContent = null;
     try {
       plainContent = await fs.promises.readFile(sPath, 'utf-8');
@@ -280,10 +284,12 @@ function isImportedSession(metaData) {
  * @returns {Promise<{ valid: boolean, reason?: string, sessionData: object|null, metaData: object|null, isImported: boolean }>}
  */
 async function validateAndRefresh(userEmail, existingSessionData = null, options = {}) {
-  let { sessionData, metaData } = await loadSessionFiles(options);
-  if (existingSessionData) {
-    sessionData = existingSessionData;
-  }
+  const loaded = await loadSessionFiles({
+    ...options,
+    skipSession: Boolean(existingSessionData) || options.skipSession === true
+  });
+  const sessionData = existingSessionData || loaded.sessionData;
+  const metaData = loaded.metaData;
 
   const wasImported = isImportedSession(metaData);
 
@@ -309,7 +315,11 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
     }
     const prevMeta = metaData;
     let shouldClear = true;
-    if (metaData && metaData.user && metaData.user !== userEmail) {
+    if (
+      metaData &&
+      metaData.user &&
+      String(metaData.user).trim().toLowerCase() !== String(userEmail).trim().toLowerCase()
+    ) {
       try {
         const { loadAccounts } = require('../config');
         const baseDir = options.baseDir || path.dirname(resolveSessionPaths(options).sPath);
