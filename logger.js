@@ -145,7 +145,14 @@ function isFlatLogRecord(object) {
 
 const isJsonMode = process.argv.includes('--json');
 const isTest = Boolean(process.env.NODE_TEST_CONTEXT) || process.env.NODE_ENV === 'test';
-const isDev = !process.env.CI && process.env.NODE_ENV !== 'production' && !isTest && !isJsonMode;
+// Pretty (pino.transport/pino-pretty) apenas em terminal interativo. Em cron/systemd
+// sem TTY não sobe worker thread nem formata/coloriza cada linha (economia de CPU/RAM).
+const isDev =
+  Boolean(process.stdout.isTTY) &&
+  !process.env.CI &&
+  process.env.NODE_ENV !== 'production' &&
+  !isTest &&
+  !isJsonMode;
 
 let destination;
 if (isJsonMode) {

@@ -42,7 +42,10 @@ function isProcessAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (err) {
+    // EPERM = o processo existe, mas não temos permissão para sinalizá-lo.
+    // Tratar como vivo evita remover o lock de outra instância legítima.
+    if (err && err.code === 'EPERM') return true;
     return false;
   }
 }
@@ -423,6 +426,7 @@ async function acquireLock(
 
 module.exports = {
   acquireLock,
+  isProcessAlive,
   LockActiveError,
   lockFilePath: defaultLockFilePath,
   DEFAULT_STALE_TIMEOUT_MS,

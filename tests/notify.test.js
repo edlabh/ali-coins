@@ -467,6 +467,12 @@ test('libs/notify.js - detecção e aviso de sessão remota importada expirada n
     buildMessage({ customMessage: 'Mensagem customizada direta' }),
     'Mensagem customizada direta'
   );
+
+  // 9. customMessage é escapado para HTML (parse_mode do Telegram)
+  assert.strictEqual(
+    buildMessage({ customMessage: '<b>oi</b> & <script>alert(1)</script>' }),
+    '&lt;b&gt;oi&lt;/b&gt; &amp; &lt;script&gt;alert(1)&lt;/script&gt;'
+  );
 });
 
 test('libs/notify.js - extractRelevantErrorMessage prioriza causa raiz em vez de logs de encerramento do Playwright', () => {

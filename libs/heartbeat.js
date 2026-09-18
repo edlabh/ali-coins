@@ -162,7 +162,7 @@ async function pingSuccess(url, report = null, options = {}) {
       if (typeof report === 'string') {
         body = report;
       } else {
-        body = JSON.stringify(report, null, 2);
+        body = JSON.stringify(report);
         contentType = 'application/json';
       }
     } catch {

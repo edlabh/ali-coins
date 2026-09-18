@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { acquireLock, LockActiveError } = require('../lockfile');
+const { acquireLock, isProcessAlive, LockActiveError } = require('../lockfile');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -530,3 +530,28 @@ test(
     }
   }
 );
+
+test('lockfile.js - isProcessAlive trata EPERM como processo vivo', () => {
+  const originalKill = process.kill;
+  try {
+    assert.strictEqual(isProcessAlive(process.pid), true, 'PID atual deve estar vivo');
+    assert.strictEqual(isProcessAlive(0), false, 'PID inválido deve retornar false');
+    assert.strictEqual(isProcessAlive('abc'), false, 'PID não-inteiro deve retornar false');
+
+    process.kill = () => {
+      const err = new Error('operation not permitted');
+      err.code = 'EPERM';
+      throw err;
+    };
+    assert.strictEqual(isProcessAlive(4242), true, 'EPERM indica processo existente');
+
+    process.kill = () => {
+      const err = new Error('no such process');
+      err.code = 'ESRCH';
+      throw err;
+    };
+    assert.strictEqual(isProcessAlive(4242), false, 'ESRCH indica processo inexistente');
+  } finally {
+    process.kill = originalKill;
+  }
+});

@@ -11,6 +11,32 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.2.0] - 2026-09-18
+
+### Corrigido
+
+- **Exit code não-determinístico em `export_session.js --all` (`export_session.js:410`):** faltava `return` após `flushAndExit(1)` quando não havia sessões ativas, e o fluxo ainda chamava `flushAndExit(0)` — o código de saída dependia da corrida entre os dois `process.exit`.
+- **Erro de configuração em `--dry-run` virava crash (`collect.js`, `do_tasks.js`):** a IIFE principal não tinha `.catch`, então uma `ConfigValidationError` lançada por `handleDryRun()` escalava ao crash handler e encerrava com código 6; agora é tratada como falha crítica de execução (exit 1).
+- **Lock removido de processo vivo sob `EPERM` (`lockfile.js:40`):** `isProcessAlive` tratava `EPERM` ("sem permissão para sinalizar" = processo existe) como processo morto, podendo remover o lock de outra instância legítima; agora `EPERM` é considerado vivo.
+- **`customMessage` sem escape no Telegram (`libs/notify.js`):** mensagens customizadas enviadas em `parse_mode: HTML` não passavam por `escapeHtml`.
+
+### Segurança
+
+- **`accounts.json` com credenciais em texto puro sem restrição (`config.js`):** o arquivo passa a receber `chmod 0600` em runtime, com aviso quando estava legível por outros usuários.
+- **`credentials.env` sem reforço de permissão em runtime (`config.js`):** `chmod 0600` aplicado no boot, cobrindo arquivos criados manualmente fora do instalador.
+- **Dry-run expondo dados sensíveis (`config.js`):** o Chat ID do Telegram agora é mascarado e os comprimentos de `SESSION_SECRET`/senha/token foram removidos da saída (apenas `[CONFIGURADO]`).
+
+### Desempenho
+
+- **`pino-pretty` evitado fora de TTY (`logger.js`):** o modo colorido (que sobe worker thread do pino) só é usado em terminal interativo; em cron/systemd sem TTY os logs saem como JSON estruturado, economizando CPU/RAM.
+- **`closeModals` consolidado (`libs/ui/navigation.js`):** seletores CSS resolvidos em um único `evaluate` (antes até 8 `page.$` + sleeps de 300 ms por chamada); seletores `:has-text` do Playwright permanecem suportados, com fallback para mocks/ambientes sem `evaluate`.
+- **Payloads JSON compactos (`libs/heartbeat.js`, `libs/session.js`):** heartbeat e metadados/sessão deixam de usar `JSON.stringify(..., null, 2)`, reduzindo bytes trafegados/gravados.
+
+### Testes
+
+- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js` e `tests/heartbeat.test.js` — 271/271.
+- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), 5m45s, pico 523MiB, 2/2 contas, 0 riscos.
+
 ## [1.1.0] - 2026-09-18
 
 ### Adicionado

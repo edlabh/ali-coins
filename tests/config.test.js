@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { configSchema, ConfigValidationError, loadConfig } = require('../config');
+const { configSchema, ConfigValidationError, loadConfig, maskChatId } = require('../config');
 
 test('config.js - defaults schema Zod', () => {
   const minimalData = {
@@ -53,6 +53,15 @@ test('config.js - SKIP_APP_ONLY_TASKS aceita variações de string para desligar
       `SKIP_APP_ONLY_TASKS=${on} deve manter as tarefas desligadas`
     );
   }
+});
+
+test('config.js - maskChatId mascara o Chat ID do Telegram', () => {
+  assert.strictEqual(maskChatId('123456789'), '1234***');
+  assert.strictEqual(maskChatId(123456789), '1234***');
+  assert.strictEqual(maskChatId('123'), '***');
+  assert.strictEqual(maskChatId(''), '');
+  assert.strictEqual(maskChatId(null), '');
+  assert.strictEqual(maskChatId(undefined), '');
 });
 
 test('config.js - preprocessing de strings para boolean e números', () => {

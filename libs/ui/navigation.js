@@ -60,12 +60,64 @@ async function closeModals(page, customSelectors = null) {
   const selectors = customSelectors || SELECTORS.modals.closeButtons;
   let closedAny = false;
 
+  // `:has-text(...)` é pseudo-seletor exclusivo do Playwright e não existe no
+  // document.querySelector; separamos para não perdê-los na consolidação abaixo.
+  const cssSelectors = [];
+  const playwrightSelectors = [];
   for (const sel of selectors) {
+    if (typeof sel === 'string' && sel.includes(':has-text(')) {
+      playwrightSelectors.push(sel);
+    } else {
+      cssSelectors.push(sel);
+    }
+  }
+
+  // 1. Seletores CSS puros: um único round-trip CDP. `document.querySelector` casa o
+  //    primeiro elemento exatamente como page.$(sel), preservando o comportamento.
+  if (cssSelectors.length > 0) {
+    try {
+      const clicked = await page.evaluate((sels) => {
+        let closed = false;
+        for (const sel of sels) {
+          let el = null;
+          try {
+            el = document.querySelector(sel);
+          } catch {
+            continue;
+          }
+          if (!el) continue;
+          try {
+            el.click();
+            closed = true;
+          } catch {
+            // Elemento removido/desanexado entre a consulta e o clique
+          }
+        }
+        return closed;
+      }, cssSelectors);
+      closedAny = closedAny || Boolean(clicked);
+    } catch {
+      // Fallback para mocks/ambientes sem evaluate: preserva o caminho antigo
+      for (const sel of cssSelectors) {
+        try {
+          const modalBtn = await page.$(sel);
+          if (modalBtn) {
+            await page.evaluate((el) => el.click(), modalBtn).catch(() => {});
+            closedAny = true;
+          }
+        } catch {
+          // Continua checando próximos seletores
+        }
+      }
+    }
+  }
+
+  // 2. Seletores textuais do Playwright (não suportados por querySelector)
+  for (const sel of playwrightSelectors) {
     try {
       const modalBtn = await page.$(sel);
       if (modalBtn) {
         await page.evaluate((el) => el.click(), modalBtn).catch(() => {});
-        await page.waitForTimeout(300);
         closedAny = true;
       }
     } catch {

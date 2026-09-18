@@ -409,9 +409,9 @@ if (require.main === module) {
         .then((res) => {
           if (res.length === 0) {
             logger.warn('Nenhuma sessão ativa encontrada para exportar.');
-            flushAndExit(1);
+            return flushAndExit(1);
           }
-          flushAndExit(0);
+          return flushAndExit(0);
         })
         .catch((err) => {
           logger.error({ err: err.message }, 'Falha na exportação multi-conta.');

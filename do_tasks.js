@@ -588,7 +588,12 @@ if (require.main === module) {
       await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
       await flushAndExit(1);
     }
-  })();
+  })().catch(async (err) => {
+    // Erros fora do try principal (ex: loadConfig inválido em --dry-run) não devem
+    // escalar para o crash handler (exit 6); são falha crítica de execução (exit 1).
+    logger.error({ err: err.message }, 'Falha inesperada na execução de tarefas.');
+    await flushAndExit(1);
+  });
 }
 
 module.exports = {

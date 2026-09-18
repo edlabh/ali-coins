@@ -160,3 +160,31 @@ test('logger.js - sanitiza query strings sensíveis em campos estruturados (ex: 
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('logger.js - sem TTY usa JSON estruturado (sem pino-pretty/worker) mesmo fora de CI/produção', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const script = `
+      const logger = require('./logger');
+      logger.info({ marker: 'sem-tty' }, 'registro estruturado');
+    `;
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    delete env.NODE_ENV;
+    delete env.CI;
+
+    const res = spawnSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      env
+    });
+
+    assert.strictEqual(res.status, 0);
+    assert.ok(res.stdout.includes('"level":'), 'saída deve ser JSON do pino');
+    assert.ok(res.stdout.includes('"marker":"sem-tty"'), 'campos devem estar em JSON estruturado');
+    // pino-pretty adiciona cores ANSI; JSON puro não deve conter escapes
+    assert.strictEqual(res.stdout.includes('\u001b['), false, 'não deve haver colorização ANSI');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

@@ -221,7 +221,7 @@ function buildMessage({
   };
 
   if (customMessage) {
-    return customMessage;
+    return escapeHtml(customMessage);
   }
 
   // 1. Mensagem de teste dry-run

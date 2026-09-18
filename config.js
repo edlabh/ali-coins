@@ -6,6 +6,7 @@ const dotenv = require('dotenv');
 const { z } = require('zod');
 const { Command } = require('commander');
 const logger = require('./logger');
+const { safeChmod600 } = require('./security');
 
 // Caminhos padrão de arquivos
 const credentialsEnvPath = path.join(__dirname, 'credentials.env');
@@ -30,8 +31,11 @@ const lockUserSuffix =
 // (ex: criar um diretório no caminho do lock, symlink ou timestamp forjado).
 const lockFilePath = path.join(__dirname, `ali-coins-${lockUserSuffix}.lock`);
 
-// Carregar variáveis do arquivo credentials.env se existir
+// Carregar variáveis do arquivo credentials.env se existir.
+// Reforça 0o600 em runtime: o arquivo contém ALI_PASSWORD, SESSION_SECRET e tokens,
+// e pode ter sido criado manualmente sem as permissões restritas do instalador.
 if (fs.existsSync(credentialsEnvPath)) {
+  safeChmod600(credentialsEnvPath);
   dotenv.config({ path: credentialsEnvPath, quiet: true });
 }
 
@@ -489,6 +493,20 @@ function maskUser(user) {
 }
 
 /**
+ * Mascara o Chat ID do Telegram para exibição em logs/dry-run.
+ * Expõe apenas os 4 primeiros dígitos; IDs curtos são totalmente mascarados.
+ * @param {string|number} chatId
+ * @returns {string}
+ */
+function maskChatId(chatId) {
+  if (chatId === undefined || chatId === null) return '';
+  const value = String(chatId).trim();
+  if (!value) return '';
+  if (value.length <= 4) return '***';
+  return `${value.slice(0, 4)}***`;
+}
+
+/**
  * Carrega a lista de contas configuradas (ALI_USER/ALI_PASSWORD, ALI_USER_2/ALI_PASSWORD_2, ou accounts.json)
  * @param {object} [env=process.env]
  * @param {string} [baseDir=__dirname]
@@ -499,6 +517,21 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
   const accountsFile = path.join(baseDir, 'accounts.json');
 
   if (fs.existsSync(accountsFile)) {
+    // accounts.json contém senhas em texto puro: restringe a 0o600 em runtime,
+    // avisando quando o arquivo estava legível por outros usuários.
+    try {
+      const mode = fs.statSync(accountsFile).mode & 0o777;
+      if ((mode & 0o077) !== 0) {
+        logger.warn(
+          { mode: mode.toString(8) },
+          'accounts.json contém credenciais e estava acessível a outros usuários; aplicando permissão 0o600.'
+        );
+      }
+    } catch {
+      // Sem permissão de stat: apenas segue para a leitura normal
+    }
+    safeChmod600(accountsFile);
+
     try {
       const raw = JSON.parse(fs.readFileSync(accountsFile, 'utf-8'));
       if (Array.isArray(raw)) {
@@ -726,7 +759,7 @@ async function handleDryRun() {
         });
       } else {
         logger.info(` • Usuário: ${maskedUser}`);
-        logger.info(` • Senha: [CONFIGURADA - ${cfg.ALI_PASSWORD.length} caracteres]`);
+        logger.info(' • Senha: [CONFIGURADA]');
       }
       logger.info(` • Bloqueio de mídia (ALLOW_MEDIA): ${cfg.ALLOW_MEDIA}`);
       logger.info(` • Modo Headless: ${cfg.HEADLESS}`);
@@ -743,12 +776,12 @@ async function handleDryRun() {
         ` • Tarefas exclusivas do app (SKIP_APP_ONLY_TASKS): ${cfg.SKIP_APP_ONLY_TASKS ? 'Desligadas' : 'Ativas'}`
       );
       logger.info(
-        ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? `[CONFIGURADO - ${cfg.SESSION_SECRET.length} chars]` : '[NÃO CONFIGURADO]'}`
+        ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}`
       );
       logger.info(
         ` • Notificações Telegram: ${
           cfg.TELEGRAM_ENABLED
-            ? `Ativado (Chat ID: ${cfg.TELEGRAM_CHAT_ID}, Token: [CONFIGURADO - ${cfg.TELEGRAM_BOT_TOKEN.length} chars])`
+            ? `Ativado (Chat ID: ${maskChatId(cfg.TELEGRAM_CHAT_ID)}, Token: [CONFIGURADO])`
             : 'Desativado'
         }`
       );
@@ -790,6 +823,7 @@ module.exports = {
   parseCliOptions,
   handleDryRun,
   maskUser,
+  maskChatId,
   loadAccounts,
   syncAccountSessions,
   credentialsEnvPath,

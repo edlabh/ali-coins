@@ -75,6 +75,12 @@ test('libs/heartbeat.js - pingStart, pingSuccess e pingFail com mock de fetch', 
     assert.strictEqual(calls[1].url, testUrl);
     assert.strictEqual(calls[1].method, 'POST');
     assert.ok(calls[1].body.includes('us***@example.com'));
+    // Body compacto (sem indentação) para reduzir payload de rede
+    assert.strictEqual(
+      calls[1].body.includes('\n  "'),
+      false,
+      'Body do heartbeat de sucesso deve ser JSON compacto'
+    );
 
     // 3. pingFail
     const failErr = new Error('Falha simulada na navegação');

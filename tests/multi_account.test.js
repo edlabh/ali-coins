@@ -532,3 +532,27 @@ test('config.js - maskUser mascara e-mails com local part curto (não vaza PII)'
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('config.js - loadAccounts restringe accounts.json com credenciais para 0o600', () => {
+  if (process.platform === 'win32') return;
+
+  const tmpDir = createIsolatedTestDir('ali-accounts-perm-');
+  try {
+    const accountsFile = path.join(tmpDir, 'accounts.json');
+    fs.writeFileSync(
+      accountsFile,
+      JSON.stringify([{ user: 'perm@example.com', password: 'secret123' }]),
+      'utf-8'
+    );
+    fs.chmodSync(accountsFile, 0o644);
+
+    const accounts = loadAccounts({}, tmpDir);
+    assert.strictEqual(accounts.length, 1);
+    assert.strictEqual(accounts[0].user, 'perm@example.com');
+
+    const mode = fs.statSync(accountsFile).mode & 0o777;
+    assert.strictEqual(mode, 0o600, 'accounts.json deve ser restringido a 0o600');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+  }
+});
