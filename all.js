@@ -365,7 +365,9 @@ async function main() {
       let anyAccountSuccess = false;
       let anyAccountStreakBroken = false;
       let anyAccount2FARequired = false;
-      let allAccountsLocked = true;
+      // Distingue "todas as contas com lock ativo" (exit 3) de falha genérica de lock (exit 1)
+      let lockActiveCount = 0;
+      let nonLockFailureCount = 0;
       let consecutiveFailures = 0;
 
       for (let i = 0; i < accounts.length; i++) {
@@ -389,11 +391,11 @@ async function main() {
         let releaseAccountLock = null;
         try {
           releaseAccountLock = await acquireLock(isForce(), null, account.lockPath);
-          allAccountsLocked = false;
         } catch (err) {
           consecutiveFailures++;
           const lockTiming = accTimer.end('lock');
           if (err instanceof LockActiveError) {
+            lockActiveCount++;
             logger.warn(
               { account: account.maskedUser },
               `Lock ativo para a conta ${account.maskedUser}. Pulando...`
@@ -419,6 +421,7 @@ async function main() {
             }
             continue;
           }
+          nonLockFailureCount++;
           logger.error(
             { err: err.message, account: account.maskedUser },
             'Falha ao adquirir lock da conta.'
@@ -446,6 +449,7 @@ async function main() {
 
         let accCheckin = null;
         let accTasks = null;
+        let accTasksError = null;
         let accError = null;
         let accImportedExpired = false;
         let accIs2FARequired = false;
@@ -503,6 +507,7 @@ async function main() {
               skipReport: true
             });
           } catch (taskErr) {
+            accTasksError = taskErr.message;
             logger.warn(
               { err: taskErr.message, account: account.maskedUser },
               'Aviso na etapa de tarefas.'
@@ -525,6 +530,7 @@ async function main() {
           accTimer.end('success');
         } catch (accErr) {
           consecutiveFailures++;
+          nonLockFailureCount++;
           accTimer.end('error');
           accError = accErr.message;
           accImportedExpired = Boolean(accErr.isImportedSessionExpired);
@@ -574,7 +580,8 @@ async function main() {
               mainEndTime: accTiming.endTime,
               totalDuration: accTiming.duration,
               step1Duration: accStep1Duration,
-              step2Duration: accStep2Duration
+              step2Duration: accStep2Duration,
+              tasksError: accTasksError
             });
             const accEvent = accIs2FARequired
               ? '2fa_required'
@@ -605,6 +612,7 @@ async function main() {
           user: account.maskedUser,
           checkinResult: accCheckin,
           tasksResult: accTasks,
+          tasksError: accTasksError,
           error: accError,
           isImportedSessionExpired: accImportedExpired,
           is2FARequired: accIs2FARequired,
@@ -633,6 +641,11 @@ async function main() {
         },
         { json: isJson() }
       );
+
+      // Só considera "todas bloqueadas" quando houve lock ativo em alguma conta, nenhuma
+      // conta obteve sucesso e não houve falha genérica (ex: erro de I/O no lockfile).
+      const allAccountsLocked =
+        !anyAccountSuccess && lockActiveCount > 0 && nonLockFailureCount === 0;
 
       let multiEvent = 'success';
       if (allAccountsLocked) multiEvent = 'lock_active';

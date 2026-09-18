@@ -1215,6 +1215,35 @@ test('libs/report.js - buildUnifiedReportPayload propaga tasksError no meta', ()
   }
 });
 
+test('libs/report.js - buildMultiAccountReportPayload propaga tasksError por conta', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const payload = buildMultiAccountReportPayload(
+      [
+        {
+          account: { maskedUser: 'a***@example.com' },
+          checkinResult: {
+            alreadyCollected: true,
+            coinsGainedToday: '0',
+            streakDays: 3,
+            totalBalance: '100',
+            duration: '2s'
+          },
+          tasksResult: null,
+          tasksError: 'painel de tarefas inacessível',
+          duration: '2s'
+        }
+      ],
+      { totalAccounts: 1, successfulAccounts: 1, totalDuration: '2s' }
+    );
+
+    assert.strictEqual(payload.accounts[0].tasksError, 'painel de tarefas inacessível');
+    assert.strictEqual(payload.accounts[0].meta.tasksError, 'painel de tarefas inacessível');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/report.js - flushWebhooks aguarda webhooks em voo antes do encerramento', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const { sendWebhookNotification, flushWebhooks } = require('../libs/report');

@@ -836,7 +836,7 @@ test('libs/session.js - logs de sessão mascaram o identificador do usuário (PI
   }
 });
 
-test('libs/session.js - metadados são gravados antes da sessão (falha de sessão não os descarta)', async () => {
+test('libs/session.js - sessão é gravada antes do meta (falha de sessão não publica meta novo)', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('session-meta-first-');
 
@@ -856,10 +856,14 @@ test('libs/session.js - metadados são gravados antes da sessão (falha de sess�
       });
     });
 
+    // Invariante de segurança: em crash/falha entre as escritas, o par deve ser
+    // sessão-antiga + meta-antigo (nunca meta-novo apontando para sessão de outra conta).
     const metaPath = path.join(tmpDir, 'session_meta.json');
-    assert.ok(fs.existsSync(metaPath), 'Meta deve ser gravado antes da sessão');
-    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-    assert.strictEqual(meta.user, 'meta.first@example.com');
+    assert.strictEqual(
+      fs.existsSync(metaPath),
+      false,
+      'Meta novo NÃO deve ser publicado se a gravação da sessão falhou'
+    );
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);

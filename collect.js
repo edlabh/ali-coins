@@ -561,6 +561,14 @@ if (require.main === module) {
       await flushAndExit(0);
     } catch (err) {
       if (releaseLock) await releaseLock();
+      if (err.name === 'TwoFactorRequiredNonInteractive' || err.is2FARequired) {
+        logger.error(
+          '[2FA Não-Interativo] O AliExpress exigiu verificação de código 2FA durante execução sem terminal interativo (cron/CI). ' +
+            'Solução: execute localmente com "./run_all.sh", resolva o 2FA e use "node export_session.js" / "node import_session.js".'
+        );
+        await sendTelegram({ config: cfg, event: '2fa_required', error: err }).catch(() => {});
+        await flushAndExit(5);
+      }
       if (err.isImportedSessionExpired) {
         logger.error(
           '[Sessão Remota Expirada] Login falhou em servidor remoto. Sugestão: gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'

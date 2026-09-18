@@ -76,14 +76,15 @@ async function flushStdStreams() {
  */
 async function flushAndExit(code = 0) {
   // Webhooks são fire-and-forget no fluxo de relatório; aguarda os que estiverem em voo
-  // (com teto) para não perder notificações no process.exit().
+  // (com teto) para não perder notificações no process.exit(). Módulo leve para não
+  // carregar Playwright em CLIs que não usam navegador.
   try {
-    const { flushWebhooks } = require('./report');
+    const { flushWebhooks } = require('./webhooks');
     if (typeof flushWebhooks === 'function') {
       await flushWebhooks(5000);
     }
   } catch {
-    // Report indisponível: ignora
+    // Rastreamento indisponível: ignora
   }
   try {
     await flushStdStreams();

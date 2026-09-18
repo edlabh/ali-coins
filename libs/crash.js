@@ -22,10 +22,11 @@ function setupGlobalCrashHandler(getContext = () => ({})) {
     }
     isExiting = true;
 
-    // Timeout de emergência: se qualquer promise/rede pendurar, mata em 5s garantindo que nunca trave
+    // Timeout de emergência: nunca travar, mas com folga para o flush (webhooks + streams
+    // podem somar até ~10s). 15s evita cortar o log fatal/relatório no meio do flush.
     const emergencyTimer = setTimeout(() => {
       process.exit(6);
-    }, 5000);
+    }, 15000);
     if (emergencyTimer.unref) emergencyTimer.unref();
 
     const err = error instanceof Error ? error : new Error(String(error));

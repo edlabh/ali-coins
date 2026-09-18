@@ -327,11 +327,6 @@ async function importSession(options = {}) {
 
   const accountLabel = matchedAccount ? ` (Conta ${matchedAccount.index})` : '';
 
-  // Metadados ANTES da sessão (mesma invariante de libs/session.js): uma sessão sem meta
-  // é descartada no próximo run; meta sem sessão é inofensivo e recuperável.
-  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8', { durable: false });
-  safeChmod600(mPath);
-
   if (shouldEncrypt) {
     const encryptedToken = encryptSession(JSON.stringify(sessionData, null, 2), secret);
     await safeWriteFile(encPath, encryptedToken, 'utf-8');
@@ -378,6 +373,11 @@ async function importSession(options = {}) {
     );
     logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
   }
+
+  // Metadados DEPOIS da sessão: em crash entre as escritas, o par fica sessão-nova +
+  // meta-antigo, que `validateSession` rejeita por divergência de conta (re-login seguro).
+  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8', { durable: false });
+  safeChmod600(mPath);
 
   logger.info('Automação pronta para execução com: ./run_all.sh (ou npm start)');
   logger.info('===================================================================');

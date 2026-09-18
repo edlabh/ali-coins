@@ -31,6 +31,12 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Flush de streams sem observabilidade (`libs/exit.js`):** `flushStream` sinaliza timeout e o encerramento emite aviso quando a saída pode ter sido truncada.
 - **Token com buffers malformados (`security.js`):** `parseSessionToken` valida tamanhos canônicos de iv/tag/salt e rejeita cedo (mesma mensagem pública de autenticação).
 - **`formatDuration`/backoff com valores não finitos (`time_utils.js`):** `Number.isFinite` evita saídas `NaN`/`Infinity`.
+- **Falha genérica de lock virava "lock ativo" (`all.js`):** o fluxo multi-conta agora distingue lock ativo (exit 3) de erro genérico de `acquireLock` (exit 1), contando cada caso em vez de uma flag única.
+- **Par meta/sessão podia aprovar sessão de outra conta (`libs/session.js`, `import_session.js`):** a sessão passa a ser gravada **antes** do meta; em crash entre as escritas o par fica sessão-nova + meta-antigo, que `validateSession` rejeita por divergência de conta (re-login seguro).
+- **Falha de tarefas invisível em multi-conta (`all.js`, `libs/report.js`):** `tasksError` agora é propagado por conta (item e `meta`) no relatório multi-conta, mantendo campos opcionais.
+- **Exit 5 (2FA) ausente nos entrypoints standalone (`collect.js`, `do_tasks.js`):** `node collect.js`/`node do_tasks.js` passam a sair com código 5 em 2FA não-interativo, alinhados ao `all.js`.
+- **Flush de webhooks podia não aguardar (`libs/webhooks.js`):** removido `unref()` do timer de flush; o encerramento espera o teto curto.
+- **Crash handler truncava o flush (`libs/crash.js`):** timer de emergência ampliado de 5 s para 15 s, evitando cortar o log fatal/relatório no meio do flush (webhooks + streams).
 
 ### Segurança
 
@@ -52,6 +58,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **`config` propagado para `runCheckin`/`runTasks` (`all.js`):** evita re-parse de Zod/Commander por conta em multi-conta.
 - **`fsync` opcional em metadados (`security.js`, `libs/session.js`, `import_session.js`):** `safeWriteFile(..., { durable: false })` dispensa fsync em metadados descartáveis, preservando a escrita atômica.
 - **Reuso opcional de contexto desktop (`libs/ui/balance.js`):** `options.context`/`options.reuseContext` + `closeCachedDesktopContext()`; **desligado por padrão** para não manter contexto vivo e elevar o pico de RAM durante o fluxo mobile.
+- **Webhooks em módulo leve (`libs/webhooks.js`):** `libs/exit.js` deixa de carregar o Playwright (via `report.js`) em toda saída, reduzindo latência/memória de `import_session`, `export_session`, `--help` e `--dry-run`.
 
 ### Adicionado
 
@@ -59,8 +66,8 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Testes
 
-- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js`, `tests/heartbeat.test.js`, `tests/exit.test.js`, `tests/security.test.js`, `tests/session.test.js`, `tests/tasks.test.js`, `tests/balance.test.js`, `tests/report.test.js`, `tests/time_utils.test.js` e `tests/import_stdin.test.js` — **289/289**.
-- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), 5m06s, pico **495MiB**, 2/2 contas, 0 riscos; host de 1024 MB autodetectado para scrypt `N=32768`; filtro de storage manteve apenas chaves permitidas.
+- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js`, `tests/heartbeat.test.js`, `tests/exit.test.js`, `tests/security.test.js`, `tests/session.test.js`, `tests/tasks.test.js`, `tests/balance.test.js`, `tests/report.test.js`, `tests/time_utils.test.js`, `tests/import_stdin.test.js` e `tests/webhooks.test.js` — **293/293**.
+- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), 5m37s, pico **511MiB**, 2/2 contas, 0 riscos; host de 1024 MB autodetectado para scrypt `N=32768`; filtro de storage manteve apenas chaves permitidas; `libs/webhooks.js` não carrega Playwright.
 
 ## [1.1.0] - 2026-09-18
 

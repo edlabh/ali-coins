@@ -448,12 +448,6 @@ async function saveSession(storageState, user, options = {}) {
     : storageState;
   const payloadStr = JSON.stringify(persistedState);
 
-  // Metadados são gravados ANTES da sessão: se a escrita da sessão falhar, o meta novo
-  // não "órfã" a sessão (uma sessão sem meta seria descartada no próximo run).
-  // Metadados são descartáveis/recuperáveis: dispensa fsync para reduzir I/O.
-  await safeWriteFile(mPath, JSON.stringify(metaData), 'utf-8', { durable: false });
-  safeChmod600(mPath);
-
   if (shouldEncrypt) {
     const encryptedToken = await encryptSessionAsync(payloadStr, secret);
     await safeWriteFile(encPath, encryptedToken, 'utf-8');
@@ -478,6 +472,13 @@ async function saveSession(storageState, user, options = {}) {
       'Sessão autenticada e metadados salvos com sucesso (permissão 0o600).'
     );
   }
+
+  // Metadados são gravados DEPOIS da sessão: em crash entre as escritas, o par fica
+  // sessão-nova + meta-antigo, que `validateSession` rejeita por divergência de conta
+  // (re-login seguro). A ordem inversa poderia aprovar cookies antigos com meta novo.
+  // Metadados são descartáveis/recuperáveis: dispensa fsync para reduzir I/O.
+  await safeWriteFile(mPath, JSON.stringify(metaData), 'utf-8', { durable: false });
+  safeChmod600(mPath);
 
   // Limpeza de backups antigos segundo retenção
   await pruneSessionBackups(options).catch(() => {});

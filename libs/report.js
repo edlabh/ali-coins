@@ -91,13 +91,15 @@ const multiAccountReportSchema = z.object({
         })
         .nullable(),
       error: z.string().optional(),
+      tasksError: z.string().optional(),
       isImportedSessionExpired: z.boolean().optional(),
       duration: z.string().optional(),
       meta: z.object({
         finalBalance: z.string(),
         totalCoinsGained: z.union([z.number(), z.string()]).optional(),
         checkinCoinsGained: z.union([z.number(), z.string()]).optional(),
-        tasksCoinsGained: z.union([z.number(), z.string()]).optional()
+        tasksCoinsGained: z.union([z.number(), z.string()]).optional(),
+        tasksError: z.string().optional()
       })
     })
   ),
@@ -323,24 +325,9 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
  * @param {string} [customUrl]
  * @returns {Promise<boolean>}
  */
-// Promessas de webhook em voo: rastreadas para não serem perdidas no process.exit()
-const pendingWebhooks = new Set();
-
-/**
- * Aguarda os webhooks em voo (com teto) antes do encerramento do processo.
- * @param {number} [timeoutMs=5000]
- * @returns {Promise<void>}
- */
-async function flushWebhooks(timeoutMs = 5000) {
-  if (pendingWebhooks.size === 0) return;
-  let timer = null;
-  const timeout = new Promise((resolve) => {
-    timer = setTimeout(resolve, timeoutMs);
-    if (timer.unref) timer.unref();
-  });
-  await Promise.race([Promise.allSettled([...pendingWebhooks]), timeout]);
-  if (timer) clearTimeout(timer);
-}
+// Rastreamento de webhooks em voo vive em módulo leve (sem Playwright), consumido
+// também por libs/exit.js para flush no encerramento.
+const { trackWebhook, flushWebhooks } = require('./webhooks');
 
 /**
  * Envia notificação para webhook, registrando a promessa em voo para flush no encerramento.
@@ -349,10 +336,7 @@ async function flushWebhooks(timeoutMs = 5000) {
  * @returns {Promise<boolean>}
  */
 function sendWebhookNotification(payload, customUrl = null) {
-  const promise = performWebhookNotification(payload, customUrl);
-  pendingWebhooks.add(promise);
-  promise.finally(() => pendingWebhooks.delete(promise)).catch(() => {});
-  return promise;
+  return trackWebhook(performWebhookNotification(payload, customUrl));
 }
 
 async function performWebhookNotification(payload, customUrl = null) {
@@ -674,6 +658,8 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
           }
         : null,
       error: item.error || undefined,
+      // Preserva a falha da etapa de tarefas (check-in OK) para o alerta consolidado
+      tasksError: item.tasksError || undefined,
       // Preserva o sinal de sessão importada expirada para o alerta consolidado do Telegram
       isImportedSessionExpired: Boolean(item.isImportedSessionExpired),
       duration: accountDuration,
@@ -681,7 +667,8 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
         finalBalance,
         totalCoinsGained,
         checkinCoinsGained,
-        tasksCoinsGained
+        tasksCoinsGained,
+        tasksError: item.tasksError || undefined
       }
     };
   });
