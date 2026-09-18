@@ -20,31 +20,8 @@ if (fs.existsSync(credentialsEnvPath)) {
   dotenv.config({ path: credentialsEnvPath, quiet: true });
 }
 
-/**
- * Allowlist de chaves do localStorage essenciais para persistência de sessão.
- * Motivo da substituição da denylist:
- * O AliExpress injeta scripts de telemetria, telemetrias analíticas pesadas (APLUS_S_CORE,
- * Batman, Goldlog, Aegis) que poluem o localStorage com mais de 200KB de cache temporário.
- * A allowlist garante que apenas tokens de autenticação, CSRF tokens, identificadores
- * de conta e preferências essenciais de navegação sejam transferidos no token criptografado.
- */
-const ALLOWED_STORAGE_KEY_PATTERNS = [
-  /login/i,
-  /user/i,
-  /account/i,
-  /token/i,
-  /session/i,
-  /auth/i,
-  /_m_h5_tk/i,
-  /currency/i,
-  /locale/i,
-  /lang/i
-];
-
-function isAllowedStorageKey(keyName) {
-  if (!keyName || typeof keyName !== 'string') return false;
-  return ALLOWED_STORAGE_KEY_PATTERNS.some((pattern) => pattern.test(keyName));
-}
+// Allowlist compartilhada com libs/session.js (fonte única em libs/storage_filter.js)
+const { ALLOWED_STORAGE_KEY_PATTERNS, isAllowedStorageKey } = require('./libs/storage_filter');
 
 class ExportSessionError extends Error {
   constructor(message) {

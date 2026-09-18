@@ -274,13 +274,60 @@ async function getStreakFromCoinPage(page) {
  * @param {object} [options={}]
  * @returns {Promise<{ totalBalance: string, todayCheckinCoins: string|null, hasAppCheckinToday: boolean, desktopStreak: number|null, rawText: string }>}
  */
+// Cache opcional de contexto/página desktop (opt-in via options.reuseContext) para
+// evitar recriar contexto a cada leitura de saldo. Fica desligado por padrão para não
+// manter um contexto vivo (e elevar o pico de RAM) enquanto o fluxo mobile executa.
+let cachedDesktopContext = null;
+let cachedDesktopPage = null;
+
+/**
+ * Fecha o contexto desktop eventualmente cacheado (chamar ao fim da conta/processo).
+ * @returns {Promise<void>}
+ */
+async function closeCachedDesktopContext() {
+  cachedDesktopPage = null;
+  if (cachedDesktopContext) {
+    const ctx = cachedDesktopContext;
+    cachedDesktopContext = null;
+    await ctx.close().catch(() => {});
+  }
+}
+
 async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
   const timeout = options.timeout || 20000;
   const allowMedia = Boolean(options.allowMedia);
 
-  const desktopCtx = await newDesktopContext(browser, sessionPathOrData, { allowMedia });
+  const providedContext = options.context || null;
+  const reuseRequested = options.reuseContext === true;
+  let desktopCtx = providedContext;
+  let cachedForReuse = false;
+  let desktopPage = null;
+
+  if (!desktopCtx && reuseRequested && cachedDesktopContext) {
+    const closed =
+      typeof cachedDesktopContext.isClosed === 'function' && cachedDesktopContext.isClosed();
+    if (!closed) {
+      desktopCtx = cachedDesktopContext;
+      desktopPage = cachedDesktopPage;
+      cachedForReuse = true;
+    } else {
+      cachedDesktopContext = null;
+      cachedDesktopPage = null;
+    }
+  }
+  if (!desktopCtx) {
+    desktopCtx = await newDesktopContext(browser, sessionPathOrData, { allowMedia });
+    if (reuseRequested) {
+      cachedDesktopContext = desktopCtx;
+      cachedForReuse = true;
+    }
+  }
+
   try {
-    const desktopPage = await desktopCtx.newPage();
+    if (!desktopPage) {
+      desktopPage = await desktopCtx.newPage();
+      if (cachedForReuse) cachedDesktopPage = desktopPage;
+    }
     await gotoWithRetry(desktopPage, SELECTORS.desktop.mycoinUrl, {
       waitUntil: 'domcontentloaded',
       timeout
@@ -344,13 +391,16 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
       rawText: desktopText
     };
   } finally {
-    await desktopCtx.close().catch(() => {});
+    if (!providedContext && !cachedForReuse) {
+      await desktopCtx.close().catch(() => {});
+    }
   }
 }
 
 module.exports = {
   getStreakFromCoinPage,
   getBalanceDesktop,
+  closeCachedDesktopContext,
   extractStreakFromText,
   getStreakFromCheckinCoins,
   getCheckinCoinsFromStreak,

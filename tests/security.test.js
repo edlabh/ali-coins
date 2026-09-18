@@ -18,6 +18,8 @@ const {
   SCRYPT_PARAMS_V3,
   SCRYPT_MIN_N,
   SCRYPT_DEFAULT_N,
+  SCRYPT_LOW_MEMORY_DEFAULT_N,
+  getEffectiveDefaultScryptN,
   SCRYPT_MAX_N,
   sanitizeScryptParams
 } = require('../security');
@@ -583,8 +585,12 @@ test('security.js - encryptSessionAsync/decryptSessionAsync são compatíveis co
       /SESSION_SECRET é obrigatório/
     );
     await assert.rejects(() => decryptSessionAsync('', VALID_SECRET), /não fornecido ou inválido/);
+    // Buffers com tamanhos corretos (salt 16, iv 12, tag 16) mas conteúdo inválido:
+    // deve falhar na autenticação GCM, não na validação de formato.
+    const badGcmToken =
+      'v2:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAA=:base64';
     await assert.rejects(
-      () => decryptSessionAsync('v2:AAAA:BBBB:CCCC:DDDD:base64', VALID_SECRET),
+      () => decryptSessionAsync(badGcmToken, VALID_SECRET),
       /Falha na autenticação\/descriptografia/
     );
   } finally {
@@ -612,4 +618,73 @@ test('security.js - validateSession aceita usuário com caixa diferente (case-in
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }
+});
+
+test('security.js - default de N reduz em host de pouca RAM e respeita SCRYPT_N', () => {
+  const originalN = process.env.SCRYPT_N;
+  try {
+    delete process.env.SCRYPT_N;
+    assert.strictEqual(
+      getEffectiveDefaultScryptN(1 * 1024 ** 3),
+      SCRYPT_LOW_MEMORY_DEFAULT_N,
+      'host com ≤1.5 GB deve usar N reduzido'
+    );
+    assert.strictEqual(
+      getEffectiveDefaultScryptN(8 * 1024 ** 3),
+      SCRYPT_DEFAULT_N,
+      'host com RAM folgada deve manter N padrão'
+    );
+
+    SCRYPT_PARAMS_V3.N = null;
+    process.env.SCRYPT_N = '65536';
+    assert.strictEqual(
+      getEffectiveDefaultScryptN(1 * 1024 ** 3),
+      65536,
+      'SCRYPT_N explícito tem precedência sobre a auto-detecção'
+    );
+  } finally {
+    SCRYPT_PARAMS_V3.N = null;
+    if (originalN !== undefined) process.env.SCRYPT_N = originalN;
+    else delete process.env.SCRYPT_N;
+  }
+});
+
+test('security.js - token com buffers de tamanho inválido falha como autenticação', () => {
+  assert.throws(
+    () => decryptSession('v2:AAAA:BBBB:CCCC:DDDD:base64', VALID_SECRET),
+    /Falha na autenticação\/descriptografia/
+  );
+  assert.throws(
+    () => decryptSession('v3:16384:8:1:AAAA:BBBB:CCCC:DDDD:base64', VALID_SECRET),
+    /Falha na autenticação\/descriptografia/
+  );
+});
+
+test('security.js - safeWriteFile com durable:false grava atomicamente sem fsync', async () => {
+  const tmpDir = createIsolatedTestDir('safe-write-nodurable-');
+  try {
+    const file = path.join(tmpDir, 'meta.json');
+    await safeWriteFile(file, JSON.stringify({ ok: true }), 'utf-8', { durable: false });
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf-8')).ok, true);
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+    }
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+  }
+});
+
+test('security.js - mensagem pública de descriptografia não expõe detalhes internos', () => {
+  assert.throws(
+    () => decryptSession('v2:AAAA:BBBB:CCCC:DDDD:base64', VALID_SECRET),
+    (err) => {
+      assert.match(err.message, /Falha na autenticação\/descriptografia/);
+      assert.strictEqual(
+        err.message.includes('Detalhes:'),
+        false,
+        'mensagem pública não deve conter detalhes internos'
+      );
+      return true;
+    }
+  );
 });

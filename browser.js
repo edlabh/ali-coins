@@ -202,10 +202,13 @@ async function launchBrowser(options = {}) {
   const extraArgs = options.args || [];
   const lowMemoryEnabled = isLowMemoryModeEnabled();
 
+  // `env` sanitizado tem precedência: options.env (se houver) é mesclado sobre ele e
+  // NÃO substitui o env do Chromium, evitando vazar segredos do processo em usos futuros.
+  const { env: callerEnv, ...restOptions } = options;
   const baseLaunchOptions = {
-    headless: options.headless !== undefined ? options.headless : true,
-    env: { ...defaultEnv, ...(options.env || {}) },
-    ...options
+    ...restOptions,
+    headless: restOptions.headless !== undefined ? restOptions.headless : true,
+    env: { ...defaultEnv, ...(callerEnv || {}) }
   };
 
   // Sequência de tentativas de launch, da mais restrita à mais permissiva.
@@ -377,13 +380,18 @@ async function newMobileContext(browser, storageState = null, options = {}) {
 
   const context = await browser.newContext(contextOptions);
 
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    window.chrome = { runtime: {} };
-  });
-
-  await setupResourceBlocking(context, options.allowMedia);
-  await startContextTracing(context);
+  try {
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      window.chrome = { runtime: {} };
+    });
+    await setupResourceBlocking(context, options.allowMedia);
+    await startContextTracing(context);
+  } catch (err) {
+    // Evita BrowserContext órfão no browser compartilhado se o setup falhar após newContext
+    await context.close().catch(() => {});
+    throw err;
+  }
   return context;
 }
 
@@ -406,8 +414,14 @@ async function newDesktopContext(browser, storageState = null, options = {}) {
   contextOptions = applyDiagnosticOptions(contextOptions);
 
   const context = await browser.newContext(contextOptions);
-  await setupResourceBlocking(context, options.allowMedia);
-  await startContextTracing(context);
+  try {
+    await setupResourceBlocking(context, options.allowMedia);
+    await startContextTracing(context);
+  } catch (err) {
+    // Evita BrowserContext órfão no browser compartilhado se o setup falhar após newContext
+    await context.close().catch(() => {});
+    throw err;
+  }
   return context;
 }
 

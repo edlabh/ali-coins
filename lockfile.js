@@ -349,6 +349,7 @@ async function acquireLock(
       : Math.max(50, Math.min(Math.floor(staleTimeoutMs / 3), 5 * 60 * 1000));
 
   let refreshInFlight = null;
+  let refreshFailures = 0;
   const refreshLock = () => {
     if (released || refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
@@ -362,8 +363,18 @@ async function acquireLock(
         if (!isOurs || released) return;
         lockData.createdAt = new Date().toISOString();
         await safeWriteFile(targetLockPath, JSON.stringify(lockData, null, 2), 'utf-8');
-      } catch {
-        // Lock removido/substituído ou erro transitório: próximo ciclo tenta novamente
+        refreshFailures = 0;
+      } catch (err) {
+        // Erro transitório (lock substituído, permissão, AV): avisa sem travar o run.
+        // Falhas persistentes são perigosas: o lock pode ser considerado stale por outra
+        // instância após staleTimeoutMs, permitindo execução concorrente.
+        refreshFailures++;
+        if (refreshFailures === 1 || refreshFailures % 10 === 0) {
+          logger.warn(
+            { err: err.message, refreshFailures, lockPath: targetLockPath },
+            'Falha ao renovar o lock; outra instância pode considerá-lo obsoleto e assumir a execução.'
+          );
+        }
       }
     })().finally(() => {
       refreshInFlight = null;

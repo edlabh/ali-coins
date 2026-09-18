@@ -233,6 +233,35 @@ test('libs/ui/balance.js - getBalanceDesktop calcula desktopStreak via históric
   }
 });
 
+test('libs/ui/balance.js - getBalanceDesktop reutiliza options.context sem fechá-lo', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  let contextClosed = false;
+
+  try {
+    const desktopText = 'Minhas moedas\n777\n';
+    const page = {
+      goto: async () => {},
+      waitForSelector: async () => {},
+      innerText: async () => desktopText,
+      screenshot: async () => {},
+      close: async () => {}
+    };
+    const context = {
+      newPage: async () => page,
+      close: async () => {
+        contextClosed = true;
+      }
+    };
+
+    const result = await getBalanceDesktop(null, { cookies: [] }, { context });
+
+    assert.strictEqual(result.totalBalance, '777');
+    assert.strictEqual(contextClosed, false, 'contexto fornecido pelo caller não deve ser fechado');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/ui/balance.js - getCheckinCoinsFromStreak mapeia streak para quantidade de moedas oficial', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {

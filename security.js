@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { z } = require('zod');
@@ -10,6 +11,10 @@ const APP_SCRYPT_SALT_V1 = Buffer.from('ali-coins-session-encryption-v1-scrypt-s
 // Parâmetros scrypt modernos (v3) e legados (v1/v2)
 const SCRYPT_MIN_N = 16384; // 2^14 piso mínimo aceitável de segurança criptográfica
 const SCRYPT_DEFAULT_N = 131072; // 2^17 default seguro moderno
+// Em hosts com pouca RAM (ex: VPS de 1 GB) o pico de ~128 MB do N=2^17 pode causar OOM
+// durante o run com Chromium ativo; 2^15 (~32 MB) mantém margem de segurança confortável.
+const SCRYPT_LOW_MEMORY_DEFAULT_N = 32768;
+const SCRYPT_LOW_MEMORY_TOTAL_BYTES = 1.5 * 1024 * 1024 * 1024;
 const SCRYPT_MAX_N = 1048576; // 2^20 teto individual defensivo (tokens não confiáveis)
 const SCRYPT_MAX_R = 16;
 const SCRYPT_MAX_P = 16;
@@ -42,6 +47,31 @@ function warnScryptFloorOnce(n) {
     { n, min: SCRYPT_MIN_N, default: SCRYPT_DEFAULT_N },
     'Valor de SCRYPT_N abaixo do piso criptográfico seguro (16384). Aplicando valor padrão seguro (131072).'
   );
+}
+
+let scryptAutoLowMemoryWarned = false;
+
+/**
+ * Default de N para NOVAS criptografias quando options.N/SCRYPT_N não são informados.
+ * Reduz automaticamente para 2^15 em hosts com pouca RAM total (≤1.5 GB), evitando OOM.
+ * Não afeta a leitura de tokens existentes (o N vem embutido no token v3).
+ * @param {number} [totalMemBytes] Injetável para testes (default: os.totalmem())
+ * @returns {number}
+ */
+function getEffectiveDefaultScryptN(totalMemBytes) {
+  if (process.env.SCRYPT_N) return SCRYPT_PARAMS_V3.N;
+  const total = typeof totalMemBytes === 'number' ? totalMemBytes : os.totalmem();
+  if (Number.isFinite(total) && total > 0 && total <= SCRYPT_LOW_MEMORY_TOTAL_BYTES) {
+    if (!scryptAutoLowMemoryWarned) {
+      scryptAutoLowMemoryWarned = true;
+      logger.info(
+        { totalMemMB: Math.round(total / (1024 * 1024)), n: SCRYPT_LOW_MEMORY_DEFAULT_N },
+        'Host com pouca RAM detectado: usando SCRYPT_N reduzido (2^15) para novas criptografias.'
+      );
+    }
+    return SCRYPT_LOW_MEMORY_DEFAULT_N;
+  }
+  return SCRYPT_DEFAULT_N;
 }
 
 const SCRYPT_PARAMS_V3 = {
@@ -140,8 +170,12 @@ function safeChmod600(filePath) {
  * @param {string} filePath Caminho do arquivo de destino
  * @param {string|Buffer} data Conteúdo a gravar
  * @param {string} [encoding='utf-8'] Codificação dos dados se string
+ * @param {object} [options={}]
+ * @param {boolean} [options.durable=true] Se false, dispensa fsync (metadados descartáveis),
+ *   reduzindo I/O em hosts lentos; a atomicidade via rename é preservada.
  */
-async function safeWriteFile(filePath, data, encoding = 'utf-8') {
+async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
+  const durable = options.durable !== false;
   const rand = crypto.randomBytes(6).toString('hex');
   const tmpPath = `${filePath}.tmp-${process.pid}-${rand}`;
   let handle = null;
@@ -153,7 +187,9 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8') {
     } else {
       await handle.writeFile(data, encoding);
     }
-    await handle.sync();
+    if (durable) {
+      await handle.sync();
+    }
     await handle.close();
     handle = null;
 
@@ -252,7 +288,9 @@ function resolveEncryptContext(options = {}) {
   } else {
     // Coage strings numéricas (ex: options.N = '16384') antes de aplicar piso/teto
     const coercedN =
-      options.N !== undefined && options.N !== null ? Number(options.N) : SCRYPT_PARAMS_V3.N;
+      options.N !== undefined && options.N !== null
+        ? Number(options.N)
+        : getEffectiveDefaultScryptN();
     if (
       options.N !== undefined &&
       options.N !== null &&
@@ -419,7 +457,36 @@ function parseSessionToken(tokenString) {
     );
   }
 
+  assertTokenBufferLengths(version, { salt, iv, tag });
   return { salt, iv, tag, ciphertext, scryptParams };
+}
+
+// Tamanhos canônicos dos buffers de um token GCM (rejeita tokens malformados cedo,
+// antes de derivar a chave com scrypt e consumir CPU/memória).
+const TOKEN_IV_LENGTH = 12;
+const TOKEN_TAG_LENGTH = 16;
+const TOKEN_SALT_LENGTH = 16;
+
+/**
+ * Valida os tamanhos de salt/iv/tag do token. Usa a mesma mensagem pública de falha
+ * de autenticação para não alterar o contrato observável (prefixo estável).
+ * @param {string} version
+ * @param {{ salt: Buffer, iv: Buffer, tag: Buffer }} parts
+ */
+function assertTokenBufferLengths(version, { salt, iv, tag }) {
+  const needsSaltCheck = version === 'v2' || version === 'v3';
+  const invalid =
+    !iv ||
+    iv.length !== TOKEN_IV_LENGTH ||
+    !tag ||
+    tag.length !== TOKEN_TAG_LENGTH ||
+    (needsSaltCheck && (!salt || salt.length !== TOKEN_SALT_LENGTH));
+
+  if (invalid) {
+    throw new Error(
+      'Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto.'
+    );
+  }
 }
 
 /**
@@ -455,8 +522,13 @@ function decryptWithKey(key, parsed) {
  * Normaliza qualquer falha (scrypt ou autenticação) na mensagem pública de erro.
  */
 function toDecryptAuthError(err) {
+  // Detalhe interno (params/crypto) vai apenas para debug; a mensagem pública permanece
+  // estável para não expor implementação a logs/CLI.
+  if (err && err.message) {
+    logger.debug({ err: err.message }, 'Detalhe interno da falha de descriptografia do token.');
+  }
   return new Error(
-    `Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto. Detalhes: ${err.message}`
+    'Falha na autenticação/descriptografia do token. Verifique se o SESSION_SECRET está correto.'
   );
 }
 
@@ -726,6 +798,8 @@ module.exports = {
   APP_SCRYPT_SALT_V1,
   SCRYPT_MIN_N,
   SCRYPT_DEFAULT_N,
+  SCRYPT_LOW_MEMORY_DEFAULT_N,
+  getEffectiveDefaultScryptN,
   SCRYPT_MAX_N,
   SCRYPT_MAX_R,
   SCRYPT_MAX_P,

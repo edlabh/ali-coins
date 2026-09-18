@@ -45,7 +45,7 @@ function formatDateTime(date = new Date()) {
  * @returns {string}
  */
 function formatDuration(ms) {
-  if (!ms || ms < 0 || isNaN(ms)) ms = 0;
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -82,7 +82,9 @@ function calculateAccountBackoff(
         ? envBase
         : 2000;
 
-  const exponentialMs = effectiveBase * Math.pow(2, Math.max(0, attempt));
+  // Endurecimento: attempt não-finito (NaN/Infinity) não deve propagar NaN
+  const safeAttempt = Number.isFinite(attempt) ? Math.max(0, attempt) : 0;
+  const exponentialMs = effectiveBase * Math.pow(2, safeAttempt);
   const cappedMs = Math.min(exponentialMs, maxMs);
   // Jitter entre 80% e 120%
   const jitterFactor = 0.8 + 0.4 * jitterFraction;

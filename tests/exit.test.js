@@ -113,3 +113,31 @@ test('libs/exit.js - flushStream respeita o teto de tempo com stream travado', a
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/exit.js - flushStream sinaliza timeout (false) e flush confirmado (true)', async () => {
+  const { flushStream } = require('../libs/exit');
+
+  const stuckStream = {
+    writableLength: 10,
+    destroyed: false,
+    writableEnded: false,
+    write: () => {}
+  };
+  assert.strictEqual(await flushStream(stuckStream, 50), false, 'timeout deve retornar false');
+
+  const freeStream = {
+    writableLength: 0,
+    destroyed: false,
+    writableEnded: false,
+    write: () => {}
+  };
+  assert.strictEqual(await flushStream(freeStream, 50), true, 'stream vazio deve retornar true');
+
+  const immediateStream = {
+    writableLength: 10,
+    destroyed: false,
+    writableEnded: false,
+    write: (_chunk, cb) => cb && cb()
+  };
+  assert.strictEqual(await flushStream(immediateStream, 50), true, 'flush imediato retorna true');
+});

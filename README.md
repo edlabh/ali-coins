@@ -270,6 +270,9 @@ docker build -t ali-coins .
 # Dica: crie os arquivos de sessão no host antes de montar para persistência at-rest:
 touch session.json.enc session_meta.json session.json
 chmod 600 credentials.env session.json.enc session_meta.json session.json
+# O container roda como appuser (UID/GID 10001): se o processo for executado sem --user,
+# ajuste a posse dos arquivos montados para que o appuser consiga lê-los/gravá-los:
+chown 10001:10001 credentials.env session.json.enc session_meta.json session.json
 
 docker run --rm \
   -v $(pwd)/credentials.env:/app/credentials.env:ro \

@@ -18,6 +18,11 @@
 #   --memory/--memory-swap  protege o SO do host; o pico real é registrado no log
 #   --log-opt          evita crescimento infinito do log do container
 #   CHROMIUM_LOW_MEMORY=true (no credentials.env) reduz renderers/heap do Chromium
+#
+# Permissões: a imagem roda como appuser (UID/GID 10001). Como os arquivos são
+# montados do host, garanta que o UID 10001 possa lê-los/gravar:
+#   chown 10001:10001 credentials.env session*.enc session_meta*.json accounts.json
+# (ou use --user "$(id -u):$(id -g)" com /etc/passwd e /etc/group montados)
 # ==============================================================================
 set -u
 
@@ -32,6 +37,8 @@ MOUNTS=(-v "$DIR/credentials.env:/app/credentials.env:ro" -v "$DIR/scratch:/app/
 for f in "$DIR"/session*; do
   [ -f "$f" ] && MOUNTS+=(-v "$f:/app/$(basename "$f")")
 done
+# Multi-conta por arquivo (accounts.json) era ignorado silenciosamente no container
+[ -f "$DIR/accounts.json" ] && MOUNTS+=(-v "$DIR/accounts.json:/app/accounts.json:ro")
 
 {
   echo "===== $(date '+%F %T %Z') inicio (args: $*) ====="
@@ -70,3 +77,6 @@ done
   echo "pico: mem=${PEAK_MEM_MB}MiB pids=${PEAK_PIDS} (limite ${MEM_LIMIT}/${MEM_SWAP})"
   echo "exit=$EXIT fim: $(date '+%F %T %Z')"
 } >> "$LOG" 2>&1
+
+# Propaga o código de saída para o cron/monitoramento (antes era sempre 0)
+exit "${EXIT:-1}"

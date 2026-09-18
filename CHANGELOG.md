@@ -17,25 +17,50 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 - **Exit code não-determinístico em `export_session.js --all` (`export_session.js:410`):** faltava `return` após `flushAndExit(1)` quando não havia sessões ativas, e o fluxo ainda chamava `flushAndExit(0)` — o código de saída dependia da corrida entre os dois `process.exit`.
 - **Erro de configuração em `--dry-run` virava crash (`collect.js`, `do_tasks.js`):** a IIFE principal não tinha `.catch`, então uma `ConfigValidationError` lançada por `handleDryRun()` escalava ao crash handler e encerrava com código 6; agora é tratada como falha crítica de execução (exit 1).
-- **Lock removido de processo vivo sob `EPERM` (`lockfile.js:40`):** `isProcessAlive` tratava `EPERM` ("sem permissão para sinalizar" = processo existe) como processo morto, podendo remover o lock de outra instância legítima; agora `EPERM` é considerado vivo.
+- **Lock removido de processo vivo sob `EPERM` (`lockfile.js`):** `isProcessAlive` tratava `EPERM` ("sem permissão para sinalizar" = processo existe) como processo morto, podendo remover o lock de outra instância legítima; agora `EPERM` é considerado vivo.
 - **`customMessage` sem escape no Telegram (`libs/notify.js`):** mensagens customizadas enviadas em `parse_mode: HTML` não passavam por `escapeHtml`.
+- **Lock órfão com configuração inválida (`all.js`):** `loadConfig(true)` passou a rodar **antes** de `acquireLock`, então uma config inválida encerra com exit 1 sem deixar lock preso.
+- **Refresh do lock silencioso (`lockfile.js`):** falhas ao renovar o `createdAt` agora emitem `logger.warn` (sem travar o run), evitando que um lock ativo seja considerado obsoleto por outra instância sem qualquer sinal.
+- **Webhooks podiam ser perdidos no encerramento (`libs/report.js`, `libs/exit.js`):** notificações fire-and-forget são rastreadas e aguardadas (com teto de 5 s) antes do `process.exit`.
+- **Abas/popups órfãos durante as tarefas (`do_tasks.js`):** abas abertas por tarefas são fechadas a cada ação e o listener `context.on('page')` é removido ao final.
+- **Contexto desktop órfão em falha de setup (`browser.js`):** `newMobileContext`/`newDesktopContext` fecham o `BrowserContext` se `addInitScript`/rotas/tracing falharem após `newContext`.
+- **STDIN sem limite/timeout na importação (`import_session.js`):** leitura de token via pipe agora tem teto de 2 MB e timeout de inatividade de 60 s, evitando OOM/travamento com entrada infinita.
+- **Ordem sessão/meta invertida na importação (`import_session.js`):** metadados passam a ser gravados **antes** da sessão, igual a `saveSession`, evitando `.enc` órfão sem meta.
+- **Contagem de "Tarefas executadas" inflada (`libs/report.js`):** passa a usar `totalActions` (ações reais) em vez de `results.length` (inclui tarefas puladas/desativadas), com fallback compatível.
+- **Falha da etapa de tarefas invisível no relatório (`all.js`, `libs/report.js`):** `tasksError` agora é propagado no `meta` do relatório (sem alterar exit codes).
+- **Flush de streams sem observabilidade (`libs/exit.js`):** `flushStream` sinaliza timeout e o encerramento emite aviso quando a saída pode ter sido truncada.
+- **Token com buffers malformados (`security.js`):** `parseSessionToken` valida tamanhos canônicos de iv/tag/salt e rejeita cedo (mesma mensagem pública de autenticação).
+- **`formatDuration`/backoff com valores não finitos (`time_utils.js`):** `Number.isFinite` evita saídas `NaN`/`Infinity`.
 
 ### Segurança
 
 - **`accounts.json` com credenciais em texto puro sem restrição (`config.js`):** o arquivo passa a receber `chmod 0600` em runtime, com aviso quando estava legível por outros usuários.
 - **`credentials.env` sem reforço de permissão em runtime (`config.js`):** `chmod 0600` aplicado no boot, cobrindo arquivos criados manualmente fora do instalador.
 - **Dry-run expondo dados sensíveis (`config.js`):** o Chat ID do Telegram agora é mascarado e os comprimentos de `SESSION_SECRET`/senha/token foram removidos da saída (apenas `[CONFIGURADO]`).
+- **Segredos poderiam ir ao Chromium (`browser.js`):** `options.env` passou a ser mesclado sobre o env sanitizado, em vez de substituí-lo.
+- **Mensagem de erro de descriptografia vazava detalhe interno (`security.js`):** detalhe vai apenas para `logger.debug`; o prefixo público permanece estável.
+- **Sessão em texto puro sem aviso (`libs/session.js`):** quando `ENCRYPT_LOCAL_SESSION` está ativo sem `SESSION_SECRET` válido, emite aviso explícito.
+- **localStorage de telemetria persistido/injetado (`libs/storage_filter.js`, `libs/session.js`):** allowlist compartilhada com o `export_session` filtra chaves de telemetria (centenas de KB) no `saveSession`, preservando cookies de autenticação; opt-out `SESSION_STRICT_STORAGE=false`.
 
 ### Desempenho
 
 - **`pino-pretty` evitado fora de TTY (`logger.js`):** o modo colorido (que sobe worker thread do pino) só é usado em terminal interativo; em cron/systemd sem TTY os logs saem como JSON estruturado, economizando CPU/RAM.
 - **`closeModals` consolidado (`libs/ui/navigation.js`):** seletores CSS resolvidos em um único `evaluate` (antes até 8 `page.$` + sleeps de 300 ms por chamada); seletores `:has-text` do Playwright permanecem suportados, com fallback para mocks/ambientes sem `evaluate`.
 - **Payloads JSON compactos (`libs/heartbeat.js`, `libs/session.js`):** heartbeat e metadados/sessão deixam de usar `JSON.stringify(..., null, 2)`, reduzindo bytes trafegados/gravados.
+- **scrypt auto-dimensionado por RAM (`security.js`):** em host com ≤1.5 GB de RAM total, novas criptografias usam `N=2^15` (~32 MB de pico em vez de ~128 MB); `SCRYPT_N` explícito continua tendo precedência e tokens existentes não são afetados.
+- **`findTaskElement` com um único `$$eval` (`libs/tasks/verifier.js`):** resolve o índice da tarefa em um round-trip CDP, eliminando N+1 `$eval`; fallback para o caminho antigo é mantido.
+- **`config` propagado para `runCheckin`/`runTasks` (`all.js`):** evita re-parse de Zod/Commander por conta em multi-conta.
+- **`fsync` opcional em metadados (`security.js`, `libs/session.js`, `import_session.js`):** `safeWriteFile(..., { durable: false })` dispensa fsync em metadados descartáveis, preservando a escrita atômica.
+- **Reuso opcional de contexto desktop (`libs/ui/balance.js`):** `options.context`/`options.reuseContext` + `closeCachedDesktopContext()`; **desligado por padrão** para não manter contexto vivo e elevar o pico de RAM durante o fluxo mobile.
+
+### Adicionado
+
+- **`SESSION_STRICT_STORAGE`** (padrão `true`), **`SCRYPT_N`** auto, **`options.durable`** em `safeWriteFile`, **`options.context`/`options.reuseContext`/`closeCachedDesktopContext()`** em `getBalanceDesktop`, **`flushWebhooks()`**, **`tasksError`** no `meta` do relatório unificado e exportação de `isProcessAlive`/`getEffectiveDefaultScryptN`.
 
 ### Testes
 
-- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js` e `tests/heartbeat.test.js` — 271/271.
-- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), 5m45s, pico 523MiB, 2/2 contas, 0 riscos.
+- Cobertura nova/estendida em `tests/navigation.test.js`, `tests/lockfile.test.js`, `tests/logger.test.js`, `tests/config.test.js`, `tests/multi_account.test.js`, `tests/notify.test.js`, `tests/heartbeat.test.js`, `tests/exit.test.js`, `tests/security.test.js`, `tests/session.test.js`, `tests/tasks.test.js`, `tests/balance.test.js`, `tests/report.test.js`, `tests/time_utils.test.js` e `tests/import_stdin.test.js` — **289/289**.
+- Validação na VM (container reconstruído): `exit=2` (2º run do dia sem ação), 5m06s, pico **495MiB**, 2/2 contas, 0 riscos; host de 1024 MB autodetectado para scrypt `N=32768`; filtro de storage manteve apenas chaves permitidas.
 
 ## [1.1.0] - 2026-09-18
 

@@ -1141,3 +1141,105 @@ test('libs/report.js - renderTasksReport no modo --json mascara e-mail enviado a
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/report.js - renderMultiAccountReport prioriza totalActions sobre results.length', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    renderMultiAccountReport(
+      [
+        {
+          account: { maskedUser: 'test***@example.com' },
+          checkinResult: {
+            alreadyCollected: true,
+            coinsGainedToday: '0',
+            streakDays: 10,
+            totalBalance: '1000',
+            duration: '2s'
+          },
+          tasksResult: {
+            results: [
+              { title: 'Task 1', status: 'Concluída', coins: '+5 moedas' },
+              { title: 'Task 2', status: 'Desativada', coins: '+5 moedas' },
+              { title: 'Task 3', status: 'Falhou' }
+            ],
+            totalActions: 1,
+            coinsGained: 5,
+            finalCoins: '1005 moedas',
+            duration: '12s'
+          },
+          duration: '14s'
+        }
+      ],
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '14s' }
+    );
+
+    const out = messages.join('\n');
+    assert.ok(
+      out.includes('• Tarefas executadas: 1'),
+      `Deve priorizar totalActions (1) sobre results.length (3): ${out}`
+    );
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - buildUnifiedReportPayload propaga tasksError no meta', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const checkin = {
+      alreadyCollected: true,
+      coinsGainedToday: '0',
+      streakDays: 5,
+      totalBalance: '100',
+      duration: '2s'
+    };
+    const payload = buildUnifiedReportPayload(checkin, null, {
+      finalBalance: '100 moedas',
+      tasksError: 'painel de tarefas inacessível'
+    });
+
+    assert.strictEqual(payload.meta.tasksError, 'painel de tarefas inacessível');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - flushWebhooks aguarda webhooks em voo antes do encerramento', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { sendWebhookNotification, flushWebhooks } = require('../libs/report');
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.NOTIFY_WEBHOOK_URL;
+  let resolved = false;
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://webhook.example.com/flush';
+    global.fetch = () =>
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolved = true;
+          resolve({ ok: true, status: 200 });
+        }, 80);
+      });
+
+    sendWebhookNotification({ type: 'tasks' }).catch(() => {});
+    await flushWebhooks(2000);
+
+    assert.strictEqual(resolved, true, 'flushWebhooks deve aguardar o webhook em voo');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

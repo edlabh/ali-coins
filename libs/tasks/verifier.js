@@ -255,6 +255,27 @@ async function extractTasksFromDrawer(optionsOrPage, maybeLogger) {
  * @returns {Promise<import('playwright').ElementHandle|null>}
  */
 async function findTaskElement(page, targetTitle, fallbackIndex = 0) {
+  // Caminho otimizado: resolve o índice em um único round-trip CDP ($$eval), em vez de
+  // N+1 $eval (um por card). Fallback para o caminho antigo em mocks/ambientes sem $$eval.
+  if (typeof page.$$eval === 'function' && typeof page.$$ === 'function') {
+    const index = await page
+      .$$eval(
+        SELECTORS.tasks.taskItem,
+        (els, { title, titleSelector, fallback }) => {
+          const found = els.findIndex((el) => {
+            const node = el.querySelector(titleSelector);
+            return Boolean(node) && node.innerText.trim() === title;
+          });
+          return found >= 0 ? found : fallback;
+        },
+        { title: targetTitle, titleSelector: SELECTORS.tasks.taskTitle, fallback: fallbackIndex }
+      )
+      .catch(() => fallbackIndex);
+
+    const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
+    return currentTaskEls[index] || currentTaskEls[fallbackIndex] || null;
+  }
+
   const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
   let currentTaskEl = currentTaskEls[fallbackIndex];
   const actualTitle = await currentTaskEl

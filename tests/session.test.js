@@ -910,3 +910,84 @@ test('libs/session.js - existingSessionData em memória evita nova descriptograf
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/session.js - avisa quando ENCRYPT_LOCAL_SESSION está ativo sem SESSION_SECRET', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-plain-warn-');
+  const logger = require('../logger');
+  const originalWarn = logger.warn;
+  const warnings = [];
+  const origSecret = process.env.SESSION_SECRET;
+  const origEnc = process.env.ENCRYPT_LOCAL_SESSION;
+
+  try {
+    delete process.env.SESSION_SECRET;
+    delete process.env.ENCRYPT_LOCAL_SESSION;
+    logger.warn = (...args) => {
+      warnings.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    await saveSession(
+      { cookies: [{ name: 'xman_us_t', value: 'tok', domain: '.aliexpress.com' }] },
+      'warn@example.com',
+      { baseDir: tmpDir }
+    );
+
+    assert.ok(
+      warnings.some((w) => w.includes('texto puro')),
+      `Deve avisar sobre gravação em texto puro: ${warnings.join(' | ')}`
+    );
+  } finally {
+    logger.warn = originalWarn;
+    if (origSecret !== undefined) process.env.SESSION_SECRET = origSecret;
+    else delete process.env.SESSION_SECRET;
+    if (origEnc !== undefined) process.env.ENCRYPT_LOCAL_SESSION = origEnc;
+    else delete process.env.ENCRYPT_LOCAL_SESSION;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - saveSession filtra localStorage de telemetria (allowlist)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-filter-');
+
+  try {
+    const state = {
+      cookies: [{ name: 'xman_us_t', value: 'tok' }],
+      origins: [
+        {
+          origin: 'https://aliexpress.com',
+          localStorage: [
+            { name: 'APLUS_S_CORE', value: 'junk' },
+            { name: 'batman_cache', value: 'junk' },
+            { name: 'user_session_token', value: 'abc' },
+            { name: 'locale', value: 'pt_BR' }
+          ]
+        }
+      ]
+    };
+
+    const res = await saveSession(state, 'filter@example.com', {
+      baseDir: tmpDir,
+      secret: TEST_SECRET_1
+    });
+
+    const names = res.sessionData.origins[0].localStorage.map((i) => i.name).sort();
+    assert.deepStrictEqual(names, ['locale', 'user_session_token'].sort());
+    assert.strictEqual(res.sessionData.cookies[0].value, 'tok', 'cookies devem ser preservados');
+
+    // Opt-out preserva todo o localStorage
+    const resOptOut = await saveSession(state, 'filter2@example.com', {
+      baseDir: tmpDir,
+      secret: TEST_SECRET_1,
+      filterStorage: false
+    });
+    assert.strictEqual(resOptOut.sessionData.origins[0].localStorage.length, 4);
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

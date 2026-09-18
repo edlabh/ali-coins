@@ -53,6 +53,11 @@ async function main() {
     syncAccountSessions(accounts, __dirname);
   }
 
+  // Valida a configuração ANTES de adquirir qualquer lock: uma config inválida não deve
+  // deixar lock órfão (o main().catch encerra com exit 1 sem nunca ter travado a conta).
+  const config = loadConfig(true);
+  currentConfig = config;
+
   // 2. Lockfile para conta única (evita concorrência global no cron)
   let releaseSingleLock = null;
   if (!isMulti) {
@@ -61,10 +66,9 @@ async function main() {
     } catch (err) {
       if (err instanceof LockActiveError) {
         try {
-          const cfg = loadConfig(false);
-          await sendHeartbeat('fail', { config: cfg, error: err });
+          await sendHeartbeat('fail', { config, error: err });
           await sendTelegram({
-            config: cfg,
+            config,
             chatId: accounts[0]?.telegramChatId,
             event: 'lock_active',
             error: err
@@ -76,10 +80,9 @@ async function main() {
       }
       logger.error({ err: err.message }, 'Falha ao adquirir lock exclusivo.');
       try {
-        const cfg = loadConfig(false);
-        await sendHeartbeat('fail', { config: cfg, error: err });
+        await sendHeartbeat('fail', { config, error: err });
         await sendTelegram({
-          config: cfg,
+          config,
           chatId: accounts[0]?.telegramChatId,
           event: 'failure',
           error: err
@@ -99,9 +102,6 @@ async function main() {
       : '       ALIEXPRESS MOEDAS - MODO UNIFICADO (CHECK-IN + TAREFAS)'
   );
   logger.info('===============================================================\n');
-
-  const config = loadConfig(true);
-  currentConfig = config;
 
   // Dead man's switch: sinal de início
   await sendHeartbeat('start', { config });
@@ -155,7 +155,7 @@ async function main() {
 
       let checkinResult = null;
       try {
-        checkinResult = await runCheckin({ browser, account, skipReport: true });
+        checkinResult = await runCheckin({ browser, account, config, skipReport: true });
       } catch (err) {
         const step1EndTime = new Date();
         const step1Duration = formatDuration(step1EndTime - step1StartTime);
@@ -234,16 +234,21 @@ async function main() {
       logger.info(`    Dia e Hora de Início: ${formatDateTime(step2StartTime)}`);
 
       let tasksResult = null;
+      let tasksError = null;
       try {
         tasksResult = await runTasks({
           browser,
           account,
+          config,
           sessionData: checkinResult.sessionData,
           initialBalance: checkinResult.totalBalance,
           skipAutoLogin: true,
           skipReport: true
         });
       } catch (err) {
+        // Falha da etapa de tarefas não invalida o check-in, mas precisa ficar visível
+        // no relatório (antes era apenas um warn e sumia do payload).
+        tasksError = err.message;
         logger.warn({ err: err.message }, 'Aviso na etapa de tarefas.');
       }
 
@@ -265,7 +270,8 @@ async function main() {
         mainEndTime,
         totalDuration,
         step1Duration,
-        step2Duration
+        step2Duration,
+        tasksError
       });
 
       renderUnifiedReport(
@@ -276,7 +282,8 @@ async function main() {
           mainEndTime,
           totalDuration,
           step1Duration,
-          step2Duration
+          step2Duration,
+          tasksError
         },
         { json: isJson() }
       );
@@ -396,6 +403,7 @@ async function main() {
               user: account.maskedUser,
               checkinResult: null,
               tasksResult: null,
+              isLockActive: true,
               error: 'Lock ativo por outro processo',
               duration: lockTiming.duration,
               startTime: lockTiming.startTime,
@@ -447,7 +455,7 @@ async function main() {
           // Etapa 1: Check-in
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Check-in Diário...`);
           const step1Timer = startAccountTimer();
-          accCheckin = await runCheckin({ browser, account, skipReport: true });
+          accCheckin = await runCheckin({ browser, account, config, skipReport: true });
           const step1Timing = step1Timer.end('step1');
           accStep1Duration = step1Timing.duration;
           logger.info(
@@ -488,6 +496,7 @@ async function main() {
             accTasks = await runTasks({
               browser,
               account,
+              config,
               sessionData: accCheckin?.sessionData,
               initialBalance: accCheckin?.totalBalance,
               skipAutoLogin: true,

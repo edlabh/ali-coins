@@ -48,7 +48,8 @@ const unifiedReportSchema = z.object({
     finalBalance: z.string(),
     totalCoinsGained: z.union([z.number(), z.string()]).optional(),
     checkinCoinsGained: z.union([z.number(), z.string()]).optional(),
-    tasksCoinsGained: z.union([z.number(), z.string()]).optional()
+    tasksCoinsGained: z.union([z.number(), z.string()]).optional(),
+    tasksError: z.string().optional()
   })
 });
 
@@ -309,7 +310,8 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
       finalBalance,
       totalCoinsGained,
       checkinCoinsGained,
-      tasksCoinsGained
+      tasksCoinsGained,
+      tasksError: meta.tasksError
     }
   };
 }
@@ -321,7 +323,39 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
  * @param {string} [customUrl]
  * @returns {Promise<boolean>}
  */
-async function sendWebhookNotification(payload, customUrl = null) {
+// Promessas de webhook em voo: rastreadas para não serem perdidas no process.exit()
+const pendingWebhooks = new Set();
+
+/**
+ * Aguarda os webhooks em voo (com teto) antes do encerramento do processo.
+ * @param {number} [timeoutMs=5000]
+ * @returns {Promise<void>}
+ */
+async function flushWebhooks(timeoutMs = 5000) {
+  if (pendingWebhooks.size === 0) return;
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+    if (timer.unref) timer.unref();
+  });
+  await Promise.race([Promise.allSettled([...pendingWebhooks]), timeout]);
+  if (timer) clearTimeout(timer);
+}
+
+/**
+ * Envia notificação para webhook, registrando a promessa em voo para flush no encerramento.
+ * @param {object} payload
+ * @param {string} [customUrl]
+ * @returns {Promise<boolean>}
+ */
+function sendWebhookNotification(payload, customUrl = null) {
+  const promise = performWebhookNotification(payload, customUrl);
+  pendingWebhooks.add(promise);
+  promise.finally(() => pendingWebhooks.delete(promise)).catch(() => {});
+  return promise;
+}
+
+async function performWebhookNotification(payload, customUrl = null) {
   const webhookUrl = customUrl || process.env.NOTIFY_WEBHOOK_URL;
   if (!webhookUrl) return false;
 
@@ -725,7 +759,9 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
     }
 
     if (res.tasksResult && res.tasksResult.results) {
-      logger.info(`  • Tarefas executadas: ${res.tasksResult.results.length}`);
+      // totalActions conta ações executadas de fato; results inclui tarefas puladas/desativadas.
+      const executedTasks = res.tasksResult.totalActions ?? res.tasksResult.results.length;
+      logger.info(`  • Tarefas executadas: ${executedTasks}`);
       for (const r of res.tasksResult.results) {
         logger.info(`    - ${r.title}: ${r.status} (${r.coins || ''})`);
       }
@@ -767,6 +803,7 @@ module.exports = {
   buildUnifiedReportPayload,
   buildMultiAccountReportPayload,
   sendWebhookNotification,
+  flushWebhooks,
   renderCheckinReport,
   renderTasksReport,
   renderUnifiedReport,

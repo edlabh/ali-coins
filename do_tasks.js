@@ -127,11 +127,24 @@ async function runTasks(options = {}) {
     let page = await context.newPage();
     let newPageOpened = null;
     let isRecreatingPage = false;
-    context.on('page', (p) => {
+    const openedPages = new Set();
+    const onNewPage = (p) => {
       if (!isRecreatingPage && p !== page) {
+        openedPages.add(p);
         newPageOpened = p;
       }
-    });
+    };
+    context.on('page', onNewPage);
+
+    // Fecha abas/popups abertos por tarefas (evita acúmulo de RAM/timers durante o run).
+    const closeOrphanPages = async () => {
+      for (const p of openedPages) {
+        if (p !== page && p.isClosed && !p.isClosed()) {
+          await p.close().catch(() => {});
+        }
+      }
+      openedPages.clear();
+    };
 
     async function ensureMainPage(currentPage) {
       isRecreatingPage = true;
@@ -412,6 +425,7 @@ async function runTasks(options = {}) {
           if (isNewTab && activePage && typeof activePage.close === 'function') {
             await activePage.close().catch(() => {});
           }
+          await closeOrphanPages();
           page = await ensureMainPage(page);
           if (typeof page.waitForTimeout === 'function') {
             await page.waitForTimeout(1000).catch(() => {});
@@ -426,6 +440,7 @@ async function runTasks(options = {}) {
         if (isNewTab && activePage && typeof activePage.close === 'function') {
           await activePage.close().catch(() => {});
         }
+        await closeOrphanPages();
         page = await ensureMainPage(page);
         // Aguarda sincronização do AliExpress e atualização do status da tarefa
         if (typeof page.waitForTimeout === 'function') {
@@ -471,6 +486,7 @@ async function runTasks(options = {}) {
         }
       }
 
+      if (typeof context.off === 'function') context.off('page', onNewPage);
       await closeContextWithDiagnostics(context, { failed: false, name: 'tasks-mobile' });
 
       let finalBalance = 'N/D';
@@ -522,6 +538,7 @@ async function runTasks(options = {}) {
       }
       return result;
     } catch (flowErr) {
+      if (context && typeof context.off === 'function') context.off('page', onNewPage);
       await closeContextWithDiagnostics(context, { failed: true, name: 'tasks-failed' });
       throw flowErr;
     }

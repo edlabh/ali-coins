@@ -60,14 +60,62 @@ async function readTokenFromInput(customFilePath = null) {
 
   // 3. Leitura via STDIN (pipe ou redirecionamento <)
   if (!process.stdin.isTTY) {
+    // Tokens reais têm ~300 KB; teto e timeout evitam OOM/travamento com pipe infinito
+    // (ex: `yes A | node import_session.js`) ou FIFO sem writer.
+    const MAX_STDIN_BYTES = 2 * 1024 * 1024;
+    const STDIN_IDLE_TIMEOUT_MS = 60000;
+
     return new Promise((resolve, reject) => {
       const chunks = [];
-      process.stdin.on('data', (chunk) => chunks.push(chunk));
-      process.stdin.on('end', () => {
-        const fullBuffer = Buffer.concat(chunks);
-        resolve(fullBuffer);
-      });
-      process.stdin.on('error', reject);
+      let total = 0;
+      let finished = false;
+      let timer = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        process.stdin.removeListener('data', onData);
+        process.stdin.removeListener('end', onEnd);
+        process.stdin.removeListener('error', onError);
+      };
+      const fail = (err) => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        if (typeof process.stdin.destroy === 'function') process.stdin.destroy();
+        reject(err);
+      };
+      const resetTimer = () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(
+          () => fail(new ImportSessionError('Timeout aguardando o token de sessão via STDIN.')),
+          STDIN_IDLE_TIMEOUT_MS
+        );
+      };
+      const onData = (chunk) => {
+        total += chunk.length;
+        if (total > MAX_STDIN_BYTES) {
+          fail(
+            new ImportSessionError(
+              `Token de sessão via STDIN excede o limite de ${MAX_STDIN_BYTES} bytes.`
+            )
+          );
+          return;
+        }
+        resetTimer();
+        chunks.push(chunk);
+      };
+      const onEnd = () => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve(Buffer.concat(chunks));
+      };
+      const onError = (err) => fail(err);
+
+      process.stdin.on('data', onData);
+      process.stdin.on('end', onEnd);
+      process.stdin.on('error', onError);
+      resetTimer();
     });
   }
 
@@ -120,7 +168,7 @@ async function migrateLegacySession(options = {}) {
   // Remover o arquivo em texto claro SOMENTE após gravar e proteger o .enc
   await fs.promises.unlink(sPath).catch(() => {});
 
-  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
+  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8', { durable: false });
   safeChmod600(mPath);
 
   logger.info(
@@ -279,6 +327,11 @@ async function importSession(options = {}) {
 
   const accountLabel = matchedAccount ? ` (Conta ${matchedAccount.index})` : '';
 
+  // Metadados ANTES da sessão (mesma invariante de libs/session.js): uma sessão sem meta
+  // é descartada no próximo run; meta sem sessão é inofensivo e recuperável.
+  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8', { durable: false });
+  safeChmod600(mPath);
+
   if (shouldEncrypt) {
     const encryptedToken = encryptSession(JSON.stringify(sessionData, null, 2), secret);
     await safeWriteFile(encPath, encryptedToken, 'utf-8');
@@ -325,9 +378,6 @@ async function importSession(options = {}) {
     );
     logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
   }
-
-  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
-  safeChmod600(mPath);
 
   logger.info('Automação pronta para execução com: ./run_all.sh (ou npm start)');
   logger.info('===================================================================');

@@ -2367,3 +2367,32 @@ test('tasks - SKIP_APP_ONLY_TASKS ignora tarefas que exigem o app e marca no rel
     'Requer interação direta no App AliExpress (minigame/quiz)'
   );
 });
+
+test('tasks - findTaskElement resolve o índice com um único $$eval quando disponível', async () => {
+  const { findTaskElement } = require('../libs/tasks/verifier');
+  let evalCalls = 0;
+  const els = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const page = {
+    $$eval: async () => {
+      evalCalls++;
+      return 2;
+    },
+    $$: async () => els
+  };
+
+  const found = await findTaskElement(page, 'Task 3', 0);
+  assert.strictEqual(found, els[2], 'deve retornar o elemento do índice resolvido');
+  assert.strictEqual(evalCalls, 1, 'deve fazer apenas um round-trip de avaliação');
+});
+
+test('tasks - findTaskElement usa fallbackIndex quando o título não casa', async () => {
+  const { findTaskElement } = require('../libs/tasks/verifier');
+  const els = [{ id: 1 }, { id: 2 }];
+  const page = {
+    $$eval: async () => 1,
+    $$: async () => els
+  };
+
+  const found = await findTaskElement(page, 'Inexistente', 1);
+  assert.strictEqual(found, els[1], 'deve usar o fallbackIndex quando o título não é encontrado');
+});

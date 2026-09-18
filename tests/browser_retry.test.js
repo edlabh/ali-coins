@@ -568,3 +568,62 @@ test('browser.js - flags de economia de CPU e bloqueio de service workers (padr�
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - env do caller é mesclado sem remover a sanitização de segredos', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const playwright = require('playwright');
+  const { launchBrowser } = require('../browser');
+  const originalLaunch = playwright.chromium.launch;
+  const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+  let captured = null;
+
+  try {
+    delete process.env.CI;
+    delete process.env.NO_SANDBOX;
+    process.env.TELEGRAM_BOT_TOKEN = '123456:AA-secret-token-value-000000000000';
+
+    playwright.chromium.launch = async (opts) => {
+      captured = opts;
+      return { close: async () => {}, __fake: true };
+    };
+
+    await launchBrowser({ headless: true, env: { EXTRA_FLAG: 'yes' } });
+
+    assert.ok(captured, 'launch deve ter sido chamado');
+    assert.strictEqual(captured.env.EXTRA_FLAG, 'yes', 'env do caller deve ser mesclado');
+    assert.strictEqual(
+      captured.env.TELEGRAM_BOT_TOKEN,
+      undefined,
+      'segredos não devem ser repassados ao Chromium'
+    );
+  } finally {
+    playwright.chromium.launch = originalLaunch;
+    if (originalToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    else delete process.env.TELEGRAM_BOT_TOKEN;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('browser.js - fecha o BrowserContext se o setup falhar após newContext', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { newMobileContext } = require('../browser');
+  let closed = false;
+
+  try {
+    const context = {
+      addInitScript: async () => {},
+      route: async () => {
+        throw new Error('falha ao registrar rota');
+      },
+      close: async () => {
+        closed = true;
+      }
+    };
+    const browser = { newContext: async () => context };
+
+    await assert.rejects(() => newMobileContext(browser, null, {}), /falha ao registrar rota/);
+    assert.strictEqual(closed, true, 'contexto deve ser fechado quando o setup falha');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

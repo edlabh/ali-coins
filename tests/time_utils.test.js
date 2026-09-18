@@ -37,3 +37,11 @@ test('time_utils.js - calculateAccountBackoff respeita jitter e limites de teto'
   assert.strictEqual(calculateAccountBackoff(1, 1000, 10000, 0.5), 2000);
   assert.strictEqual(calculateAccountBackoff(5, 1000, 10000, 0.5), 10000);
 });
+
+test('time_utils.js - formatDuration e backoff são resilientes a valores não finitos', () => {
+  assert.strictEqual(formatDuration(Infinity), '0s');
+  assert.strictEqual(formatDuration(NaN), '0s');
+  assert.ok(Number.isFinite(calculateAccountBackoff(NaN, 1000, 10000, 0.5)));
+  assert.ok(Number.isFinite(calculateAccountBackoff(Infinity, 1000, 10000, 0.5)));
+  assert.strictEqual(calculateAccountBackoff(NaN, 1000, 10000, 0.5), 1000);
+});

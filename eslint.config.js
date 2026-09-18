@@ -10,7 +10,12 @@ module.exports = [
       '*.log',
       '*.lock',
       'session*.json',
-      'session_token.txt'
+      'session*.enc',
+      'session_token*',
+      'session_meta*.json',
+      'accounts.json',
+      '*.env',
+      'github_token.env'
     ]
   },
   {

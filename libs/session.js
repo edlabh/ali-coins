@@ -14,6 +14,7 @@ const {
   encryptSessionAsync,
   decryptSessionAsync
 } = require('../security');
+const { filterStorageState, shouldFilterStorage } = require('./storage_filter');
 const logger = require('../logger');
 
 /**
@@ -70,7 +71,7 @@ function getEncryptionConfig(options = {}) {
   const shouldEncrypt = Boolean(
     secret && typeof secret === 'string' && secret.length >= 32 && encryptLocal
   );
-  return { secret, oldSecret, shouldEncrypt };
+  return { secret, oldSecret, shouldEncrypt, encryptLocal };
 }
 
 /**
@@ -392,7 +393,15 @@ async function saveSession(storageState, user, options = {}) {
   }
 
   const { sPath, encPath, mPath } = resolveSessionPaths(options);
-  const { secret, shouldEncrypt } = getEncryptionConfig(options);
+  const { secret, shouldEncrypt, encryptLocal } = getEncryptionConfig(options);
+
+  // Evita falsa sensação de proteção at-rest: avisa quando a criptografia foi pedida
+  // (ENCRYPT_LOCAL_SESSION=true, padrão) mas o SESSION_SECRET está ausente/curto.
+  if (encryptLocal && !shouldEncrypt) {
+    logger.warn(
+      'ENCRYPT_LOCAL_SESSION está ativo, mas SESSION_SECRET está ausente ou tem menos de 32 caracteres: a sessão será salva em texto puro (0o600).'
+    );
+  }
 
   let prevMeta = {};
   if (fs.existsSync(mPath)) {
@@ -432,11 +441,17 @@ async function saveSession(storageState, user, options = {}) {
     }
   }
 
-  const payloadStr = JSON.stringify(storageState);
+  // Filtra localStorage de telemetria (centenas de KB) antes de persistir/injetar.
+  // Cookies de autenticação são preservados integralmente.
+  const persistedState = shouldFilterStorage(options)
+    ? filterStorageState(storageState)
+    : storageState;
+  const payloadStr = JSON.stringify(persistedState);
 
   // Metadados são gravados ANTES da sessão: se a escrita da sessão falhar, o meta novo
   // não "órfã" a sessão (uma sessão sem meta seria descartada no próximo run).
-  await safeWriteFile(mPath, JSON.stringify(metaData), 'utf-8');
+  // Metadados são descartáveis/recuperáveis: dispensa fsync para reduzir I/O.
+  await safeWriteFile(mPath, JSON.stringify(metaData), 'utf-8', { durable: false });
   safeChmod600(mPath);
 
   if (shouldEncrypt) {
@@ -467,7 +482,7 @@ async function saveSession(storageState, user, options = {}) {
   // Limpeza de backups antigos segundo retenção
   await pruneSessionBackups(options).catch(() => {});
 
-  return { sessionData: storageState, metaData };
+  return { sessionData: persistedState, metaData };
 }
 
 /**
@@ -491,7 +506,7 @@ async function updateSessionStreak(streakDays, options = {}) {
     if (!isNaN(num) && num >= 0) {
       meta.lastStreakDays = num;
       meta.lastCheckinDate = new Date().toISOString();
-      await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8');
+      await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8', { durable: false });
       safeChmod600(mPath);
       return meta;
     }

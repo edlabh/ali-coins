@@ -16,26 +16,27 @@ const FLUSH_TIMEOUT_MS = 5000;
 function flushStream(stream, timeoutMs = FLUSH_TIMEOUT_MS) {
   return new Promise((resolve) => {
     if (!stream || stream.destroyed || stream.writableEnded) {
-      return resolve();
+      return resolve(true);
     }
     if (stream.writableLength === 0) {
-      return resolve();
+      return resolve(true);
     }
 
     let finished = false;
     let timer = null;
-    const finish = () => {
+    // resolve(true) = flush confirmado; resolve(false) = teto de tempo atingido
+    const finish = (flushed) => {
       if (finished) return;
       finished = true;
       if (timer) clearTimeout(timer);
-      resolve();
+      resolve(flushed);
     };
 
-    timer = setTimeout(finish, timeoutMs);
+    timer = setTimeout(() => finish(false), timeoutMs);
     try {
-      stream.write('', () => finish());
+      stream.write('', () => finish(true));
     } catch {
-      finish();
+      finish(true);
     }
   });
 }
@@ -46,7 +47,17 @@ function flushStream(stream, timeoutMs = FLUSH_TIMEOUT_MS) {
  * @returns {Promise<void>}
  */
 async function flushStdStreams() {
-  await Promise.all([flushStream(process.stdout), flushStream(process.stderr)]);
+  const flushed = await Promise.all([flushStream(process.stdout), flushStream(process.stderr)]);
+  if (flushed.some((ok) => ok === false)) {
+    // Aviso explícito: o teto foi atingido e parte da saída pode ter sido truncada.
+    try {
+      process.stderr.write(
+        `[aviso] timeout de ${FLUSH_TIMEOUT_MS}ms ao liberar stdout/stderr; saída pode ter sido truncada.\n`
+      );
+    } catch {
+      // stderr indisponível: nada a fazer
+    }
+  }
   try {
     // Em modo --json o pino escreve direto no fd 2 via sonic-boom, fora do process.stderr
     const logger = require('../logger');
@@ -64,6 +75,16 @@ async function flushStdStreams() {
  * @returns {Promise<never>}
  */
 async function flushAndExit(code = 0) {
+  // Webhooks são fire-and-forget no fluxo de relatório; aguarda os que estiverem em voo
+  // (com teto) para não perder notificações no process.exit().
+  try {
+    const { flushWebhooks } = require('./report');
+    if (typeof flushWebhooks === 'function') {
+      await flushWebhooks(5000);
+    }
+  } catch {
+    // Report indisponível: ignora
+  }
   try {
     await flushStdStreams();
   } catch {
