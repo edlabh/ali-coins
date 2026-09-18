@@ -178,6 +178,16 @@ function getStreakFromDesktopHistory(desktopText) {
 
   uniqueDays.sort((a, b) => b.dayKey - a.dayKey);
 
+  // Exige que o registro mais recente seja de hoje ou de ontem no fuso do histórico (PT).
+  // Sem isso, uma sequência antiga (ex: 10 dias de semanas atrás) seria reportada como streak
+  // atual e poderia mascarar uma quebra real quando a leitura mobile retorna N/D.
+  const todayParts = new Date()
+    .toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+    .split('-')
+    .map(Number);
+  const todayKey = Math.round(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]) / 86400000);
+  if (uniqueDays[0].dayKey < todayKey - 1) return null;
+
   let streak = 1;
   for (let i = 1; i < uniqueDays.length; i++) {
     if (uniqueDays[i].dayKey === uniqueDays[i - 1].dayKey - 1) {

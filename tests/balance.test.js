@@ -79,51 +79,84 @@ test('libs/ui/balance.js - getStreakFromCheckinCoins mapeia moedas ganhas para d
 test('libs/ui/balance.js - getStreakFromDesktopHistory conta dias consecutivos do histórico', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
-    // Caso 1: 3 dias consecutivos em formato pt-BR (DD/MM/YYYY)
+    // Datas dinâmicas no fuso do histórico (PT) para que a exigência de recência seja estável
+    const ptDateParts = (daysAgo) => {
+      const [y, m, d] = new Date()
+        .toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+        .split('-')
+        .map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d - daysAgo));
+      return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+    };
+    const ptBr = (daysAgo) => {
+      const { y, m, d } = ptDateParts(daysAgo);
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    };
+    const enUs = (daysAgo) => {
+      const { y, m, d } = ptDateParts(daysAgo);
+      return `${m}/${d}/${y}`;
+    };
+
+    // Caso 1: 3 dias consecutivos terminando hoje, formato pt-BR (DD/MM/YYYY)
     const historyPtBr = `
       Minhas moedas: 521
-      14/09/2026 PT
+      ${ptBr(0)} PT
       Check-in diário no app
       +40
-      13/09/2026 PT
+      ${ptBr(1)} PT
       Check-in diário no app
       +40
-      12/09/2026 PT
+      ${ptBr(2)} PT
       Check-in diário no app
       +40
     `;
     assert.strictEqual(getStreakFromDesktopHistory(historyPtBr), 3);
 
-    // Caso 2: 4 dias consecutivos em formato en-US (M/D/YYYY)
+    // Caso 2: 4 dias consecutivos terminando hoje, formato en-US (M/D/YYYY)
     const historyEnUs = `
       My coins: 521
-      9/14/2026 PT
+      ${enUs(0)} PT
       App daily check-in
       +40
-      9/13/2026 PT
+      ${enUs(1)} PT
       App daily check-in
       +40
-      9/12/2026 PT
+      ${enUs(2)} PT
       App daily check-in
       +40
-      9/11/2026 PT
+      ${enUs(3)} PT
       App daily check-in
       +40
     `;
     assert.strictEqual(getStreakFromDesktopHistory(historyEnUs), 4);
 
-    // Caso 3: Dias com intervalo/quebra de sequência (dia 14 e dia 12)
+    // Caso 3: Registro mais recente hoje com intervalo (hoje e anteontem) -> streak 1
     const historyWithGap = `
-      14/09/2026 PT
+      ${ptBr(0)} PT
       Check-in diário no app
       +40
-      12/09/2026 PT
+      ${ptBr(2)} PT
       Check-in diário no app
       +40
     `;
     assert.strictEqual(getStreakFromDesktopHistory(historyWithGap), 1);
 
-    // Caso 4: Sem check-in
+    // Caso 4: Histórico antigo (mais recente há 5 dias) não é streak atual
+    const staleHistory = `
+      ${ptBr(5)} PT
+      Check-in diário no app
+      +40
+      ${ptBr(6)} PT
+      Check-in diário no app
+      +40
+    `;
+    assert.strictEqual(
+      getStreakFromDesktopHistory(staleHistory),
+      null,
+      'Sequência antiga sem registro de hoje/ontem deve ser descartada'
+    );
+
+    // Caso 5: Sem check-in
     assert.strictEqual(getStreakFromDesktopHistory('Nenhum dado encontrado'), null);
     assert.strictEqual(getStreakFromDesktopHistory(''), null);
     assert.strictEqual(getStreakFromDesktopHistory(null), null);

@@ -31,6 +31,19 @@ function resolveDiagnosticOption(name, lowMemoryDefault, normalDefault) {
 }
 
 /**
+ * Opções de captura de screenshot de diagnóstico.
+ * Por padrão captura apenas o viewport: em páginas infinitas, `fullPage: true` pode
+ * gerar imagens enormes e picos de RAM no exato caminho de falha. Ative o full page
+ * com PW_SCREENSHOT_FULL_PAGE=true quando precisar do documento inteiro.
+ * @returns {{ fullPage: boolean }}
+ */
+function getScreenshotOptions() {
+  return {
+    fullPage: /^(1|true|on)$/i.test(String(process.env.PW_SCREENSHOT_FULL_PAGE || '').trim())
+  };
+}
+
+/**
  * Retorna o diretório de saída para artefatos de diagnóstico (traces, prints, vídeos)
  * @returns {string}
  */
@@ -110,7 +123,7 @@ async function closeContextWithDiagnostics(context, { failed = false, name = 'co
     if (page && typeof page.screenshot === 'function') {
       const filePath = path.join(outDir, `${name}-screenshot-${Date.now()}.png`);
       try {
-        await page.screenshot({ path: filePath, fullPage: true });
+        await page.screenshot({ path: filePath, ...getScreenshotOptions() });
         safeChmod600(filePath);
         logger.warn(
           { filePath },
@@ -155,7 +168,7 @@ async function saveFailureScreenshot(page, name = 'failure') {
   const outDir = getDiagnosticsDir();
   const filePath = path.join(outDir, `${name}-${Date.now()}.png`);
   try {
-    await page.screenshot({ path: filePath, fullPage: true });
+    await page.screenshot({ path: filePath, ...getScreenshotOptions() });
     safeChmod600(filePath);
     pagesWithManualScreenshot.add(page);
     logger.info({ filePath }, `Screenshot de diagnóstico salva: ${path.basename(filePath)}`);
@@ -220,7 +233,7 @@ async function captureDomHashAndArtifacts(page, name = 'tasks_drawer') {
 
     try {
       screenshotFile = path.join(outDir, `${name}_failed.png`);
-      await page.screenshot({ path: screenshotFile, fullPage: true });
+      await page.screenshot({ path: screenshotFile, ...getScreenshotOptions() });
       safeChmod600(screenshotFile);
     } catch (err) {
       logger.debug({ err: err.message }, 'Falha ao capturar screenshot de diagnóstico.');

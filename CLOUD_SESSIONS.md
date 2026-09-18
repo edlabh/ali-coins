@@ -177,6 +177,31 @@ Se preferir não usar tokens nem SCP, você pode colar os arquivos diretamente n
 
 ---
 
+### Método 4: Sincronização do Código via rsync (atualizar a VM sem segredos)
+
+Para enviar o código do projeto (após um `git pull` ou release) para a VM sem
+sobrescrever sessões, credenciais e o wrapper de cron:
+
+```bash
+rsync -a --delete \
+  --exclude '/.git' --exclude '/node_modules' --exclude '/libs/extracted' \
+  --exclude '/credentials.env' --exclude '/credentials.env*' \
+  --exclude '/session*' --exclude '/session_token*' --exclude '/accounts.json' \
+  --exclude '/scratch/' --exclude '/*.log' --exclude '/*.lock' \
+  --exclude '/docker-run.sh' --exclude '/docker-run.sh.bak*' \
+  --exclude '/github_token.env' --exclude '/*.png' --exclude '/*.zip' \
+  ./ ubuntu@<IP_DO_SERVIDOR>:~/ali-coins/
+```
+
+> **Atenção aos excludes ancorados:** use sempre a barra inicial (ex: `/session*`).
+> Padrões sem `/` (ex: `--exclude 'session*'`) casam com arquivos de **qualquer**
+> diretório e excluem silenciosamente `libs/session.js` e `tests/session*.js`,
+> deixando a VM executar uma versão antiga do código. Após sincronizar, confirme que
+> o wrapper `docker-run.sh` e os arquivos `session*.json.enc` continuam no destino e
+> reconstrua a imagem (`docker build -t ali-coins:latest ~/ali-coins`).
+
+---
+
 ## 5. Duração e Renovação da Sessão
 
 - **Validade dos Cookies:** Os cookies de sessão do AliExpress (`xman_us_t`, `aep_usuc_f`, `xman_t`) possuem validade que varia de **30 a 90 dias**.

@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { lockFilePath: defaultLockFilePath } = require('./config');
-const { safeChmod600 } = require('./security');
+const { safeChmod600, safeWriteFile } = require('./security');
 const logger = require('./logger');
 
 const DEFAULT_STALE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos
@@ -58,9 +58,15 @@ function isProcessAlive(pid) {
  * @param {boolean} [force=false] Se true, remove lock existente mesmo que ativo
  * @param {number} [customStaleTimeoutMs] Tempo limite de inatividade para considerar lock órfão
  * @param {string} [customLockFilePath] Caminho customizado para o arquivo de lock
+ * @param {number} [customRefreshIntervalMs] Intervalo do refresh de createdAt (default: stale/3, teto 5min)
  * @returns {Promise<() => Promise<void>>} Função assíncrona para liberar o lock
  */
-async function acquireLock(force = false, customStaleTimeoutMs = null, customLockFilePath = null) {
+async function acquireLock(
+  force = false,
+  customStaleTimeoutMs = null,
+  customLockFilePath = null,
+  customRefreshIntervalMs = null
+) {
   const targetLockPath = customLockFilePath || defaultLockFilePath;
   const staleTimeoutMs =
     customStaleTimeoutMs ||
@@ -331,9 +337,50 @@ async function acquireLock(force = false, customStaleTimeoutMs = null, customLoc
     signalHandlers.clear();
   };
 
+  // Refresh periódico do createdAt: um run longo (ex: loop de tarefas pode chegar a
+  // ~75 min) nunca deve ser considerado stale por outra instância, o que permitiria
+  // duas execuções concorrentes sobre a mesma conta.
+  const refreshIntervalMs =
+    typeof customRefreshIntervalMs === 'number' && customRefreshIntervalMs > 0
+      ? customRefreshIntervalMs
+      : Math.max(50, Math.min(Math.floor(staleTimeoutMs / 3), 5 * 60 * 1000));
+
+  let refreshInFlight = null;
+  const refreshLock = () => {
+    if (released || refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
+      try {
+        const content = await fs.promises.readFile(targetLockPath, 'utf-8');
+        const current = JSON.parse(content);
+        // Só renova se o lock ainda for nosso (evita "ressuscitar" após takeover por stale)
+        const isOurs = current.lockId
+          ? current.lockId === lockData.lockId
+          : current.pid === process.pid;
+        if (!isOurs || released) return;
+        lockData.createdAt = new Date().toISOString();
+        await safeWriteFile(targetLockPath, JSON.stringify(lockData, null, 2), 'utf-8');
+      } catch {
+        // Lock removido/substituído ou erro transitório: próximo ciclo tenta novamente
+      }
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+    return refreshInFlight;
+  };
+
+  const refreshTimer = setInterval(() => {
+    void refreshLock();
+  }, refreshIntervalMs);
+  if (refreshTimer.unref) refreshTimer.unref();
+
   const release = async () => {
     if (released) return;
     released = true;
+    clearInterval(refreshTimer);
+    // Aguarda um refresh em andamento antes de remover o arquivo (evita recriação pós-unlink)
+    if (refreshInFlight) {
+      await refreshInFlight.catch(() => {});
+    }
     // Restaura o comportamento padrão dos sinais após a liberação do lock
     removeSignalHandlers();
     try {

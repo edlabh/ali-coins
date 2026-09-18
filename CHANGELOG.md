@@ -21,11 +21,16 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Fallback de sessão importada em multi-conta (`libs/notify.js`):** o fallback que lê o `session_meta.json` primário não é mais aplicado a relatórios multi-conta; os flags por conta continuam sendo a fonte de verdade.
 - **Clique de card em "Browse surprise items" (`libs/tasks/surprise.js`):** um card só é marcado como tocado quando o clique foi de fato disparado (nativo ou fallback via `evaluate`); falhas totais de clique não "queimam" o card e permitem nova tentativa.
 - **HEALTHCHECK do container (`Dockerfile`):** timeout ampliado para 30s e `--retries=5` para não marcar `unhealthy` sob pressão de CPU/RAM durante a execução.
+- **Lock roubado em execuções longas (`lockfile.js`):** `acquireLock()` agora renova o `createdAt` do lock periodicamente enquanto o dono está vivo (a cada `staleTimeout/3`, teto de 5 min), impedindo que um run acima de 30 minutos seja tratado como órfão e permita duas execuções concorrentes. O refresh é atômico e só renova o lock se a geração (`lockId`) ainda for a nossa.
+- **Streak de histórico antigo (`libs/ui/balance.js`):** `getStreakFromDesktopHistory()` descarta sequências cujo registro mais recente não seja de hoje/ontem no fuso do histórico (PT), evitando reportar um streak antigo como atual e mascarar uma quebra real quando a leitura mobile retorna `N/D`.
+- **Release workflow (`release.yml`):** a release passa a ser ancorada preferencialmente na tag sem `v` (padrão do projeto) quando ambas existem, e a criação ganhou fallback idempotente para a corrida entre as execuções das tags `X.Y.Z` e `vX.Y.Z`.
 
 ### Desempenho
 
 - **Tracing do Playwright desligado por padrão em modo de baixo consumo (`libs/ui/diagnostics.js`):** as opções `PW_TRACE`/`PW_SCREENSHOT`/`PW_VIDEO` passam a ser resolvidas em um único ponto, com default `off` de tracing quando `CHROMIUM_LOW_MEMORY` está habilitado (padrão). A env explícita continua tendo precedência. Elimina gravação contínua de screenshots e snapshots de DOM em hosts de 1 GB.
 - **Sessão em memória não é descriptografada duas vezes (`libs/session.js`):** `validateAndRefresh()` agora usa `skipSession` quando recebe `existingSessionData`, evitando um segundo scrypt (N=2^17) por conta no fluxo unificado check-in → tarefas, sem alterar a migração/rotação do caminho padrão.
+- **Screenshots de falha apenas do viewport (`libs/ui/diagnostics.js`):** por padrão os screenshots de diagnóstico não usam mais `fullPage`, evitando imagens gigantes e picos de RAM em páginas infinitas no caminho de erro; o documento completo continua disponível com `PW_SCREENSHOT_FULL_PAGE=true`.
+- **Documentação de sincronização segura para a VM (`CLOUD_SESSIONS.md`):** novo método com `rsync` e excludes ancorados, alertando que padrões sem `/` (ex: `session*`) excluem `libs/session.js` e deixam a VM rodando código antigo.
 
 ## [1.0.1] - 2026-09-18
 

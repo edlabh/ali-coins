@@ -105,6 +105,46 @@ test('lockfile.js - lock órfão (stale timeout) é removido automaticamente iso
   }
 });
 
+test('lockfile.js - refresh periódico mantém o lock ativo em execuções longas', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-refresh-');
+  const tmpLockPath = path.join(tmpDir, 'refresh.lock');
+
+  try {
+    // Stale curto (900ms) + refresh a cada 150ms: sem o refresh o lock já estaria expirado
+    const release = await acquireLock(false, 900, tmpLockPath, 150);
+    const first = JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
+
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    const refreshed = JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
+    assert.strictEqual(
+      refreshed.lockId,
+      first.lockId,
+      'O refresh deve preservar a geração do lock'
+    );
+    assert.notStrictEqual(
+      refreshed.createdAt,
+      first.createdAt,
+      'createdAt deve ser renovado antes do stale timeout'
+    );
+
+    // Mesmo após a janela do stale timeout, o lock continua ativo para terceiros
+    await assert.rejects(
+      async () => {
+        await acquireLock(false, 900, tmpLockPath, 150);
+      },
+      (err) => err instanceof LockActiveError
+    );
+
+    await release();
+    assert.ok(!fs.existsSync(tmpLockPath), 'Lock deve ser removido após release');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 const { spawn } = require('child_process');
 
 function runNodeChild(script, timeoutMs = 15000) {

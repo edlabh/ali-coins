@@ -137,18 +137,39 @@ jobs:
             NOTES_FLAGS+=(--notes-file /tmp/release-notes.md)
           fi
 
+          # Tag canônica: prefere a forma SEM "v" (padrão do projeto) quando ambas existem,
+          # evitando que a release fique ancorada na tag cujo run terminou primeiro.
+          TARGET_TAG="$TRIGGER_TAG"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${VERSION}" >/dev/null 2>&1; then
+            TARGET_TAG="$VERSION"
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" >/dev/null 2>&1; then
+            TARGET_TAG="v${VERSION}"
+          fi
+
           # Idempotente: reutiliza a release existente da mesma versão (tag com ou sem "v")
           EXISTING_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
             --json tagName --jq ".[] | select(.tagName == \"${VERSION}\" or .tagName == \"v${VERSION}\") | .tagName" \
             | head -n 1)"
 
-          if [ -n "$EXISTING_TAG" ]; then
+          if [ -n "$EXISTING_TAG" ] && [ "$EXISTING_TAG" != "$TARGET_TAG" ]; then
+            echo "Reancorando release da tag ${EXISTING_TAG} para ${TARGET_TAG}..."
+            gh release edit "$EXISTING_TAG" --repo "$GITHUB_REPOSITORY" --tag "$TARGET_TAG" \
+              "${FLAGS[@]}" "${NOTES_FLAGS[@]}"
+          elif [ -n "$EXISTING_TAG" ]; then
             echo "Atualizando release existente da tag ${EXISTING_TAG}..."
             gh release edit "$EXISTING_TAG" --repo "$GITHUB_REPOSITORY" "${FLAGS[@]}" "${NOTES_FLAGS[@]}"
           elif [ "$HAS_NOTES" = "true" ]; then
-            echo "Criando release para a tag ${TRIGGER_TAG} com notas do CHANGELOG..."
-            gh release create "$TRIGGER_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag "${FLAGS[@]}" "${NOTES_FLAGS[@]}"
+            echo "Criando release para a tag ${TARGET_TAG} com notas do CHANGELOG..."
+            gh release create "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              "${FLAGS[@]}" "${NOTES_FLAGS[@]}" || {
+              echo "Release já criada por execução concorrente; atualizando ${TARGET_TAG}..."
+              gh release edit "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" "${FLAGS[@]}" "${NOTES_FLAGS[@]}"
+            }
           else
-            echo "Criando release para a tag ${TRIGGER_TAG} com notas geradas pelo GitHub..."
-            gh release create "$TRIGGER_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${FLAGS[@]}"
+            echo "Criando release para a tag ${TARGET_TAG} com notas geradas pelo GitHub..."
+            gh release create "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --generate-notes "${FLAGS[@]}" || {
+              echo "Release já criada por execução concorrente; atualizando ${TARGET_TAG}..."
+              gh release edit "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" "${FLAGS[@]}"
+            }
           fi
