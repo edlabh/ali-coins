@@ -29,7 +29,9 @@ const {
   captureDomHashAndArtifacts,
   getRoundKey,
   recordRoundAttempt,
-  withTimeout
+  withTimeout,
+  ensureMainPage: ensureMainPageFn,
+  getDrawerTasksWithRetry: getDrawerTasksWithRetryFn
 } = require('./libs/ui');
 const { renderTasksReport } = require('./libs/report');
 const logger = require('./logger');
@@ -119,17 +121,38 @@ async function runTasks(options = {}) {
       allowMedia: config.ALLOW_MEDIA
     });
 
+    const mobileCoinUrl =
+      'https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=pc302';
+
+    let page = await context.newPage();
     let newPageOpened = null;
+    let isRecreatingPage = false;
     context.on('page', (p) => {
-      newPageOpened = p;
+      if (!isRecreatingPage && p !== page) {
+        newPageOpened = p;
+      }
     });
 
-    const page = await context.newPage();
+    async function ensureMainPage(currentPage) {
+      isRecreatingPage = true;
+      try {
+        const checkedPage = await ensureMainPageFn({
+          page: currentPage,
+          context,
+          mobileCoinUrl,
+          config,
+          logger,
+          gotoFn: (p, url, opts) => gotoWithRetry(p, url, opts)
+        });
+        page = checkedPage;
+        return page;
+      } finally {
+        isRecreatingPage = false;
+      }
+    }
 
     try {
       logger.info('Acessando central de moedas...');
-      const mobileCoinUrl =
-        'https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=pc302';
       await gotoWithRetry(page, mobileCoinUrl, {
         waitUntil: 'domcontentloaded',
         timeout: config.NAV_TIMEOUT
@@ -200,16 +223,85 @@ async function runTasks(options = {}) {
       const failedTasks = {};
       const taskProgressMap = {};
       const taskStatusMap = {};
+      const touchedCards = new Set();
       const maxAttemptsPerTask = config.TASK_MAX_ATTEMPTS;
       const maxRoundAttempts = config.TASK_ROUND_MAX_ATTEMPTS || 3;
       const taskMaxDurationMs = config.TASK_MAX_DURATION_MS || 3 * 60 * 1000;
       let totalActions = 0;
       const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
 
+      async function getDrawerTasksWithRetry(
+        currentPage,
+        { maxRetries = 2, label = 'execução' } = {}
+      ) {
+        let activePage = currentPage;
+        for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+          activePage = await ensureMainPage(activePage);
+          const drawerOpened = await openTaskDrawer(activePage);
+          if (!drawerOpened) {
+            logger.warn(
+              `[${label}] Tentativa ${attempt}/${maxRetries + 1}: painel de tarefas fechado ou não detectado.`
+            );
+            if (attempt <= maxRetries) {
+              if (typeof activePage.waitForTimeout === 'function') {
+                await activePage.waitForTimeout(1200).catch(() => {});
+              }
+              continue;
+            }
+            return {
+              page: activePage,
+              tasks: [],
+              error: new Error('Painel "Ganhe mais moedas" inacessível após tentativas.')
+            };
+          }
+
+          const tasks = await extractTasksFromDrawer(activePage);
+          if (tasks.error) {
+            logger.warn(
+              { err: tasks.error.message },
+              `[${label}] Tentativa ${attempt}/${maxRetries + 1}: falha na leitura dos elementos de tarefas.`
+            );
+            if (attempt <= maxRetries) {
+              if (typeof activePage.waitForTimeout === 'function') {
+                await activePage.waitForTimeout(1200).catch(() => {});
+              }
+              continue;
+            }
+            return { page: activePage, tasks: [], error: tasks.error };
+          }
+
+          return { page: activePage, tasks, error: null };
+        }
+        return {
+          page: activePage,
+          tasks: [],
+          error: new Error('Tentativas esgotadas ao abrir gaveta de tarefas.')
+        };
+      }
+
       while (totalActions < MAX_TOTAL_ACTIONS) {
-        await openTaskDrawer(page);
-        const currentTasks = await extractTasksFromDrawer(page);
-        if (!currentTasks || currentTasks.length === 0) break;
+        const {
+          page: refreshedPage,
+          tasks: currentTasks,
+          error: extractErr
+        } = await getDrawerTasksWithRetry(page, {
+          maxRetries: 2,
+          label: 'loop de tarefas'
+        });
+        page = refreshedPage;
+
+        if (extractErr) {
+          logger.error(
+            { err: extractErr.message },
+            'Falha persistente ao ler painel de tarefas no loop. Encerrando etapa para evitar loop infinito.'
+          );
+          break;
+        }
+
+        if (!currentTasks || currentTasks.length === 0) {
+          logger.info('Nenhuma tarefa pendente encontrada no painel. Etapa concluída com sucesso.');
+          break;
+        }
 
         // Se uma tarefa progrediu de rodada ou status, reseta suas tentativas consecutivas
         for (const t of currentTasks) {
@@ -283,8 +375,11 @@ async function runTasks(options = {}) {
         await page.waitForLoadState('domcontentloaded').catch(() => {});
         await page.waitForTimeout(1500).catch(() => {});
 
-        const activePage = newPageOpened || page;
-        const isNewTab = newPageOpened !== null;
+        const activePage =
+          newPageOpened && typeof newPageOpened.isClosed === 'function' && !newPageOpened.isClosed()
+            ? newPageOpened
+            : page;
+        const isNewTab = activePage !== page;
 
         let actionTimedOut = false;
         try {
@@ -293,9 +388,13 @@ async function runTasks(options = {}) {
               const actionRes = await executeTaskAction({
                 page: activePage,
                 context,
-                task: pendingTask,
+                task: {
+                  ...pendingTask,
+                  attempt: taskAttempts[pendingTask.title] || 1
+                },
                 config,
-                signal
+                signal,
+                touchedCards
               });
               if (actionRes && actionRes.isSpecialOrAppOnly) {
                 markSpecialOrAppOnly(taskAttempts, pendingTask.title);
@@ -317,18 +416,13 @@ async function runTasks(options = {}) {
         }
 
         if (actionTimedOut) {
-          if (isNewTab) {
+          if (isNewTab && activePage && typeof activePage.close === 'function') {
             await activePage.close().catch(() => {});
-          } else if (page.goto) {
-            // Cancela navegações órfãs/penduradas imediatamente e restaura coin-index
-            await page
-              .goto('https://m.aliexpress.com/p/coin-index/index.html', {
-                waitUntil: 'commit',
-                timeout: 10000
-              })
-              .catch(() => {});
           }
-          await page.waitForTimeout(1000).catch(() => {});
+          page = await ensureMainPage(page);
+          if (typeof page.waitForTimeout === 'function') {
+            await page.waitForTimeout(1000).catch(() => {});
+          }
           const taskEndTime = new Date();
           logger.info(
             `Ação abortada por timeout em: ${formatDuration(taskEndTime - taskStartTime)}`
@@ -336,22 +430,35 @@ async function runTasks(options = {}) {
           continue;
         }
 
-        if (isNewTab) {
+        if (isNewTab && activePage && typeof activePage.close === 'function') {
           await activePage.close().catch(() => {});
-        } else if (page.url && !page.url().includes('coin-index/index.html')) {
-          await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
-            waitUntil: 'domcontentloaded'
-          }).catch(() => {});
         }
+        page = await ensureMainPage(page);
         // Aguarda sincronização do AliExpress e atualização do status da tarefa
-        await page.waitForTimeout(2500).catch(() => {});
+        if (typeof page.waitForTimeout === 'function') {
+          await page.waitForTimeout(2500).catch(() => {});
+        }
 
         const taskEndTime = new Date();
         logger.info(`Concluída ação em: ${formatDuration(taskEndTime - taskStartTime)}`);
       }
 
-      await openTaskDrawer(page);
-      const finalTasks = await extractTasksFromDrawer(page);
+      const {
+        page: finalPage,
+        tasks: finalTasks,
+        error: finalExtractErr
+      } = await getDrawerTasksWithRetry(page, {
+        maxRetries: 2,
+        label: 'relatório final'
+      });
+      page = finalPage;
+
+      if (finalExtractErr) {
+        logger.error(
+          { err: finalExtractErr.message },
+          'Aviso: falha na extração final de tarefas para o relatório.'
+        );
+      }
       const results = finalTasks.map((t) => ({
         title: t.title,
         status: failedTasks[t.title] || classifyTaskStatus(t, { failedTasks }),
@@ -491,4 +598,8 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { runTasks };
+module.exports = {
+  runTasks,
+  ensureMainPage: ensureMainPageFn,
+  getDrawerTasksWithRetry: getDrawerTasksWithRetryFn
+};

@@ -16,7 +16,13 @@ const {
   recordRoundAttempt,
   withTimeout
 } = require('./state');
-const { openTaskDrawer, extractTasksFromDrawer, findTaskElement } = require('./verifier');
+const {
+  openTaskDrawer,
+  extractTasksFromDrawer,
+  findTaskElement,
+  ensureMainPage,
+  getDrawerTasksWithRetry
+} = require('./verifier');
 const defaultLogger = require('../../logger');
 
 /**
@@ -35,9 +41,10 @@ async function executeTaskAction(
   taskArg = null,
   configArg = {},
   loggerArg = defaultLogger,
-  signalArg = null
+  signalArg = null,
+  touchedCardsArg = null
 ) {
-  let page, context, task, config, logger, signal;
+  let page, context, task, config, logger, signal, touchedCards;
   if (pageOrParams && (pageOrParams.page !== undefined || pageOrParams.task !== undefined)) {
     ({
       page,
@@ -45,7 +52,8 @@ async function executeTaskAction(
       task,
       config = {},
       logger = defaultLogger,
-      signal = null
+      signal = null,
+      touchedCards = null
     } = pageOrParams);
   } else {
     page = pageOrParams;
@@ -54,6 +62,7 @@ async function executeTaskAction(
     config = configArg || {};
     logger = loggerArg || defaultLogger;
     signal = signalArg || null;
+    touchedCards = touchedCardsArg || null;
   }
 
   // Cancela a ação cooperativamente entre etapas (o AbortSignal é disparado no timeout)
@@ -71,9 +80,18 @@ async function executeTaskAction(
     descLower.includes('tap 3') ||
     descLower.includes('toque em 3')
   ) {
-    const startCardIdx =
+    const roundOffset =
       task?.completedRounds && task.completedRounds > 0 ? task.completedRounds * 3 : 0;
-    await executeSurpriseItems({ page, context, startIndex: startCardIdx, logger, signal });
+    const attemptOffset = task?.attempt && task.attempt > 1 ? (task.attempt - 1) * 3 : 0;
+    const startCardIdx = roundOffset + attemptOffset;
+    await executeSurpriseItems({
+      page,
+      context,
+      startIndex: startCardIdx,
+      logger,
+      signal,
+      touchedCards
+    });
     return {};
   }
 
@@ -172,6 +190,8 @@ module.exports = {
   openTaskDrawer,
   extractTasksFromDrawer,
   findTaskElement,
+  ensureMainPage,
+  getDrawerTasksWithRetry,
 
   // Máquina de estados
   isInteractiveOrAppOnly,

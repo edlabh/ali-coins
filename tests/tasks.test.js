@@ -1430,11 +1430,13 @@ test('tasks - executeSurpriseItems captura nova aba via fallback context.pages()
     const { executeSurpriseItems } = require('../libs/tasks/surprise');
     let clickedCards = 0;
     let closedTabCount = 0;
+    let tabOpened = false;
 
     const mockCard = {
       scrollIntoViewIfNeeded: async () => {},
       click: async () => {
         clickedCards++;
+        tabOpened = true;
       }
     };
 
@@ -1454,14 +1456,15 @@ test('tasks - executeSurpriseItems captura nova aba via fallback context.pages()
       waitForTimeout: async () => {},
       close: async () => {
         closedTabCount++;
+        tabOpened = false;
       }
     };
 
     const mockContext = {
       // waitForEvent expira com timeout (retorna null)
       waitForEvent: async () => null,
-      // Mas a aba existe em context.pages()
-      pages: () => [mockPage, mockTab]
+      // Mas a aba existe em context.pages() após o clique
+      pages: () => (tabOpened ? [mockPage, mockTab] : [mockPage])
     };
 
     const count = await executeSurpriseItems({
@@ -1477,6 +1480,178 @@ test('tasks - executeSurpriseItems captura nova aba via fallback context.pages()
       3,
       'Deve fechar as abas capturadas via fallback context.pages()'
     );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSurpriseItems NUNCA fecha a página principal pré-existente (mainPage) via fallback', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    let mainPageClosed = false;
+    let surprisePageClosed = false;
+    let itemTabClosed = false;
+    let tabOpened = false;
+
+    const mockMainPage = {
+      isClosed: () => mainPageClosed,
+      close: async () => {
+        mainPageClosed = true;
+      }
+    };
+
+    const createMockCard = (id) => ({
+      id,
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        tabOpened = true;
+      }
+    });
+    const cardsList = [createMockCard('c1'), createMockCard('c2'), createMockCard('c3')];
+
+    const mockSurprisePage = {
+      isClosed: () => surprisePageClosed,
+      waitForSelector: async () => {},
+      $$: async () => cardsList,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=productClick',
+      goBack: async () => {},
+      waitForLoadState: async () => {},
+      close: async () => {
+        surprisePageClosed = true;
+      }
+    };
+
+    const mockItemTab = {
+      isClosed: () => itemTabClosed,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      close: async () => {
+        itemTabClosed = true;
+        tabOpened = false;
+      }
+    };
+
+    // context.pages() contém a mainPage e a surprisePage antes do clique
+    const mockContext = {
+      waitForEvent: async () => null,
+      pages: () =>
+        tabOpened ? [mockMainPage, mockSurprisePage, mockItemTab] : [mockMainPage, mockSurprisePage]
+    };
+
+    const count = await executeSurpriseItems({
+      page: mockSurprisePage,
+      context: mockContext,
+      startIndex: 0
+    });
+
+    assert.strictEqual(
+      mainPageClosed,
+      false,
+      'A página principal do runner NUNCA pode ser fechada pelo surprise'
+    );
+    assert.strictEqual(
+      surprisePageClosed,
+      false,
+      'A página do feed surpresa NÃO deve ser fechada pelo surprise'
+    );
+    assert.strictEqual(
+      itemTabClosed,
+      true,
+      'Apenas a aba do item aberta pelo clique deve ser fechada'
+    );
+    assert.strictEqual(count, 3);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - ensureMainPage recupera página fechada ou em URL incorreta criando nova página', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { ensureMainPage } = require('../libs/tasks/verifier');
+    const { ensureMainPage: ensureMainPageDoTasks } = require('../do_tasks');
+
+    assert.strictEqual(typeof ensureMainPage, 'function');
+    assert.strictEqual(typeof ensureMainPageDoTasks, 'function');
+
+    // Cenário 1: Página fechada -> deve criar nova página via context.newPage() e navegar
+    let newPageCreated = false;
+    let freshPageNavigated = false;
+    const closedPage = {
+      isClosed: () => true,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html'
+    };
+    const mockFreshPage = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      goto: async (url) => {
+        if (url.includes('coin-index/index.html')) freshPageNavigated = true;
+      }
+    };
+    const mockContext = {
+      newPage: async () => {
+        newPageCreated = true;
+        return mockFreshPage;
+      }
+    };
+
+    const recoveredPage = await ensureMainPage({
+      page: closedPage,
+      context: mockContext,
+      config: { NAV_TIMEOUT: 5000 }
+    });
+
+    assert.strictEqual(
+      newPageCreated,
+      true,
+      'Deve ter chamado context.newPage() para recriar página fechada'
+    );
+    assert.strictEqual(
+      freshPageNavigated,
+      true,
+      'Deve ter navegado nova página para a central de moedas'
+    );
+    assert.strictEqual(recoveredPage, mockFreshPage, 'Deve retornar a nova página criada');
+
+    // Cenário 2: Página aberta mas fora da central de moedas -> deve navegar de volta
+    let redirected = false;
+    const openPageWrongUrl = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/item/1005009999.html',
+      goto: async (url) => {
+        if (url.includes('coin-index/index.html')) redirected = true;
+      }
+    };
+
+    const redirectedPage = await ensureMainPage({
+      page: openPageWrongUrl,
+      context: mockContext,
+      config: { NAV_TIMEOUT_SHORT: 3000 }
+    });
+
+    assert.strictEqual(redirected, true, 'Deve redirecionar página que saiu da central de moedas');
+    assert.strictEqual(redirectedPage, openPageWrongUrl);
+
+    // Cenário 3: Página sã já na central -> não faz goto desnecessário
+    let unnecessaryGoto = false;
+    const healthyPage = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true',
+      goto: async () => {
+        unnecessaryGoto = true;
+      }
+    };
+
+    const healthyResult = await ensureMainPage({
+      page: healthyPage,
+      context: mockContext
+    });
+
+    assert.strictEqual(unnecessaryGoto, false, 'Não deve efetuar goto se já estiver na central');
+    assert.strictEqual(healthyResult, healthyPage);
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }
@@ -1590,6 +1765,432 @@ test('tasks - libs/ui preserva assinatura híbrida (posicional e objeto) para to
       startIndex: 0
     });
     assert.strictEqual(surpriseObj, 3);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+// ============================================================================
+// TESTES PARA OS 3 RISCOS RESIDUAIS (Risco 1, Risco 2, Risco 3)
+// ============================================================================
+
+test('tasks (Risco 1) - extractTasksFromDrawer não engole exceção silenciosamente e suporta throwOnError e .error', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { extractTasksFromDrawer } = require('../libs/tasks/verifier');
+
+    // 1. Chamada com page nula por padrão: retorna [] com .error não-enumerável
+    const resNull = await extractTasksFromDrawer(null);
+    assert.strictEqual(Array.isArray(resNull), true);
+    assert.strictEqual(resNull.length, 0);
+    assert.ok(resNull.error, 'Deve conter propriedade .error');
+    assert.strictEqual(resNull.error.code, 'PAGE_CLOSED');
+
+    // 2. Chamada com page fechada e throwOnError: true -> deve lançar exceção tipada
+    const closedPage = { isClosed: () => true };
+    await assert.rejects(
+      async () => {
+        await extractTasksFromDrawer({ page: closedPage, throwOnError: true });
+      },
+      (err) => {
+        assert.strictEqual(err.code, 'PAGE_CLOSED');
+        return true;
+      }
+    );
+
+    // 3. Chamada com erro no $$eval sem throwOnError -> retorna [] com .error
+    const errorPage = {
+      isClosed: () => false,
+      $$eval: async () => {
+        throw new Error('Target page detached during evaluation');
+      }
+    };
+    const resError = await extractTasksFromDrawer(errorPage);
+    assert.strictEqual(Array.isArray(resError), true);
+    assert.strictEqual(resError.length, 0);
+    assert.ok(resError.error);
+    assert.strictEqual(resError.error.message, 'Target page detached during evaluation');
+
+    // 4. Chamada de sucesso -> retorna tarefas e .error === null
+    const successPage = {
+      isClosed: () => false,
+      $$eval: async () => [
+        {
+          title: 'Explore sponsored items',
+          desc: '15s',
+          btnText: 'GO',
+          btnStyle: '',
+          statusText: '',
+          isDone: false,
+          isActionable: true,
+          isClaimable: false,
+          coins: '+10 moedas'
+        }
+      ]
+    };
+    const resSuccess = await extractTasksFromDrawer(successPage);
+    assert.strictEqual(resSuccess.length, 1);
+    assert.strictEqual(resSuccess.error, null);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks (Risco 2) - normalizeFeedUrl e isFeedUrl diferenciam feed de anúncios e tratam query volátil', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { normalizeFeedUrl, isFeedUrl } = require('../libs/tasks/surprise');
+
+    const feedBase =
+      'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=productClick&taskId=1722001';
+    const feedWithVolatile = `${feedBase}&_immersiveMode=true&spm=a2g0n.13499126.0.0&aecmd=true`;
+
+    // (c) Feed com query volátil alterada é normalizado e considerado o mesmo feed
+    assert.strictEqual(
+      normalizeFeedUrl(feedBase),
+      normalizeFeedUrl(feedWithVolatile),
+      'Parâmetros voláteis não devem alterar URL normalizada'
+    );
+    assert.strictEqual(
+      isFeedUrl(feedWithVolatile, feedBase, 3),
+      true,
+      'Deve considerar o mesmo feed quando há cards e apenas query volátil mudou'
+    );
+
+    // (a) URL adclick com params diferentes e sem cards -> NÃO é o feed
+    const adRedirectUrl =
+      'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=externalAd&other=999';
+    assert.strictEqual(
+      isFeedUrl(adRedirectUrl, feedBase, 0),
+      false,
+      'Destino com params diferentes e sem cards não deve ser reconhecido como feed'
+    );
+
+    // (b) URL igual ao feed com cards -> é o feed
+    assert.strictEqual(
+      isFeedUrl(feedBase, feedBase, 3),
+      true,
+      'Feed original com cards deve ser reconhecido como feed'
+    );
+
+    // Se a contagem de cards for 0, mesmo com URL idêntica, não está no feed
+    assert.strictEqual(
+      isFeedUrl(feedBase, feedBase, 0),
+      false,
+      'Se cardCount for 0, deve retornar false para disparar recuperação'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks (Risco 2) - executeSurpriseItems: destino adclick com params diferentes e sem cards dispara goBack/goto', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    const feedUrl =
+      'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=productClick&taskId=1722001';
+    let currentUrl = feedUrl;
+    const createMockCard = (id) => ({
+      id,
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        // Ao clicar, navega para outro adclick sem cards de produto
+        currentUrl =
+          'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=advertiserTarget&adId=888';
+        cardsInDom = []; // Página de destino não tem cards de produto
+      }
+    });
+
+    let cardsInDom = [createMockCard('c1'), createMockCard('c2'), createMockCard('c3')];
+    let goBackCalls = 0;
+    const gotoCalls = [];
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => cardsInDom,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => currentUrl,
+      goBack: async () => {
+        goBackCalls++;
+        // goBack recupera feed
+        currentUrl = feedUrl;
+        cardsInDom = [createMockCard('c1'), createMockCard('c2'), createMockCard('c3')];
+      },
+      goto: async (targetUrl) => {
+        gotoCalls.push(targetUrl);
+        currentUrl = targetUrl;
+        cardsInDom = [createMockCard('c1'), createMockCard('c2'), createMockCard('c3')];
+      },
+      waitForLoadState: async () => {}
+    };
+
+    const count = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 0
+    });
+
+    assert.strictEqual(count, 3);
+    assert.strictEqual(
+      goBackCalls,
+      3,
+      'Deve disparar goBack() para cada navegação em destino adclick sem cards'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks (Risco 3) - mock com 6 cards em 2 rodadas toca 6 cards distintos sem repetição', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    const feedUrl =
+      'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=productClick&taskId=1722001';
+
+    const clickedCardIds = [];
+    const createMockCard = (id) => ({
+      id,
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCardIds.push(id);
+      }
+    });
+
+    const cardsPool = [
+      createMockCard('product-1'),
+      createMockCard('product-2'),
+      createMockCard('product-3'),
+      createMockCard('product-4'),
+      createMockCard('product-5'),
+      createMockCard('product-6')
+    ];
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => cardsPool,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => feedUrl,
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    // Shared Set entre rodadas
+    const touchedCards = new Set();
+
+    // Rodada 1: startIndex = 0
+    const countR1 = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 0,
+      touchedCards
+    });
+    assert.strictEqual(countR1, 3);
+    assert.deepStrictEqual(clickedCardIds.slice(0, 3), ['product-1', 'product-2', 'product-3']);
+
+    // Rodada 2: startIndex = 3 com o mesmo touchedCards
+    const countR2 = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 3,
+      touchedCards
+    });
+    assert.strictEqual(countR2, 3);
+    assert.deepStrictEqual(clickedCardIds.slice(3, 6), ['product-4', 'product-5', 'product-6']);
+
+    // Valida que todos os 6 cards foram distintos
+    assert.strictEqual(new Set(clickedCardIds).size, 6);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks (Risco 3) - mock com 3 cards na rodada 2 NÃO repete os mesmos cards e encerra com aviso', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    const feedUrl =
+      'https://m.aliexpress.com/p/coin-index/adclick.html?componentType=productClick&taskId=1722001';
+
+    const clickedCardIds = [];
+    const createMockCard = (id) => ({
+      id,
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCardIds.push(id);
+      }
+    });
+
+    // Apenas 3 cards existem no DOM
+    const cardsPool = [
+      createMockCard('product-A'),
+      createMockCard('product-B'),
+      createMockCard('product-C')
+    ];
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => cardsPool,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => feedUrl,
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    const touchedCards = new Set();
+
+    // Rodada 1: toca os 3 cards
+    const countR1 = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 0,
+      touchedCards
+    });
+    assert.strictEqual(countR1, 3);
+    assert.strictEqual(clickedCardIds.length, 3);
+
+    // Rodada 2: startIndex = 3, mas não há cards novos no DOM -> não deve dar wrap
+    const countR2 = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 3,
+      touchedCards
+    });
+
+    assert.strictEqual(
+      countR2,
+      0,
+      'Não deve tocar em nenhum card já tocado se não houver novos no DOM'
+    );
+    assert.strictEqual(
+      clickedCardIds.length,
+      3,
+      'Total de cliques deve permanecer 3 (sem re-toques na rodada 2)'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks (Risco 3) - startIndex explícito é respeitado quando houver cards disponíveis', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { executeSurpriseItems } = require('../libs/tasks/surprise');
+    const feedUrl = 'https://m.aliexpress.com/p/coin-index/surprise.html';
+
+    const clickedCardIds = [];
+    const createMockCard = (id) => ({
+      id,
+      scrollIntoViewIfNeeded: async () => {},
+      click: async () => {
+        clickedCardIds.push(id);
+      }
+    });
+
+    const cardsPool = [
+      createMockCard('card-0'),
+      createMockCard('card-1'),
+      createMockCard('card-2'),
+      createMockCard('card-3'),
+      createMockCard('card-4')
+    ];
+
+    const mockPage = {
+      waitForSelector: async () => {},
+      $$: async () => cardsPool,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => feedUrl,
+      goBack: async () => {},
+      waitForLoadState: async () => {}
+    };
+
+    // Inicia explicitamente a partir do card 2 (índice 2)
+    const count = await executeSurpriseItems({
+      page: mockPage,
+      context: null,
+      startIndex: 2
+    });
+
+    assert.strictEqual(count, 3);
+    assert.deepStrictEqual(clickedCardIds, ['card-2', 'card-3', 'card-4']);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks (Risco 1) - getDrawerTasksWithRetry recupera falha transitória de abertura e extração via ensureMainPage', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { getDrawerTasksWithRetry } = require('../libs/tasks/verifier');
+    const { getDrawerTasksWithRetry: getFromDoTasks } = require('../do_tasks');
+
+    assert.strictEqual(typeof getDrawerTasksWithRetry, 'function');
+    assert.strictEqual(typeof getFromDoTasks, 'function');
+
+    // Cenário 1: Falha na tentativa 1 de abrir a gaveta (gaveta não abre), sucesso na tentativa 2
+    let ensureCalls = 0;
+
+    const mockPage = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      waitForTimeout: async () => {},
+      // Na tentativa 1 (ensureCalls === 1), a gaveta não abre. Na tentativa 2 (ensureCalls > 1), abre com sucesso
+      $eval: async () => ensureCalls > 1,
+      $: async () => ({
+        click: async () => {}
+      }),
+      waitForSelector: async () => {
+        if (ensureCalls === 1) throw new Error('Drawer failed to open');
+      },
+      $$eval: async () => [
+        {
+          title: 'Task A',
+          desc: '',
+          btnText: 'GO',
+          btnStyle: '',
+          statusText: '',
+          isDone: false,
+          isActionable: true,
+          isClaimable: false,
+          coins: '+5 moedas'
+        }
+      ]
+    };
+
+    const result = await getDrawerTasksWithRetry({
+      page: mockPage,
+      maxRetries: 2,
+      ensureMainPageFn: async (p) => {
+        ensureCalls++;
+        return p;
+      }
+    });
+
+    assert.strictEqual(result.error, null, 'Não deve retornar erro após recuperação');
+    assert.strictEqual(result.tasks.length, 1, 'Deve extrair tarefas após abertura na tentativa 2');
+    assert.strictEqual(ensureCalls, 2, 'Deve ter chamado ensureMainPage em cada tentativa');
+
+    // Cenário 2: Gaveta aberta legitimamente vazia (sem erros)
+    const emptyPage = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      $eval: async () => true, // Gaveta aberta
+      $$eval: async () => [] // Lista de tarefas vazia
+    };
+
+    const emptyResult = await getDrawerTasksWithRetry({
+      page: emptyPage,
+      maxRetries: 2,
+      ensureMainPageFn: async (p) => p
+    });
+
+    assert.strictEqual(emptyResult.error, null);
+    assert.strictEqual(emptyResult.tasks.length, 0);
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }

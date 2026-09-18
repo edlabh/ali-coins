@@ -25,12 +25,22 @@ async function executeTaskAction(...args) {
   return await dispatcher.executeTaskAction(...args);
 }
 
+async function ensureMainPage(...args) {
+  return await dispatcher.ensureMainPage(...args);
+}
+
+async function getDrawerTasksWithRetry(...args) {
+  return await dispatcher.getDrawerTasksWithRetry(...args);
+}
+
 module.exports = {
   isInteractiveOrAppOnly,
   executeSurpriseItems,
   openTaskDrawer,
   extractTasksFromDrawer,
   executeTaskAction,
+  ensureMainPage,
+  getDrawerTasksWithRetry,
   findNextPendingTask: dispatcher.findNextPendingTask,
   recordTaskAttempt: dispatcher.recordTaskAttempt,
   resetTaskAttempt: dispatcher.resetTaskAttempt,
