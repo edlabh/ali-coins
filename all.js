@@ -17,7 +17,7 @@ const {
   buildMultiAccountReportPayload,
   isStreakBreak
 } = require('./libs/report');
-const { sendTelegram } = require('./libs/notify');
+const { sendTelegram, shouldSkipAccountNotification } = require('./libs/notify');
 const { sendHeartbeat } = require('./libs/heartbeat');
 const { startAccountTimer } = require('./libs/timing');
 const { setupGlobalCrashHandler } = require('./libs/crash');
@@ -369,6 +369,9 @@ async function main() {
       let lockActiveCount = 0;
       let nonLockFailureCount = 0;
       let consecutiveFailures = 0;
+      // Espaçamento mínimo entre envios ao Telegram no mesmo run (anti-rajada)
+      const NOTIFY_MIN_SPACING_MS = 3000;
+      let lastNotifyAt = 0;
 
       for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
@@ -572,7 +575,13 @@ async function main() {
         }
 
         const accTiming = accTimer.end();
-        if (account.telegramChatId) {
+        // Quando a conta usa o MESMO chat do relatório consolidado final, pular a mensagem
+        // individual evita rajada de envios ao mesmo destino (que causava timeout/descarte).
+        const skipAccountNotify = shouldSkipAccountNotification(
+          account.telegramChatId,
+          config.TELEGRAM_CHAT_ID
+        );
+        if (account.telegramChatId && !skipAccountNotify) {
           try {
             const accPayload = buildUnifiedReportPayload(accCheckin, accTasks, {
               user: account.maskedUser,
@@ -592,6 +601,12 @@ async function main() {
                   : !accCheckin?.alreadyCollected || (accTasks && accTasks.totalActions > 0)
                     ? 'success'
                     : 'already_collected';
+            const msSinceLastNotify = Date.now() - lastNotifyAt;
+            if (lastNotifyAt && msSinceLastNotify < NOTIFY_MIN_SPACING_MS) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, NOTIFY_MIN_SPACING_MS - msSinceLastNotify)
+              );
+            }
             await sendTelegram({
               config,
               chatId: account.telegramChatId,
@@ -599,6 +614,7 @@ async function main() {
               event: accEvent,
               error: accError
             });
+            lastNotifyAt = Date.now();
           } catch (tgErr) {
             logger.warn(
               { err: tgErr.message, account: account.maskedUser },
@@ -654,8 +670,17 @@ async function main() {
       else if (!anyAccountSuccess) multiEvent = 'failure';
       else if (!anyAccountHadNewAction) multiEvent = 'already_collected';
 
+      // Espaça do último envio por-conta (quando houver) para não competir pelo mesmo
+      // destino/limite de taxa do Telegram, reduzindo descartes por timeout.
+      const msSinceLastNotify = Date.now() - lastNotifyAt;
+      if (lastNotifyAt && msSinceLastNotify < NOTIFY_MIN_SPACING_MS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, NOTIFY_MIN_SPACING_MS - msSinceLastNotify)
+        );
+      }
       try {
         await sendTelegram({ config, report: multiPayload, event: multiEvent });
+        lastNotifyAt = Date.now();
       } catch (tgErr) {
         logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram consolidada.');
       }

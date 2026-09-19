@@ -2419,3 +2419,64 @@ test('tasks - findTaskElement usa fallbackIndex quando o título não casa', asy
   const found = await findTaskElement(page, 'Inexistente', 1);
   assert.strictEqual(found, els[1], 'deve usar o fallbackIndex quando o título não é encontrado');
 });
+
+test('tasks - tryOpenFirstProductDetail abre item em nova aba e fecha (fallback)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { tryOpenFirstProductDetail } = require('../libs/tasks/surprise');
+    let detailClosed = false;
+    let closed = false;
+
+    const detailTab = {
+      isClosed: () => false,
+      waitForLoadState: async () => {},
+      waitForTimeout: async () => {},
+      close: async () => {
+        detailClosed = true;
+      }
+    };
+    const mainPage = {
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      evaluate: async () => {},
+      $$: async () => [
+        {
+          click: async () => {
+            closed = true;
+          },
+          scrollIntoViewIfNeeded: async () => {}
+        }
+      ]
+    };
+    const context = {
+      pages: () => [mainPage, detailTab],
+      waitForEvent: async (evt) => detailTab
+    };
+
+    // simula abertura de aba: pages() antes do clique não contém a detailTab
+    const before = [mainPage];
+    context.pages = () => (closed ? [mainPage, detailTab] : before);
+
+    const opened = await tryOpenFirstProductDetail({ page: mainPage, context });
+    assert.strictEqual(opened, true);
+    assert.strictEqual(detailClosed, true, 'aba de detalhe deve ser fechada');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - tryOpenFirstProductDetail não abre quando não há cards', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { tryOpenFirstProductDetail } = require('../libs/tasks/surprise');
+    const page = {
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      evaluate: async () => {},
+      $$: async () => []
+    };
+    const context = { pages: () => [page], waitForEvent: async () => null };
+    const opened = await tryOpenFirstProductDetail({ page, context });
+    assert.strictEqual(opened, false);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

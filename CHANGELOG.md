@@ -11,6 +11,19 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.2.1] - 2026-09-19
+
+### Corrigido
+
+- **Notificações do Telegram perdidas por timeout (`libs/notify.js`):** `sendTelegram` agora faz **retry com backoff exponencial + jitter** (até 3 tentativas) para falhas transitórias de rede/timeout/HTTP 5xx/429; erros 4xx permanecem sem retry. O timeout padrão por tentativa subiu de 5000ms para **15000ms** (`config.js`, `credentials.env.example`), evitando descartes em VPS com DNS/TLS lentos.
+- **Rajada de mensagens no mesmo chat (`all.js`):** quando o `telegramChatId` de uma conta é igual ao `TELEGRAM_CHAT_ID` global, a mensagem individual daquela conta é suprimida (o consolidado já cobre o mesmo destino); os envios restantes são espaçados por ~3s (`NOTIFY_MIN_SPACING_MS`) para não competir pelo limite de taxa do Telegram.
+- **`Browse surprise items` sem confirmação do site (`libs/tasks/surprise.js`):** novo fallback best-effort (`SURPRISE_DETAIL_FALLBACK`, padrão on) que, quando os cliques no feed não navegam, abre **um card não-tocado em detalhe** (nova aba ou retorno via `goBack`) para tentar contabilizar a rodada. Conservador: só roda com `context` real, feed confirmada, sem navegação prévia e respeita o `AbortSignal`.
+
+### Testes
+
+- Novos testes para retry do Telegram (`postToTelegramWithRetry`), supressão de chat duplicado (`shouldSkipAccountNotification`) e fallback de detalhe do surprise — **301/301**.
+- Validação na VM: run real com retry acionado (tentativa 1 `fetch failed` → sucesso na 2), **uma única** notificação Telegram consolidada, 2/2 contas, 0 riscos, pico 512MiB.
+
 ## [1.2.0] - 2026-09-18
 
 ### Corrigido

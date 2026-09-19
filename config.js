@@ -180,7 +180,9 @@ const configSchema = z
         return Boolean(val);
       }, z.boolean())
       .default(false),
-    TELEGRAM_TIMEOUT_MS: positiveInt(5000),
+    // Timeout por tentativa de envio ao Telegram; retry (até 3x) já cobre falhas
+    // transitórias. 15s evita descartes em VPS com DNS/TLS lentos.
+    TELEGRAM_TIMEOUT_MS: positiveInt(15000),
     NOTIFY_HOST_LABEL: z
       .preprocess((val) => {
         if (val === undefined || val === null) return '';

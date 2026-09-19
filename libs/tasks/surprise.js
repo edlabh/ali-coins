@@ -196,6 +196,10 @@ async function executeSurpriseItems(
 
   let clickedCount = 0;
   const targetClicks = 3;
+  // Rastreia se algum clique navegou para fora da feed e se o último clique permaneceu
+  // nela. Usado apenas para decidir o fallback de detalhe ao final (best-effort).
+  let navigatedAwayDuringClicks = false;
+  let lastClickStayedOnFeed = false;
 
   // Carrega cards + assinaturas em lote (1 $$ + 1 $$eval por consulta) e cai no modo
   // individual (getCardSignature) quando o page não suporta $$eval.
@@ -404,6 +408,7 @@ async function executeSurpriseItems(
       );
 
       if (hasNavigatedAway) {
+        navigatedAwayDuringClicks = true;
         if (typeof page.waitForTimeout === 'function') {
           await page.waitForTimeout(1000).catch(() => {});
         }
@@ -428,6 +433,9 @@ async function executeSurpriseItems(
             .waitForSelector(SELECTORS.tasks.productCard, { timeout: 6000 })
             .catch(() => {});
         }
+        lastClickStayedOnFeed = false;
+      } else {
+        lastClickStayedOnFeed = true;
       }
     }
 
@@ -440,11 +448,149 @@ async function executeSurpriseItems(
   if (typeof page.waitForTimeout === 'function') {
     await page.waitForTimeout(600).catch(() => {});
   }
+
+  // Fallback opcional: quando o clique no feed NÃO navegou (URL ainda é a feed) o site
+  // pode exigir abrir o DETALHE do produto para contabilizar a rodada. Abre 1 item e volta.
+  // Conservador: só quando havia cards, clique ocorreu, URL não mudou e a página não
+  // expôs nova aba — mantém mocks/testes intactos. Controlado por SURPRISE_DETAIL_FALLBACK.
+  const detailFallbackEnabled = !/^(0|false|off|no)$/i.test(
+    String(process.env.SURPRISE_DETAIL_FALLBACK ?? 'true').trim()
+  );
+  const finalUrl = page && typeof page.url === 'function' ? page.url() : '';
+  const finalUrlIsDetail = Boolean(
+    finalUrl && (finalUrl.includes('/item/') || finalUrl.includes('/detail/'))
+  );
+  const canAttemptDetailFallback =
+    page &&
+    context &&
+    typeof context.pages === 'function' &&
+    typeof page.$$ === 'function' &&
+    typeof page.url === 'function' &&
+    typeof page.evaluate === 'function' &&
+    feedUrl &&
+    isFeedUrl(finalUrl, feedUrl, null) &&
+    !finalUrlIsDetail;
+  if (
+    detailFallbackEnabled &&
+    canAttemptDetailFallback &&
+    clickedCount > 0 &&
+    !navigatedAwayDuringClicks &&
+    lastClickStayedOnFeed &&
+    !(signal && signal.aborted)
+  ) {
+    // Abre um card NÃO tocado (evita reabrir o mesmo item) e no máximo uma vez por rodada.
+    await tryOpenFirstProductDetail({
+      page,
+      context,
+      logger,
+      signal,
+      excludeSignatures: touchedCardsSet
+    });
+  }
+
   return clickedCount;
+}
+
+/**
+ * Abre o primeiro card de produto em detalhe (nova aba se possível) e retorna à feed.
+ * Best-effort: nunca lança e respeita o AbortSignal. Ajuda tarefas "Browse surprise"
+ * que só contabilizam quando o item é efetivamente aberto.
+ * @param {object} params
+ * @returns {Promise<boolean>} true se abriu/visitou o detalhe
+ */
+async function tryOpenFirstProductDetail({
+  page,
+  context = null,
+  logger = defaultLogger,
+  signal = null,
+  excludeSignatures = null
+} = {}) {
+  if (!page || (signal && signal.aborted)) return false;
+  try {
+    const cards = typeof page.$$ === 'function' ? await page.$$(SELECTORS.tasks.productCard) : [];
+    if (!cards.length) return false;
+
+    // Escolhe um card NÃO tocado quando possível (evita reabrir o mesmo item da rodada)
+    const signatures = await getCardSignatures(page, cards.length);
+    let targetCard = cards[0];
+    if (excludeSignatures instanceof Set && excludeSignatures.size > 0) {
+      for (let i = 0; i < cards.length; i++) {
+        let sig = signatures && signatures[i] !== undefined ? signatures[i] : null;
+        if (sig === null) sig = await getCardSignature(cards[i], i);
+        if (!excludeSignatures.has(sig)) {
+          targetCard = cards[i];
+          break;
+        }
+      }
+    }
+
+    const pagesBefore = new Set(
+      context && typeof context.pages === 'function' ? context.pages() : []
+    );
+    const tabPromise =
+      context && typeof context.waitForEvent === 'function'
+        ? context.waitForEvent('page', { timeout: 2500 }).catch(() => null)
+        : Promise.resolve(null);
+
+    if (typeof targetCard.click === 'function') {
+      await targetCard.click({ delay: 50, timeout: 3000 }).catch(() => {});
+    } else if (typeof page.evaluate === 'function') {
+      await page.evaluate((el) => el.click(), targetCard).catch(() => {});
+    }
+
+    const detailTab = await tabPromise;
+    const opened =
+      detailTab ||
+      (context && typeof context.pages === 'function'
+        ? context
+            .pages()
+            .find(
+              (p) =>
+                !pagesBefore.has(p) &&
+                p !== page &&
+                (typeof p.isClosed === 'function' ? !p.isClosed() : true)
+            ) || null
+        : null);
+
+    if (opened) {
+      if (typeof opened.waitForLoadState === 'function') {
+        await opened.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
+      }
+      if (typeof opened.waitForTimeout === 'function') {
+        await opened.waitForTimeout(1200).catch(() => {});
+      }
+      if (typeof opened.close === 'function') {
+        await opened.close().catch(() => {});
+      }
+      logger.info('Fallback de detalhe: item aberto em nova aba e fechado.');
+      return true;
+    }
+
+    // Sem nova aba: aguarda e retorna à feed se a navegação ocorreu na página atual
+    if (typeof page.waitForTimeout === 'function') {
+      await page.waitForTimeout(1200).catch(() => {});
+    }
+    const currentUrl = typeof page.url === 'function' ? page.url() : '';
+    if (currentUrl && (currentUrl.includes('/item/') || currentUrl.includes('/detail/'))) {
+      if (typeof page.goBack === 'function') {
+        await page.goBack().catch(() => {});
+        if (typeof page.waitForLoadState === 'function') {
+          await page.waitForLoadState('domcontentloaded', { timeout: 4000 }).catch(() => {});
+        }
+      }
+      logger.info('Fallback de detalhe: item aberto na mesma aba e retornado à feed.');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    logger.debug({ err: err.message }, 'Fallback de detalhe de produto indisponível.');
+    return false;
+  }
 }
 
 module.exports = {
   executeSurpriseItems,
+  tryOpenFirstProductDetail,
   normalizeFeedUrl,
   isFeedUrl,
   getCardSignature,

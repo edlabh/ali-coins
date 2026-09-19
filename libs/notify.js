@@ -7,6 +7,53 @@ const logger = require('../logger');
 
 const TELEGRAM_MAX_LENGTH = 4096;
 const TELEGRAM_SAFE_LIMIT = 3900;
+// Retry para falhas transitórias (rede/timeout/5xx): não se aplica a 4xx definitivos.
+const TELEGRAM_MAX_ATTEMPTS = 3;
+
+/**
+ * Executa uma requisição HTTP ao Telegram com retry exponencial para falhas transitórias.
+ * Retorna a Response no sucesso ou no último erro não-retentável; lança apenas se todas
+ * as tentativas falharem por rede/timeout.
+ * @param {string} apiUrl
+ * @param {object} payload
+ * @param {number} timeoutMs
+ * @returns {Promise<import('undici').Response>}
+ */
+async function postToTelegramWithRetry(apiUrl, payload, timeoutMs) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= TELEGRAM_MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      // 4xx é definitivo (exceto 429 rate-limit, que merece retry); 5xx e 429 são retentáveis
+      const retryable = response.status >= 500 || response.status === 429;
+      if (!retryable || attempt === TELEGRAM_MAX_ATTEMPTS) {
+        return response;
+      }
+      lastErr = new Error(`HTTP ${response.status}`);
+      logger.warn(
+        { attempt, status: response.status },
+        'Falha transitória ao enviar notificação; tentando novamente...'
+      );
+    } catch (err) {
+      lastErr = err;
+      if (attempt === TELEGRAM_MAX_ATTEMPTS) throw err;
+      logger.warn(
+        { attempt, err: err.message },
+        'Erro de rede/timeout ao enviar notificação; tentando novamente...'
+      );
+    }
+    // Backoff exponencial com jitter (800ms..1200ms, 1600..2400ms) e teto de tempo
+    const baseMs = Math.min(2500, 800 * 2 ** (attempt - 1));
+    const jitter = 0.8 + Math.random() * 0.4;
+    await new Promise((resolve) => setTimeout(resolve, Math.round(baseMs * jitter)));
+  }
+  throw lastErr || new Error('Falha ao enviar notificação para o Telegram.');
+}
 
 /**
  * Escapa caracteres especiais para HTML do Telegram (<, >, &)
@@ -722,26 +769,20 @@ async function sendTelegram({
   };
 
   try {
-    let response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
+    let response = await postToTelegramWithRetry(apiUrl, payload, timeoutMs);
 
     // Fallback: se retornar 400 por erro de parse de entidades HTML, tenta enviar como texto puro
     if (response.status === 400) {
       const plainText = truncateMessageIfNeeded(messageHtml.replace(/<[^>]+>/g, ''));
-      response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      response = await postToTelegramWithRetry(
+        apiUrl,
+        {
           chat_id: targetChatId,
           text: plainText,
           disable_notification: isSilent
-        }),
-        signal: AbortSignal.timeout(timeoutMs)
-      }).catch(() => response);
+        },
+        5000
+      ).catch(() => response);
     }
 
     if (!response.ok) {
@@ -774,6 +815,19 @@ async function sendTelegram({
 }
 
 /**
+ * Indica se a notificação individual de uma conta deve ser suprimida por ter o mesmo
+ * destino (chat) da notificação consolidada final — evita rajada de mensagens no mesmo chat.
+ * @param {string|number|null} accountChatId
+ * @param {string|number|null} consolidatedChatId
+ * @returns {boolean}
+ */
+function shouldSkipAccountNotification(accountChatId, consolidatedChatId) {
+  if (!accountChatId) return false;
+  if (!consolidatedChatId) return false;
+  return String(accountChatId) === String(consolidatedChatId);
+}
+
+/**
  * Dispara uma mensagem manual de teste para validar credenciais e conectividade
  * @param {object} [customConfig]
  * @returns {Promise<boolean>}
@@ -803,5 +857,8 @@ module.exports = {
   toSafeStreak,
   truncateMessageIfNeeded,
   checkIfImportedSessionExpired,
+  shouldSkipAccountNotification,
+  postToTelegramWithRetry,
+  TELEGRAM_MAX_ATTEMPTS,
   test
 };

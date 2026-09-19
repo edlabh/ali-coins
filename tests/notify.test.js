@@ -8,7 +8,9 @@ const {
   sendTelegram,
   checkIfImportedSessionExpired,
   toSafeInt,
-  toSafeStreak
+  toSafeStreak,
+  postToTelegramWithRetry,
+  TELEGRAM_MAX_ATTEMPTS
 } = require('../libs/notify');
 const { configSchema } = require('../config');
 const logger = require('../logger');
@@ -1079,4 +1081,67 @@ test('libs/notify.js - fallback de sessão importada não usa o meta primário e
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
   }
+});
+
+test('libs/notify.js - postToTelegramWithRetry reenvia em 5xx/429 e desiste em 4xx', async () => {
+  const originalFetch = global.fetch;
+  const url = 'https://api.telegram.org/botX/sendMessage';
+  const payload = { chat_id: '1', text: 'oi' };
+
+  try {
+    // 503 duas vezes, depois 200
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls < 3) return { ok: false, status: 503, text: async () => 'unavailable' };
+      return { ok: true, status: 200, text: async () => '{"ok":true}' };
+    };
+    const res = await postToTelegramWithRetry(url, payload, 1000);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(calls, 3, 'deve tentar novamente até obter sucesso');
+
+    // 400 é definitivo: 1 tentativa
+    calls = 0;
+    global.fetch = async () => {
+      calls++;
+      return { ok: false, status: 400, text: async () => 'bad request' };
+    };
+    const bad = await postToTelegramWithRetry(url, payload, 1000);
+    assert.strictEqual(bad.status, 400);
+    assert.strictEqual(calls, 1, '4xx não deve ser reenviado');
+
+    assert.ok(TELEGRAM_MAX_ATTEMPTS >= 2, 'deve haver mais de uma tentativa por padrão');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('libs/notify.js - postToTelegramWithRetry lança após esgotar tentativas de rede', async () => {
+  const originalFetch = global.fetch;
+  const url = 'https://api.telegram.org/botX/sendMessage';
+  let calls = 0;
+
+  try {
+    global.fetch = async () => {
+      calls++;
+      throw new Error('socket hang up');
+    };
+    await assert.rejects(
+      () => postToTelegramWithRetry(url, { chat_id: '1', text: 'oi' }, 500),
+      /socket hang up/
+    );
+    assert.strictEqual(calls, TELEGRAM_MAX_ATTEMPTS, 'deve esgotar todas as tentativas');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('libs/notify.js - shouldSkipAccountNotification suprime conta com chat igual ao global', () => {
+  const { shouldSkipAccountNotification } = require('../libs/notify');
+  assert.strictEqual(shouldSkipAccountNotification('2659***', '2659***'), true);
+  assert.strictEqual(shouldSkipAccountNotification(123456, '123456'), true);
+  assert.strictEqual(shouldSkipAccountNotification('111', '222'), false);
+  assert.strictEqual(shouldSkipAccountNotification(null, '222'), false);
+  assert.strictEqual(shouldSkipAccountNotification('111', null), false);
+  assert.strictEqual(shouldSkipAccountNotification('', ''), false);
 });
