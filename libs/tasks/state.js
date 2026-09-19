@@ -230,6 +230,36 @@ function markSpecialOrAppOnly(attemptsMap, title) {
 }
 
 /**
+ * Decide quais tarefas devem ser REABERTAS em uma "segunda passada" (retry de incompletas).
+ * Reabre apenas tarefas que falharam/desistiram, excluindo:
+ *  - tarefas desativadas por exigirem o app (APP_ONLY_DISABLED_STATUS);
+ *  - tarefas que constam como concluídas na lista atual (isDone);
+ *  - tarefas que ainda não falharam (sem entrada em failedTasks).
+ * @param {object} params
+ * @param {object} params.failedTasks Mapa título -> motivo de falha/desistência
+ * @param {Array<object>} [params.tasks=[]] Tarefas atuais (para checar isDone)
+ * @param {string} [params.appOnlyStatus=APP_ONLY_DISABLED_STATUS]
+ * @returns {string[]} Títulos elegíveis para reabertura
+ */
+function selectReopenableTasks({
+  failedTasks = {},
+  tasks = [],
+  appOnlyStatus = APP_ONLY_DISABLED_STATUS
+} = {}) {
+  const doneTitles = new Set(
+    (Array.isArray(tasks) ? tasks : []).filter((t) => t && t.isDone).map((t) => t.title)
+  );
+  const reopened = [];
+  for (const [title, reason] of Object.entries(failedTasks)) {
+    if (!title || !reason) continue;
+    if (reason === appOnlyStatus) continue;
+    if (doneTitles.has(title)) continue;
+    reopened.push(title);
+  }
+  return reopened;
+}
+
+/**
  * Classifica e gera o status amigável de uma tarefa para o relatório final
  * @param {object} task
  * @param {object} [options={}]
@@ -306,6 +336,7 @@ module.exports = {
   isAppOnlySkippingEnabled,
   APP_ONLY_DISABLED_STATUS,
   findNextPendingTask,
+  selectReopenableTasks,
   recordTaskAttempt,
   resetTaskAttempt,
   markSpecialOrAppOnly,

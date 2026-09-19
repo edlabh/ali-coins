@@ -22,6 +22,8 @@ const {
   openTaskDrawer,
   executeTaskAction,
   isInteractiveOrAppOnly,
+  APP_ONLY_DISABLED_STATUS,
+  selectReopenableTasks,
   findNextPendingTask,
   recordTaskAttempt,
   resetTaskAttempt,
@@ -253,9 +255,23 @@ async function runTasks(options = {}) {
       let totalActions = 0;
       const MAX_TOTAL_ACTIONS = config.TASK_MAX_ACTIONS;
 
+      // Segunda passada (opt-in): passadas extras focadas APENAS em tarefas que não
+      // concluíram nenhuma rodada ou concluíram parcialmente.
+      const retryUnfinished = config.TASK_RETRY_UNFINISHED === true;
+      const maxRetryPasses = retryUnfinished ? Math.max(0, config.TASK_RETRY_PASSES ?? 1) : 0;
+      const retryDelayMs = config.TASK_RETRY_DELAY_MS ?? 5000;
+      // Títulos que esgotaram as rodadas/tentativas anteriormente; só estes podem ser
+      // "reabertos" na passada extra (evita reprocessar tarefas já concluídas).
+      const exhaustedTitles = new Set();
+
       if (skipAppOnlyTasks) {
         logger.warn(
           'Verificação das tarefas exclusivas do app DESLIGADA (SKIP_APP_ONLY_TASKS=true): Prize Land/regar, minigames, quizzes e avaliações serão ignorados.'
+        );
+      }
+      if (retryUnfinished) {
+        logger.warn(
+          `Segunda passada ATIVADA (TASK_RETRY_UNFINISHED=true): até ${maxRetryPasses} passada(s) extra(s) apenas para tarefas incompletas.`
         );
       }
 
@@ -271,187 +287,236 @@ async function runTasks(options = {}) {
           ensureMainPageFn: ensureMainPage
         });
 
-      while (totalActions < MAX_TOTAL_ACTIONS) {
-        const {
-          page: refreshedPage,
-          tasks: currentTasks,
-          error: extractErr
-        } = await getDrawerTasksWithRetry(page, {
-          maxRetries: 2,
-          label: 'loop de tarefas'
-        });
-        page = refreshedPage;
+      for (let pass = 0; pass <= maxRetryPasses; pass++) {
+        if (pass > 0) {
+          // Reabre SOMENTE as tarefas que ficaram incompletas/falharam na passada anterior.
+          // Concluídas (isDone) e tarefas do app desativadas nunca são reabertas.
+          const reopened = [];
+          for (const title of exhaustedTitles) {
+            if (failedTasks[title] === APP_ONLY_DISABLED_STATUS) continue;
+            delete failedTasks[title];
+            taskAttempts[title] = 0;
+            const roundKey = getRoundKey({ title, statusText: taskStatusMap[title] });
+            if (roundKey) roundAttemptsMap[roundKey] = 0;
+            reopened.push(title);
+          }
+          exhaustedTitles.clear();
 
-        if (extractErr) {
-          logger.error(
-            { err: extractErr.message },
-            'Falha persistente ao ler painel de tarefas no loop. Encerrando etapa para evitar loop infinito.'
+          if (reopened.length === 0) {
+            logger.info('Segunda passada: nenhuma tarefa incompleta para reabrir. Encerrando.');
+            break;
+          }
+          logger.info(
+            `Segunda passada ${pass}/${maxRetryPasses}: reabrindo ${reopened.length} tarefa(s) incompleta(s): ${reopened.join(' | ')}`
           );
-          break;
-        }
-
-        if (!currentTasks || currentTasks.length === 0) {
-          logger.info('Nenhuma tarefa pendente encontrada no painel. Etapa concluída com sucesso.');
-          break;
-        }
-
-        if (skipAppOnlyTasks) {
-          for (const t of currentTasks) {
-            if (
-              t &&
-              !t.isDone &&
-              !disabledAppOnlyLogged.has(t.title) &&
-              isInteractiveOrAppOnly(t)
-            ) {
-              disabledAppOnlyLogged.add(t.title);
-              logger.warn(
-                `Tarefa "${t.title}" exige o app e está desativada (SKIP_APP_ONLY_TASKS=true). Ignorando.`
-              );
-            }
+          if (retryDelayMs > 0) {
+            logger.info(`Aguardando ${retryDelayMs}ms antes da passada extra...`);
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
           }
         }
 
-        // Se uma tarefa progrediu de rodada ou status, reseta suas tentativas consecutivas
-        for (const t of currentTasks) {
-          if (t.completedRounds !== null && t.completedRounds !== undefined) {
-            const prevRounds =
-              taskProgressMap[t.title] !== undefined ? taskProgressMap[t.title] : -1;
-            if (t.completedRounds > prevRounds) {
-              if (prevRounds >= 0) {
-                logger.info(
-                  `Tarefa "${t.title}" avançou de rodada (${t.completedRounds}/${t.totalRounds}). Resetando tentativas.`
+        while (totalActions < MAX_TOTAL_ACTIONS) {
+          const {
+            page: refreshedPage,
+            tasks: currentTasks,
+            error: extractErr
+          } = await getDrawerTasksWithRetry(page, {
+            maxRetries: 2,
+            label: pass > 0 ? `segunda passada ${pass}` : 'loop de tarefas'
+          });
+          page = refreshedPage;
+
+          if (extractErr) {
+            logger.error(
+              { err: extractErr.message },
+              'Falha persistente ao ler painel de tarefas no loop. Encerrando etapa para evitar loop infinito.'
+            );
+            break;
+          }
+
+          if (!currentTasks || currentTasks.length === 0) {
+            logger.info(
+              'Nenhuma tarefa pendente encontrada no painel. Etapa concluída com sucesso.'
+            );
+            break;
+          }
+
+          if (skipAppOnlyTasks) {
+            for (const t of currentTasks) {
+              if (
+                t &&
+                !t.isDone &&
+                !disabledAppOnlyLogged.has(t.title) &&
+                isInteractiveOrAppOnly(t)
+              ) {
+                disabledAppOnlyLogged.add(t.title);
+                logger.warn(
+                  `Tarefa "${t.title}" exige o app e está desativada (SKIP_APP_ONLY_TASKS=true). Ignorando.`
                 );
+              }
+            }
+          }
+
+          // Se uma tarefa progrediu de rodada ou status, reseta suas tentativas consecutivas
+          for (const t of currentTasks) {
+            if (t.completedRounds !== null && t.completedRounds !== undefined) {
+              const prevRounds =
+                taskProgressMap[t.title] !== undefined ? taskProgressMap[t.title] : -1;
+              if (t.completedRounds > prevRounds) {
+                if (prevRounds >= 0) {
+                  logger.info(
+                    `Tarefa "${t.title}" avançou de rodada (${t.completedRounds}/${t.totalRounds}). Resetando tentativas.`
+                  );
+                  resetTaskAttempt(taskAttempts, t.title);
+                }
+                taskProgressMap[t.title] = t.completedRounds;
+              }
+            }
+            if (t.statusText) {
+              const prevStatus = taskStatusMap[t.title];
+              if (prevStatus !== undefined && prevStatus !== t.statusText) {
                 resetTaskAttempt(taskAttempts, t.title);
               }
-              taskProgressMap[t.title] = t.completedRounds;
+              taskStatusMap[t.title] = t.statusText;
             }
           }
-          if (t.statusText) {
-            const prevStatus = taskStatusMap[t.title];
-            if (prevStatus !== undefined && prevStatus !== t.statusText) {
-              resetTaskAttempt(taskAttempts, t.title);
-            }
-            taskStatusMap[t.title] = t.statusText;
+
+          const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask, {
+            roundAttemptsMap,
+            maxRoundAttempts,
+            failedTasks,
+            skipAppOnlyTasks
+          });
+
+          if (!pendingTask) {
+            logger.info('Todas as tarefas disponíveis foram concluídas ou verificadas.');
+            break;
           }
-        }
 
-        const pendingTask = findNextPendingTask(currentTasks, taskAttempts, maxAttemptsPerTask, {
-          roundAttemptsMap,
-          maxRoundAttempts,
-          failedTasks,
-          skipAppOnlyTasks
-        });
+          const roundKey = getRoundKey(pendingTask);
+          recordTaskAttempt(taskAttempts, pendingTask.title);
+          recordRoundAttempt(roundAttemptsMap, roundKey);
+          totalActions++;
 
-        if (!pendingTask) {
-          logger.info('Todas as tarefas disponíveis foram concluídas ou verificadas.');
-          break;
-        }
-
-        const roundKey = getRoundKey(pendingTask);
-        recordTaskAttempt(taskAttempts, pendingTask.title);
-        recordRoundAttempt(roundAttemptsMap, roundKey);
-        totalActions++;
-
-        const taskStartTime = new Date();
-        const roundInfo = pendingTask.totalRounds
-          ? ` [Rodada ${(pendingTask.completedRounds || 0) + 1}/${pendingTask.totalRounds}]`
-          : '';
-        logger.info(
-          `\n--- Executando: "${pendingTask.title}" (${pendingTask.coins})${roundInfo} ---`
-        );
-
-        const currentTaskEl = await findTaskElement(page, pendingTask.title, pendingTask.index);
-        if (!currentTaskEl) continue;
-
-        const actionBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
-        if (!actionBtn) continue;
-
-        // Caso 1: Botão é de Resgate / Coleta (Claim / Collect / +moedas)
-        if (pendingTask.isClaimable) {
+          const taskStartTime = new Date();
+          const roundInfo = pendingTask.totalRounds
+            ? ` [Rodada ${(pendingTask.completedRounds || 0) + 1}/${pendingTask.totalRounds}]`
+            : '';
           logger.info(
-            `Resgatando recompensa da tarefa "${pendingTask.title}" (botão "${pendingTask.btnText}")...`
+            `\n--- Executando: "${pendingTask.title}" (${pendingTask.coins})${roundInfo} ---`
           );
-          await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
-          await page.waitForTimeout(2000).catch(() => {});
-          await closeModals(page).catch(() => {});
-          resetTaskAttempt(taskAttempts, pendingTask.title);
-          continue;
-        }
 
-        // Caso 2: Ação executável (GO / IR)
-        newPageOpened = null;
-        await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(1500).catch(() => {});
+          const currentTaskEl = await findTaskElement(page, pendingTask.title, pendingTask.index);
+          if (!currentTaskEl) continue;
 
-        const activePage =
-          newPageOpened && typeof newPageOpened.isClosed === 'function' && !newPageOpened.isClosed()
-            ? newPageOpened
-            : page;
-        const isNewTab = activePage !== page;
+          const actionBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
+          if (!actionBtn) continue;
 
-        let actionTimedOut = false;
-        try {
-          await withTimeout(
-            async (signal) => {
-              const actionRes = await executeTaskAction({
-                page: activePage,
-                context,
-                task: {
-                  ...pendingTask,
-                  attempt: taskAttempts[pendingTask.title] || 1
-                },
-                config,
-                signal,
-                touchedCards
-              });
-              if (actionRes && actionRes.isSpecialOrAppOnly) {
-                markSpecialOrAppOnly(taskAttempts, pendingTask.title);
-              }
-            },
-            taskMaxDurationMs,
-            `Tempo limite da tarefa "${pendingTask.title}" excedido (${taskMaxDurationMs}ms)`
-          );
-        } catch (taskErr) {
-          if (taskErr.code === 'TASK_TIMEOUT' || taskErr.message?.includes('Tempo limite')) {
-            actionTimedOut = true;
-            logger.warn(
-              { task: pendingTask.title, timeoutMs: taskMaxDurationMs },
-              `Tempo limite de execução atingido para "${pendingTask.title}". Abortando tentativa.`
+          // Caso 1: Botão é de Resgate / Coleta (Claim / Collect / +moedas)
+          if (pendingTask.isClaimable) {
+            logger.info(
+              `Resgatando recompensa da tarefa "${pendingTask.title}" (botão "${pendingTask.btnText}")...`
             );
-          } else {
-            logger.error({ err: taskErr.message }, `Erro ao executar "${pendingTask.title}".`);
+            await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
+            await page.waitForTimeout(2000).catch(() => {});
+            await closeModals(page).catch(() => {});
+            resetTaskAttempt(taskAttempts, pendingTask.title);
+            continue;
           }
-        }
 
-        if (actionTimedOut) {
+          // Caso 2: Ação executável (GO / IR)
+          newPageOpened = null;
+          await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          await page.waitForTimeout(1500).catch(() => {});
+
+          const activePage =
+            newPageOpened &&
+            typeof newPageOpened.isClosed === 'function' &&
+            !newPageOpened.isClosed()
+              ? newPageOpened
+              : page;
+          const isNewTab = activePage !== page;
+
+          let actionTimedOut = false;
+          try {
+            await withTimeout(
+              async (signal) => {
+                const actionRes = await executeTaskAction({
+                  page: activePage,
+                  context,
+                  task: {
+                    ...pendingTask,
+                    attempt: taskAttempts[pendingTask.title] || 1
+                  },
+                  config,
+                  signal,
+                  touchedCards
+                });
+                if (actionRes && actionRes.isSpecialOrAppOnly) {
+                  markSpecialOrAppOnly(taskAttempts, pendingTask.title);
+                }
+              },
+              taskMaxDurationMs,
+              `Tempo limite da tarefa "${pendingTask.title}" excedido (${taskMaxDurationMs}ms)`
+            );
+          } catch (taskErr) {
+            if (taskErr.code === 'TASK_TIMEOUT' || taskErr.message?.includes('Tempo limite')) {
+              actionTimedOut = true;
+              logger.warn(
+                { task: pendingTask.title, timeoutMs: taskMaxDurationMs },
+                `Tempo limite de execução atingido para "${pendingTask.title}". Abortando tentativa.`
+              );
+            } else {
+              logger.error({ err: taskErr.message }, `Erro ao executar "${pendingTask.title}".`);
+            }
+          }
+
+          if (actionTimedOut) {
+            if (isNewTab && activePage && typeof activePage.close === 'function') {
+              await activePage.close().catch(() => {});
+            }
+            await closeOrphanPages();
+            page = await ensureMainPage(page);
+            if (typeof page.waitForTimeout === 'function') {
+              await page.waitForTimeout(1000).catch(() => {});
+            }
+            const taskEndTime = new Date();
+            logger.info(
+              `Ação abortada por timeout em: ${formatDuration(taskEndTime - taskStartTime)}`
+            );
+            continue;
+          }
+
           if (isNewTab && activePage && typeof activePage.close === 'function') {
             await activePage.close().catch(() => {});
           }
           await closeOrphanPages();
           page = await ensureMainPage(page);
+          // Aguarda sincronização do AliExpress e atualização do status da tarefa
           if (typeof page.waitForTimeout === 'function') {
-            await page.waitForTimeout(1000).catch(() => {});
+            await page.waitForTimeout(2500).catch(() => {});
           }
+
           const taskEndTime = new Date();
-          logger.info(
-            `Ação abortada por timeout em: ${formatDuration(taskEndTime - taskStartTime)}`
+          logger.info(`Concluída ação em: ${formatDuration(taskEndTime - taskStartTime)}`);
+        }
+
+        // Fim do loop interno. Registra as tarefas esgotadas nesta passada para eventual
+        // reabertura na passada extra (apenas incompletas/falhas, nunca concluídas/app-only).
+        if (retryUnfinished && pass < maxRetryPasses) {
+          for (const title of selectReopenableTasks({ failedTasks })) {
+            exhaustedTitles.add(title);
+          }
+        }
+
+        const loopStalled = totalActions >= MAX_TOTAL_ACTIONS;
+        if (loopStalled) {
+          logger.warn(
+            'Teto global de ações atingido; encerrando novas passadas para não estourar o tempo.'
           );
-          continue;
+          break;
         }
-
-        if (isNewTab && activePage && typeof activePage.close === 'function') {
-          await activePage.close().catch(() => {});
-        }
-        await closeOrphanPages();
-        page = await ensureMainPage(page);
-        // Aguarda sincronização do AliExpress e atualização do status da tarefa
-        if (typeof page.waitForTimeout === 'function') {
-          await page.waitForTimeout(2500).catch(() => {});
-        }
-
-        const taskEndTime = new Date();
-        logger.info(`Concluída ação em: ${formatDuration(taskEndTime - taskStartTime)}`);
       }
 
       const {

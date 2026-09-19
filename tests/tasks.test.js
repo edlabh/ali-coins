@@ -2480,3 +2480,110 @@ test('tasks - tryOpenFirstProductDetail não abre quando não há cards', async 
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('tasks - selectReopenableTasks reabre apenas incompletas (exclui app-only e concluídas)', () => {
+  const { selectReopenableTasks, APP_ONLY_DISABLED_STATUS } = require('../libs/tasks/state');
+
+  const failedTasks = {
+    'Task A': 'Falhou (limite de 4 tentativas atingido)',
+    'Task B': 'Falhou (sem progresso após 3 tentativas)',
+    'Task C': APP_ONLY_DISABLED_STATUS,
+    'Task D': 'Falhou (limite de 4 tentativas atingido)'
+  };
+  const tasks = [
+    { title: 'Task A', isDone: false },
+    { title: 'Task B', isDone: false },
+    { title: 'Task D', isDone: true }
+  ];
+
+  const reopened = selectReopenableTasks({ failedTasks, tasks });
+  assert.deepStrictEqual(reopened.sort(), ['Task A', 'Task B'].sort());
+});
+
+test('tasks - selectReopenableTasks retorna vazio sem falhas', () => {
+  const { selectReopenableTasks } = require('../libs/tasks/state');
+  assert.deepStrictEqual(selectReopenableTasks({ failedTasks: {} }), []);
+  assert.deepStrictEqual(selectReopenableTasks(), []);
+});
+
+test('config.js - TASK_RETRY_UNFINISHED/PASSES/DELAY são validados e desligados por padrão', () => {
+  const { configSchema } = require('../config');
+  const base = { ALI_USER: 'a@b.co', ALI_PASSWORD: 'pwd' };
+  const parsed = configSchema.parse(base);
+  assert.strictEqual(parsed.TASK_RETRY_UNFINISHED, false, 'padrão false');
+  assert.strictEqual(parsed.TASK_RETRY_PASSES, 1);
+  assert.strictEqual(parsed.TASK_RETRY_DELAY_MS, 5000);
+
+  assert.strictEqual(
+    configSchema.parse({ ...base, TASK_RETRY_UNFINISHED: 'true' }).TASK_RETRY_UNFINISHED,
+    true
+  );
+  assert.strictEqual(configSchema.parse({ ...base, TASK_RETRY_PASSES: '3' }).TASK_RETRY_PASSES, 3);
+  assert.strictEqual(
+    configSchema.parse({ ...base, TASK_RETRY_DELAY_MS: '2000' }).TASK_RETRY_DELAY_MS,
+    2000
+  );
+});
+
+test('tasks - segunda passada: reabre tarefa esgotada e processa novamente', () => {
+  const {
+    selectReopenableTasks,
+    findNextPendingTask,
+    recordRoundAttempt,
+    recordTaskAttempt,
+    getRoundKey
+  } = require('../libs/tasks/state');
+
+  const failedTasks = {};
+  const taskAttempts = {};
+  const roundAttemptsMap = {};
+  const maxAttempts = 4;
+  const maxRound = 3;
+
+  const task = {
+    title: 'Task X',
+    isDone: false,
+    statusText: '1/3',
+    completedRounds: 1,
+    totalRounds: 3,
+    isActionable: true
+  };
+
+  // 1ª passada: sem progresso até esgotar as rodadas -> entra em failedTasks
+  for (let i = 0; i < maxRound; i++) {
+    recordTaskAttempt(taskAttempts, task.title);
+    recordRoundAttempt(roundAttemptsMap, getRoundKey(task));
+  }
+  const next1 = findNextPendingTask([task], taskAttempts, maxAttempts, {
+    roundAttemptsMap,
+    maxRoundAttempts: maxRound,
+    failedTasks
+  });
+  assert.strictEqual(next1, null);
+  assert.match(failedTasks['Task X'], /sem progresso/);
+
+  // Segunda passada: reabre apenas a incompleta
+  const reopened = selectReopenableTasks({ failedTasks });
+  assert.deepStrictEqual(reopened, ['Task X']);
+  for (const title of reopened) {
+    delete failedTasks[title];
+    taskAttempts[title] = 0;
+    roundAttemptsMap[getRoundKey(task)] = 0;
+  }
+
+  // Após reabrir, a tarefa volta a ser elegível; se concluir, sai da fila
+  const next2 = findNextPendingTask([task], taskAttempts, maxAttempts, {
+    roundAttemptsMap,
+    maxRoundAttempts: maxRound,
+    failedTasks
+  });
+  assert.strictEqual(next2 && next2.title, 'Task X');
+
+  const doneTask = { ...task, isDone: true, completedRounds: 3 };
+  const next3 = findNextPendingTask([doneTask], taskAttempts, maxAttempts, {
+    roundAttemptsMap,
+    maxRoundAttempts: maxRound,
+    failedTasks
+  });
+  assert.strictEqual(next3, null);
+});

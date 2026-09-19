@@ -48,6 +48,7 @@ module.exports = {
   ensureMainPage,
   getDrawerTasksWithRetry,
   findNextPendingTask: dispatcher.findNextPendingTask,
+  selectReopenableTasks: dispatcher.selectReopenableTasks,
   recordTaskAttempt: dispatcher.recordTaskAttempt,
   resetTaskAttempt: dispatcher.resetTaskAttempt,
   markSpecialOrAppOnly: dispatcher.markSpecialOrAppOnly,

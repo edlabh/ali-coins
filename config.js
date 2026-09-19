@@ -125,6 +125,22 @@ const configSchema = z
     SCROLL_WAIT_SECONDS: positiveInt(10),
     LOCK_STALE_TIMEOUT_MS: positiveInt(30 * 60 * 1000),
 
+    // Tentativas ADICIONAIS (segunda passada) para tarefas que não concluíram nenhuma
+    // rodada ou concluíram parcialmente. Cada passada foca somente nas tarefas
+    // incompletas, respeita o teto global de ações e não repete claims/rodadas já feitas.
+    TASK_RETRY_UNFINISHED: z
+      .preprocess((val) => {
+        if (typeof val === 'string') {
+          return val.toLowerCase() === 'true' || val === '1';
+        }
+        return Boolean(val);
+      }, z.boolean())
+      .default(false),
+    // Quantidade máxima de passadas extras (padrão: 1 passada).
+    TASK_RETRY_PASSES: positiveInt(1),
+    // Espera entre passadas, em ms, para dar tempo do site consolidar o progresso (padrão: 5000).
+    TASK_RETRY_DELAY_MS: positiveInt(5000),
+
     // Tarefas que exigem o app nativo (Prize Land/regar, minigames como Merge Boss,
     // quizzes e avaliações de pedidos) nunca concluem via web e consomem tentativas.
     // Por padrão são desligadas (ignoradas no loop e marcadas no relatório).
@@ -444,6 +460,9 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     SCROLL_WAIT_SECONDS: process.env.SCROLL_WAIT_SECONDS,
     LOCK_STALE_TIMEOUT_MS: process.env.LOCK_STALE_TIMEOUT_MS,
     SKIP_APP_ONLY_TASKS: process.env.SKIP_APP_ONLY_TASKS,
+    TASK_RETRY_UNFINISHED: process.env.TASK_RETRY_UNFINISHED,
+    TASK_RETRY_PASSES: process.env.TASK_RETRY_PASSES,
+    TASK_RETRY_DELAY_MS: process.env.TASK_RETRY_DELAY_MS,
     PW_TRACE: process.env.PW_TRACE,
     PW_SCREENSHOT: process.env.PW_SCREENSHOT,
     PW_VIDEO: process.env.PW_VIDEO,

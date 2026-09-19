@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.3.2] - 2026-09-19
+
+### Adicionado
+
+- **Segunda passada configurável (`TASK_RETRY_UNFINISHED`, padrão `false`):** habilita passadas extras focadas **apenas** nas tarefas que não coletaram nenhuma rodada/falharam por falta de progresso. Ao final da passada normal, as tarefas esgotadas e ainda incompletas são reabertas (tentativas/rodadas zeradas) e reprocessadas — sem repetir tarefas concluídas nem as desativadas por exigirem o app. Controlado por `TASK_RETRY_PASSES` (número de passadas, padrão `1`) e `TASK_RETRY_DELAY_MS` (espera entre passadas, padrão `5000`). Respeita o teto global `TASK_MAX_ACTIONS`, não repete claims e é limitado (sem loop infinito).
+  - Nova função pura `selectReopenableTasks()` (`libs/tasks/state.js`) define quais tarefas podem ser reabertas (exclui `APP_ONLY_DISABLED_STATUS` e `isDone`).
+  - Documentado em `credentials.env.example`.
+
 ## [1.3.1] - 2026-09-19
 
 ### Adicionado
