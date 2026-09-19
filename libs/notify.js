@@ -821,8 +821,10 @@ async function sendTelegram({
  * @param {string|number|null} consolidatedChatId
  * @returns {boolean}
  */
-function shouldSkipAccountNotification(accountChatId, consolidatedChatId) {
+function shouldSkipAccountNotification(accountChatId, consolidatedChatId, options = {}) {
   if (!accountChatId) return false;
+  // Quando o envio individual está habilitado explicitamente, nunca suprimir.
+  if (options.perAccountEnabled === true) return false;
   if (!consolidatedChatId) return false;
   return String(accountChatId) === String(consolidatedChatId);
 }

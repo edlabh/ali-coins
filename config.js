@@ -180,6 +180,17 @@ const configSchema = z
         return Boolean(val);
       }, z.boolean())
       .default(false),
+    // Envio da notificação individual de cada conta (além do consolidado final).
+    // Desligado por padrão: quando todas as contas usam o mesmo chat, evita rajada de
+    // mensagens no mesmo destino. O consolidado é SEMPRE enviado.
+    TELEGRAM_PER_ACCOUNT: z
+      .preprocess((val) => {
+        if (typeof val === 'string') {
+          return val.toLowerCase() === 'true' || val === '1';
+        }
+        return Boolean(val);
+      }, z.boolean())
+      .default(false),
     // Timeout por tentativa de envio ao Telegram; retry (até 3x) já cobre falhas
     // transitórias. 15s evita descartes em VPS com DNS/TLS lentos.
     TELEGRAM_TIMEOUT_MS: positiveInt(15000),
@@ -441,6 +452,7 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     TELEGRAM_SILENT: process.env.TELEGRAM_SILENT,
+    TELEGRAM_PER_ACCOUNT: process.env.TELEGRAM_PER_ACCOUNT,
     TELEGRAM_TIMEOUT_MS: process.env.TELEGRAM_TIMEOUT_MS,
     HEARTBEAT_ENABLED: rawHeartbeatEnabled,
     HEARTBEAT_URL: rawHeartbeatUrl,
@@ -786,6 +798,11 @@ async function handleDryRun() {
           cfg.TELEGRAM_ENABLED
             ? `Ativado (Chat ID: ${maskChatId(cfg.TELEGRAM_CHAT_ID)}, Token: [CONFIGURADO])`
             : 'Desativado'
+        }`
+      );
+      logger.info(
+        ` • Notificação individual por conta (TELEGRAM_PER_ACCOUNT): ${
+          cfg.TELEGRAM_PER_ACCOUNT ? 'Ativada' : 'Desativada (apenas consolidado)'
         }`
       );
       if (telegramTestResult) {

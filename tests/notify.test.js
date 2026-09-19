@@ -1144,4 +1144,33 @@ test('libs/notify.js - shouldSkipAccountNotification suprime conta com chat igua
   assert.strictEqual(shouldSkipAccountNotification(null, '222'), false);
   assert.strictEqual(shouldSkipAccountNotification('111', null), false);
   assert.strictEqual(shouldSkipAccountNotification('', ''), false);
+
+  // TELEGRAM_PER_ACCOUNT=true (perAccountEnabled) nunca suprime, mesmo com chat igual
+  assert.strictEqual(
+    shouldSkipAccountNotification('2659***', '2659***', { perAccountEnabled: true }),
+    false,
+    'envio individual habilitado deve ignorar a supressão por chat duplicado'
+  );
+  assert.strictEqual(
+    shouldSkipAccountNotification('111', '222', { perAccountEnabled: true }),
+    false
+  );
+});
+
+test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () => {
+  const { configSchema } = require('../config');
+  const base = { ALI_USER: 'a@b.co', ALI_PASSWORD: 'pwd' };
+  assert.strictEqual(configSchema.parse(base).TELEGRAM_PER_ACCOUNT, false, 'padrão false');
+  for (const on of ['true', '1', 'TRUE']) {
+    assert.strictEqual(
+      configSchema.parse({ ...base, TELEGRAM_PER_ACCOUNT: on }).TELEGRAM_PER_ACCOUNT,
+      true
+    );
+  }
+  for (const off of ['false', '0', '']) {
+    assert.strictEqual(
+      configSchema.parse({ ...base, TELEGRAM_PER_ACCOUNT: off }).TELEGRAM_PER_ACCOUNT,
+      false
+    );
+  }
 });

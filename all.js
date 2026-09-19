@@ -575,11 +575,13 @@ async function main() {
         }
 
         const accTiming = accTimer.end();
-        // Quando a conta usa o MESMO chat do relatório consolidado final, pular a mensagem
-        // individual evita rajada de envios ao mesmo destino (que causava timeout/descarte).
+        // Envio individual por conta é OPCIONAL (TELEGRAM_PER_ACCOUNT, padrão desligado).
+        // Quando desligado e a conta usa o mesmo chat do consolidado, a mensagem individual
+        // é suprimida para evitar rajada ao mesmo destino. O consolidado é sempre enviado.
         const skipAccountNotify = shouldSkipAccountNotification(
           account.telegramChatId,
-          config.TELEGRAM_CHAT_ID
+          config.TELEGRAM_CHAT_ID,
+          { perAccountEnabled: config.TELEGRAM_PER_ACCOUNT === true }
         );
         if (account.telegramChatId && !skipAccountNotify) {
           try {

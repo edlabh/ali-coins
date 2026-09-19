@@ -11,6 +11,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.3.0] - 2026-09-19
+
+### Adicionado
+
+- **`TELEGRAM_PER_ACCOUNT` (padrão `false`):** torna **opcional** o envio da notificação individual de cada conta além do relatório consolidado. Por padrão permanece **desligado**, preservando o comportamento anti-rajada (quando todas as contas usam o mesmo chat, apenas o consolidado é enviado). Ligue com `TELEGRAM_PER_ACCOUNT=true` no `credentials.env` para receber o detalhe de cada conta separadamente.
+  - O **relatório consolidado continua sendo sempre enviado**, independentemente da flag.
+  - A flag é validada pelo schema Zod (boolean), exibida no resumo do `--dry-run` e documentada em `credentials.env.example`.
+  - `shouldSkipAccountNotification()` agora recebe `{ perAccountEnabled }`: com a flag ligada nunca suprime a mensagem individual; desligada, mantém a supressão por chat duplicado.
+
 ## [1.2.2] - 2026-09-19
 
 ### Corrigido
