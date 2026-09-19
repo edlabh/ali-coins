@@ -18,6 +18,7 @@ const {
   closeModals,
   getBalanceDesktop,
   closeCachedDesktopContext,
+  shouldReuseDesktopContext,
   openTaskDrawer,
   executeTaskAction,
   isInteractiveOrAppOnly,
@@ -107,7 +108,8 @@ async function runTasks(options = {}) {
     try {
       const earlyDesktop = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
         allowMedia: config.ALLOW_MEDIA,
-        timeout: config.NAV_TIMEOUT_SHORT
+        timeout: config.NAV_TIMEOUT_SHORT,
+        reuseContext: shouldReuseDesktopContext()
       });
       if (earlyDesktop.totalBalance && earlyDesktop.totalBalance !== 'N/D') {
         initialBalance = earlyDesktop.totalBalance;
@@ -495,7 +497,8 @@ async function runTasks(options = {}) {
       try {
         const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
           allowMedia: config.ALLOW_MEDIA,
-          timeout: config.NAV_TIMEOUT_SHORT
+          timeout: config.NAV_TIMEOUT_SHORT,
+          reuseContext: shouldReuseDesktopContext()
         });
         if (desktopResult.totalBalance && desktopResult.totalBalance !== 'N/D') {
           finalBalance = desktopResult.totalBalance;
@@ -544,10 +547,13 @@ async function runTasks(options = {}) {
       throw flowErr;
     }
   } finally {
-    // Fecha contexto desktop cacheado (opt-in) para não reter RAM entre contas
-    await closeCachedDesktopContext().catch(() => {});
-    if (isInternalBrowser && browser) {
-      await browser.close().catch(() => {});
+    // No fluxo integrado o contexto desktop é mantido vivo através das etapas da conta;
+    // all.js fecha ao terminar cada conta. No standalone, fechamos aqui.
+    if (isInternalBrowser) {
+      await closeCachedDesktopContext().catch(() => {});
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
     }
   }
 }

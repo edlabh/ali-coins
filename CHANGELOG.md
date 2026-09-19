@@ -11,6 +11,12 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.3.1] - 2026-09-19
+
+### Adicionado
+
+- **`DESKTOP_REUSE_CONTEXT` (padrão `false`):** permite compartilhar um único `BrowserContext` desktop (`mycoin`) por conta nas leituras de saldo/streak, em vez de criar/fechar um contexto por leitura. **Desligado por padrão**: medição na VM mostrou que manter o contexto desktop vivo durante o fluxo mobile **eleva** o pico de RAM/PIDs (contextos concorrentes), o que é pior em host de 1 GB. Fica disponível para hosts com folga de memória. O contexto é sempre fechado ao fim de cada conta (não vaza cookies entre contas).
+
 ## [1.3.0] - 2026-09-19
 
 ### Adicionado

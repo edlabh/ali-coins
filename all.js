@@ -18,6 +18,7 @@ const {
   isStreakBreak
 } = require('./libs/report');
 const { sendTelegram, shouldSkipAccountNotification } = require('./libs/notify');
+const { closeCachedDesktopContext } = require('./libs/ui');
 const { sendHeartbeat } = require('./libs/heartbeat');
 const { startAccountTimer } = require('./libs/timing');
 const { setupGlobalCrashHandler } = require('./libs/crash');
@@ -572,6 +573,9 @@ async function main() {
           if (releaseAccountLock) {
             await releaseAccountLock();
           }
+          // Fecha o contexto desktop reaproveitado ao terminar a conta (evita reter
+          // RAM/cookies entre contas e não vaza a sessão de uma conta para a próxima).
+          await closeCachedDesktopContext().catch(() => {});
         }
 
         const accTiming = accTimer.end();

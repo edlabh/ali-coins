@@ -20,6 +20,7 @@ const {
   getStreakFromCoinPage,
   getBalanceDesktop,
   getCheckinCoinsFromStreak,
+  shouldReuseDesktopContext,
   closeCachedDesktopContext
 } = require('./libs/ui');
 const { renderCheckinReport, resolveStreakDays } = require('./libs/report');
@@ -80,7 +81,8 @@ async function runCheckin(options = {}) {
       try {
         const desktopCheck = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
           allowMedia: config.ALLOW_MEDIA,
-          timeout: config.NAV_TIMEOUT_SHORT
+          timeout: config.NAV_TIMEOUT_SHORT,
+          reuseContext: shouldReuseDesktopContext()
         });
         if (desktopCheck.hasAppCheckinToday) {
           wasAlreadyCollectedToday = true;
@@ -301,7 +303,8 @@ async function runCheckin(options = {}) {
       // 5. Confirmar resultado e saldo no desktop
       const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
         allowMedia: config.ALLOW_MEDIA,
-        timeout: config.NAV_TIMEOUT_SHORT
+        timeout: config.NAV_TIMEOUT_SHORT,
+        reuseContext: shouldReuseDesktopContext()
       });
 
       if (desktopResult.hasAppCheckinToday) {
@@ -468,10 +471,14 @@ async function runCheckin(options = {}) {
       throw flowErr;
     }
   } finally {
-    // Fecha contexto desktop cacheado (opt-in) para não reter RAM entre contas
-    await closeCachedDesktopContext().catch(() => {});
-    if (isInternalBrowser && browser) {
-      await browser.close().catch(() => {});
+    // No fluxo integrado (all.js) o contexto desktop cacheado é mantido vivo para o
+    // runTasks seguinte reaproveitá-lo; o fechamento ocorre no fim da conta em all.js.
+    // No modo standalone (collect.js sozinho) fechamos aqui para não reter RAM.
+    if (isInternalBrowser) {
+      await closeCachedDesktopContext().catch(() => {});
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
     }
   }
 }

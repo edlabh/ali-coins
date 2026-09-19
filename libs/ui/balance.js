@@ -281,6 +281,21 @@ let cachedDesktopContext = null;
 let cachedDesktopPage = null;
 
 /**
+ * Decide se o contexto desktop deve ser reutilizado entre leituras de saldo do mesmo run.
+ *
+ * Padrão: DESLIGADO. Medições na VM mostraram que manter o contexto desktop vivo durante
+ * o fluxo mobile eleva o pico de RAM/PIDs (contextos mobile e desktop concorrentes), o que
+ * é pior em host restrito. Reutilizar só compensa em cenários sem mobilização concorrente;
+ * habilite com DESKTOP_REUSE_CONTEXT=true se o host tiver folga e quiser priorizar tempo.
+ * @returns {boolean}
+ */
+function shouldReuseDesktopContext() {
+  const value = process.env.DESKTOP_REUSE_CONTEXT;
+  if (value === undefined || value === null || value === '') return false;
+  return /^(1|true|on|yes)$/i.test(String(value).trim());
+}
+
+/**
  * Fecha o contexto desktop eventualmente cacheado (chamar ao fim da conta/processo).
  * @returns {Promise<void>}
  */
@@ -401,6 +416,7 @@ module.exports = {
   getStreakFromCoinPage,
   getBalanceDesktop,
   closeCachedDesktopContext,
+  shouldReuseDesktopContext,
   extractStreakFromText,
   getStreakFromCheckinCoins,
   getCheckinCoinsFromStreak,

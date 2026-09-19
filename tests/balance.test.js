@@ -331,3 +331,28 @@ test('libs/ui/balance.js - closeCachedDesktopContext fecha o contexto reutilizad
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/ui/balance.js - shouldReuseDesktopContext é true por padrão e aceita opt-out', () => {
+  const { shouldReuseDesktopContext } = require('../libs/ui/balance');
+  const original = process.env.DESKTOP_REUSE_CONTEXT;
+  try {
+    delete process.env.DESKTOP_REUSE_CONTEXT;
+    assert.strictEqual(
+      shouldReuseDesktopContext(),
+      false,
+      'padrão deve ser desligado (pico de RAM)'
+    );
+
+    for (const on of ['true', '1', 'on', 'yes', 'TRUE']) {
+      process.env.DESKTOP_REUSE_CONTEXT = on;
+      assert.strictEqual(shouldReuseDesktopContext(), true, `${on} deve ativar o reuso`);
+    }
+    for (const off of ['false', '0', 'off', 'no']) {
+      process.env.DESKTOP_REUSE_CONTEXT = off;
+      assert.strictEqual(shouldReuseDesktopContext(), false);
+    }
+  } finally {
+    if (original !== undefined) process.env.DESKTOP_REUSE_CONTEXT = original;
+    else delete process.env.DESKTOP_REUSE_CONTEXT;
+  }
+});
