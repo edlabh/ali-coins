@@ -9,6 +9,7 @@ const {
   maskUser
 } = require('./config');
 const { formatDateTime, formatDuration, calculateAccountBackoff } = require('./time_utils');
+const { version: APP_VERSION } = require('./package.json');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const {
   renderUnifiedReport,
@@ -378,7 +379,7 @@ async function main() {
         const account = accounts[i];
         currentAccount = account;
         logger.info(
-          `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser}`
+          `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser} (versão v${APP_VERSION})`
         );
 
         const accTimer = startAccountTimer();

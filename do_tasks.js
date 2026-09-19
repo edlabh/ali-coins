@@ -38,6 +38,7 @@ const {
   getDrawerTasksWithRetry: getDrawerTasksWithRetryFn
 } = require('./libs/ui');
 const { renderTasksReport } = require('./libs/report');
+const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
 
 /**
@@ -64,6 +65,7 @@ async function runTasks(options = {}) {
 
   logger.info('================ EXECUÇÃO DAS TAREFAS DIÁRIAS ================');
   logger.info(`[Dia e Hora]: ${formatDateTime(tasksStartTime)}`);
+  logger.info(`[Versão] ali-coins v${APP_VERSION}`);
   logger.info(`[Login] Usuário: ${maskUser(userEmail)}`);
 
   let sessionData = options.sessionData || null;

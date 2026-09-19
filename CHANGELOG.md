@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.3.3] - 2026-09-19
+
+### Adicionado
+
+- **Versão do app no log e nas notificações:** a versão (`package.json`) passa a ser exibida:
+  - **Log por conta**: linha `[Versão] ali-coins vX.Y.Z` no início de cada execução de check-in/tarefas (`collect.js`, `do_tasks.js`) e sufixo `(versão vX.Y.Z)` na linha de início de cada conta no fluxo multi-conta (`all.js`).
+  - **Notificação Telegram**: todas as mensagens passam a exibir o host como `host (vX.Y.Z)`.
+
 ## [1.3.2] - 2026-09-19
 
 ### Adicionado

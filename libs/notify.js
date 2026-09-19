@@ -1,5 +1,6 @@
 const fs = require('fs');
 const os = require('os');
+const { version: APP_VERSION } = require('../package.json');
 const { formatDate, formatDateTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
 const { computeCheckinCoinsGained, computeTasksCoinsGained } = require('./report');
@@ -256,7 +257,8 @@ function buildMessage({
   hostname = process.env.NOTIFY_HOST_LABEL || os.hostname()
 } = {}) {
   const now = formatDateTime(new Date());
-  const safeHost = escapeHtml(hostname);
+  // Host com a versão do app: exibe "host (vX.Y.Z)" em todas as mensagens.
+  const safeHost = escapeHtml(`${hostname} (v${APP_VERSION})`);
 
   const resolveUser = (rep) => {
     if (!rep || rep.type === 'multi_account_report') return null; // evita falso-atribuir à conta 1

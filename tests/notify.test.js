@@ -13,6 +13,7 @@ const {
   TELEGRAM_MAX_ATTEMPTS
 } = require('../libs/notify');
 const { configSchema } = require('../config');
+const { version: APP_VERSION } = require('../package.json');
 const logger = require('../logger');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
@@ -100,7 +101,7 @@ test('libs/notify.js - buildMessage gera mensagens formatadas em PT-BR para todo
   const successMsg = buildMessage({ report: unifiedReport, event: 'success', hostname });
   assert.ok(successMsg.includes('✅ ali-coins —'));
   assert.ok(successMsg.includes('👤 <b>Conta:</b> <code>ag***@gmail.com</code>'));
-  assert.ok(successMsg.includes(`🖥️ <b>Host:</b> <code>${hostname}</code>`));
+  assert.ok(successMsg.includes(`🖥️ <b>Host:</b> <code>${hostname} (v${APP_VERSION})</code>`));
   assert.ok(successMsg.includes('🪙 Ganhas hoje: +111 moedas (check-in +70 / tarefas +41)'));
   assert.ok(successMsg.includes('📅 Sequência: 33 dias'));
   assert.ok(successMsg.includes('💰 Saldo: 3176 moedas'));
@@ -119,7 +120,7 @@ test('libs/notify.js - buildMessage gera mensagens formatadas em PT-BR para todo
   const checkinMsg = buildMessage({ report: checkinReport, event: 'success', hostname });
   assert.ok(checkinMsg.includes('✅ ali-coins —'));
   assert.ok(checkinMsg.includes('👤 <b>Conta:</b> <code>ag***@gmail.com</code>'));
-  assert.ok(checkinMsg.includes(`🖥️ <b>Host:</b> <code>${hostname}</code>`));
+  assert.ok(checkinMsg.includes(`🖥️ <b>Host:</b> <code>${hostname} (v${APP_VERSION})</code>`));
   assert.ok(checkinMsg.includes('🪙 Ganhas hoje: +70 moedas (check-in +70 / tarefas +0)'));
   assert.ok(checkinMsg.includes('📅 Sequência: 33 dias'));
   assert.ok(checkinMsg.includes('💰 Saldo: 3135 moedas'));
@@ -137,7 +138,7 @@ test('libs/notify.js - buildMessage gera mensagens formatadas em PT-BR para todo
   const tasksMsg = buildMessage({ report: tasksReport, event: 'success', hostname });
   assert.ok(tasksMsg.includes('✅ ali-coins —'));
   assert.ok(tasksMsg.includes('👤 <b>Conta:</b> <code>ag***@gmail.com</code>'));
-  assert.ok(tasksMsg.includes(`🖥️ <b>Host:</b> <code>${hostname}</code>`));
+  assert.ok(tasksMsg.includes(`🖥️ <b>Host:</b> <code>${hostname} (v${APP_VERSION})</code>`));
   assert.ok(tasksMsg.includes('🪙 Ganhas hoje: +41 moedas (check-in +0 / tarefas +41)'));
   assert.ok(tasksMsg.includes('💰 Saldo: 3176 moedas'));
   assert.ok(tasksMsg.includes('⏱️ Duração: 2m'));
@@ -1159,6 +1160,7 @@ test('libs/notify.js - shouldSkipAccountNotification suprime conta com chat igua
 
 test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () => {
   const { configSchema } = require('../config');
+  const { version: APP_VERSION } = require('../package.json');
   const base = { ALI_USER: 'a@b.co', ALI_PASSWORD: 'pwd' };
   assert.strictEqual(configSchema.parse(base).TELEGRAM_PER_ACCOUNT, false, 'padrão false');
   for (const on of ['true', '1', 'TRUE']) {
@@ -1173,4 +1175,16 @@ test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () =
       false
     );
   }
+});
+
+test('libs/notify.js - versão do app aparece na notificação (Host com vX.Y.Z)', () => {
+  const { buildMessage } = require('../libs/notify');
+  const msg = buildMessage({ event: 'dry_run', hostname: 'test-host' });
+  assert.ok(
+    msg.includes(`test-host (v${APP_VERSION})`),
+    'a notificação deve exibir a versão do app junto ao host'
+  );
+
+  const lockMsg = buildMessage({ event: 'lock_active', error: new Error('lock'), hostname: 'h' });
+  assert.ok(lockMsg.includes(`(v${APP_VERSION})`), 'lock_active também exibe a versão');
 });

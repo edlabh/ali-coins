@@ -24,6 +24,7 @@ const {
   closeCachedDesktopContext
 } = require('./libs/ui');
 const { renderCheckinReport, resolveStreakDays } = require('./libs/report');
+const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
 
 /**
@@ -49,6 +50,7 @@ async function runCheckin(options = {}) {
 
   logger.info('================ CHECK-IN DIÁRIO ================');
   logger.info(`[Dia e Hora]: ${formatDateTime(checkinStartTime)}`);
+  logger.info(`[Versão] ali-coins v${APP_VERSION}`);
   logger.info(`[Login] Usuário: ${maskUser(userEmail)}`);
 
   let browser = options.browser;
