@@ -351,3 +351,108 @@ test('collect.js - coinsGainedToday é "0" quando alreadyCollected=true e valor 
     'wasAlreadyCollectedToday=true não deve contabilizar moedas (deve ser 0)'
   );
 });
+
+test('libs/report.js - resolveStreakDays incrementa +1 ao realizar check-in e preserva/multi-casos', () => {
+  const { resolveStreakDays } = require('../libs/report');
+
+  // 1. Check-in recém-feito, UI ainda mostra o valor antigo -> incrementa +1
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: 9,
+      previousStreakDays: 9,
+      earlyDesktopStreak: 9,
+      justCollected: true
+    }).streakDays,
+    10,
+    'justCollected deve incrementar a base'
+  );
+
+  // 2. Sem meta local, mas desktop prévio = 30 -> usa desktop como base e incrementa
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: null,
+      previousStreakDays: null,
+      earlyDesktopStreak: 30,
+      justCollected: true
+    }).streakDays,
+    31,
+    'fallback para earlyDesktopStreak deve incrementar'
+  );
+
+  // 3. Base anterior menor que o desktop: usa o maior (Math.max) e incrementa
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: 5,
+      previousStreakDays: 5,
+      earlyDesktopStreak: 30,
+      justCollected: true
+    }).streakDays,
+    31,
+    'deve preferir a maior base disponível'
+  );
+
+  // 4. Re-execução no mesmo dia: preserva o streak consolidado
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: 3,
+      previousStreakDays: 12,
+      earlyDesktopStreak: 12,
+      justCollected: false,
+      alreadyCollected: true
+    }).streakDays,
+    12,
+    'alreadyCollected deve preservar a base'
+  );
+
+  // 5. Ciclo semanal espúrio (base > 7 e leitura <= 7) não regride
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: 6,
+      previousStreakDays: 200,
+      justCollected: false,
+      alreadyCollected: true
+    }).streakDays,
+    200,
+    'leitura do ciclo semanal não deve reduzir o streak'
+  );
+
+  // 6. Primeira execução sem histórico e sem leitura -> Dia 1
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: null,
+      previousStreakDays: null,
+      earlyDesktopStreak: null,
+      justCollected: true
+    }).streakDays,
+    1,
+    'primeira execução com check-in deve ser Dia 1'
+  );
+
+  // 7. Sem check-in e com base: usa a leitura detectada
+  assert.deepStrictEqual(
+    resolveStreakDays({
+      detectedStreak: 15,
+      previousStreakDays: 14,
+      justCollected: false
+    }).streakDays,
+    15
+  );
+});
+
+test('libs/report.js - resolveStreakDays mantém comportamento em uni e multi (função pura)', () => {
+  const { resolveStreakDays } = require('../libs/report');
+  // A mesma função é usada no fluxo unificado e no multi-conta (collect.js), então
+  // garante que bases numéricas e string produzem o mesmo resultado.
+  const num = resolveStreakDays({
+    detectedStreak: 7,
+    previousStreakDays: 7,
+    justCollected: true
+  }).streakDays;
+  const str = resolveStreakDays({
+    detectedStreak: '7',
+    previousStreakDays: 7,
+    justCollected: true
+  }).streakDays;
+  assert.strictEqual(num, 8);
+  assert.strictEqual(str, 8);
+});

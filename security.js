@@ -197,7 +197,45 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
     await handle.close();
     handle = null;
 
-    await fs.promises.rename(tmpPath, filePath);
+    try {
+      await fs.promises.rename(tmpPath, filePath);
+    } catch (renameErr) {
+      // Em bind mounts de arquivo (ex: Docker -v arquivo:/app/arquivo) o rename sobre o
+      // ponto de montagem falha com EBUSY/EXDEV/EPERM. Nesse caso escrevemos diretamente
+      // no destino (truncate + write + fsync), preservando 0o600; a atomicidade não é
+      // possível, mas sem este fallback nenhuma escrita de sessão/metadados acontecia.
+      const canFallback =
+        renameErr &&
+        ['EBUSY', 'EXDEV', 'EPERM', 'EACCES'].includes(renameErr.code) &&
+        fs.existsSync(filePath);
+
+      if (!canFallback) throw renameErr;
+
+      let direct = null;
+      try {
+        direct = await fs.promises.open(filePath, 'w', 0o600);
+        if (Buffer.isBuffer(data)) {
+          await direct.write(data);
+        } else {
+          await direct.writeFile(data, encoding);
+        }
+        if (durable) {
+          await direct.sync();
+        }
+      } finally {
+        if (direct) {
+          try {
+            await direct.close();
+          } catch {
+            // Ignora erro ao fechar handle direto
+          }
+        }
+        await fs.promises.unlink(tmpPath).catch(() => {});
+      }
+      safeChmod600(filePath);
+      return;
+    }
+
     safeChmod600(filePath);
 
     // Durabilidade do rename: fsync do diretório (best-effort; pode não ser suportado

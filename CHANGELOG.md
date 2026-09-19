@@ -11,6 +11,18 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.2.2] - 2026-09-19
+
+### Corrigido
+
+- **Check-in contabilizado no extrato das tarefas (`collect.js`, `libs/report.js`):** o valor recebido no check-in não é mais somado ao ganho das tarefas. `collect.js` deixa de inflar o saldo base e só o sincroniza quando o ledger do desktop está **defasado** (não refletiu o crédito), garantindo que o saldo usado como `initialBalance` das tarefas já contenha o check-in. Assim `computeTasksCoinsGained` reporta estritamente o ganho das tarefas, enquanto o check-in é contabilizado à parte por `computeCheckinCoinsGained`.
+- **Check-in contabilizado apenas quando ainda não ocorreu no dia (`libs/report.js`):** `computeCheckinCoinsGained` retorna 0 quando `alreadyCollected === true`; em execuções no mesmo dia o extrato mostra `check-in +0` e apenas as tarefas.
+- **Incremento determinístico do streak (`collect.js`, `libs/report.js`):** nova função pura `resolveStreakDays()` centraliza a lógica (antes inline e divergente). Garante `+1` ao realizar o check-in no dia, usa `previousStreakDays` **ou** a leitura do desktop como base (a maior), preserva o streak consolidado em re-execução e evita regressão pelo ciclo semanal espúrio. Funciona igual em conta única e multi-conta (mesma função usada no fluxo).
+
+### Testes
+
+- Novos testes para isolamento contábil do check-in (`computeTasksCoinsGained`/`buildUnifiedReportPayload`/`buildMultiAccountReportPayload`), cenários de saldo creditado/defasado e `resolveStreakDays` (incremento, base via desktop, re-execução, ciclo semanal, primeira execução) — **306/306**.
+
 ## [1.2.1] - 2026-09-19
 
 ### Corrigido

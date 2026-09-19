@@ -9,7 +9,9 @@ const {
   renderCheckinReport,
   renderTasksReport,
   renderUnifiedReport,
-  renderMultiAccountReport
+  renderMultiAccountReport,
+  computeCheckinCoinsGained,
+  computeTasksCoinsGained
 } = require('../libs/report');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
@@ -1269,6 +1271,132 @@ test('libs/report.js - flushWebhooks aguarda webhooks em voo antes do encerramen
     global.fetch = originalFetch;
     if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
     else delete process.env.NOTIFY_WEBHOOK_URL;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - check-in NÃO é somado ao extrato das tarefas quando o saldo já é pós-crédito', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    // Fluxo real corrigido: collect.js reporta o saldo do desktop (já pós-check-in = 2050)
+    // e all.js passa esse saldo como initialBalance das tarefas.
+    const checkin = {
+      userEmail: 'user@example.com',
+      alreadyCollected: false,
+      coinsGainedToday: '50',
+      streakDays: 10,
+      totalBalance: '2050',
+      duration: '40s'
+    };
+    const tasks = {
+      results: [{ title: 'Explore sponsored items', status: 'Concluída', coins: '+5 moedas' }],
+      initialBalance: 2050,
+      finalBalance: 2100,
+      coinsGained: 50,
+      finalCoins: '2100 moedas',
+      duration: '2m'
+    };
+
+    const payload = buildUnifiedReportPayload(checkin, tasks, { totalDuration: '3m' });
+    assert.strictEqual(payload.meta.checkinCoinsGained, 50, 'check-in contabilizado à parte');
+    assert.strictEqual(
+      payload.meta.tasksCoinsGained,
+      50,
+      'tarefas NÃO devem absorver as moedas do check-in'
+    );
+    assert.strictEqual(payload.meta.totalCoinsGained, 100, 'total = check-in + tarefas');
+
+    // Multi-conta segue a mesma regra
+    const multi = buildMultiAccountReportPayload(
+      [
+        {
+          account: { maskedUser: 'a***@example.com' },
+          checkinResult: checkin,
+          tasksResult: tasks,
+          duration: '3m'
+        }
+      ],
+      { totalAccounts: 1, successfulAccounts: 1, totalDuration: '3m' }
+    );
+    assert.strictEqual(multi.accounts[0].meta.checkinCoinsGained, 50);
+    assert.strictEqual(multi.accounts[0].meta.tasksCoinsGained, 50);
+    assert.strictEqual(multi.accounts[0].meta.totalCoinsGained, 100);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - check-in já feito hoje não soma moedas (alreadyCollected)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const checkin = {
+      alreadyCollected: true,
+      coinsGainedToday: '0',
+      streakDays: 10,
+      totalBalance: '2050',
+      duration: '40s'
+    };
+    const tasks = {
+      results: [],
+      initialBalance: 2050,
+      finalBalance: 2150,
+      coinsGained: 100,
+      finalCoins: '2150 moedas',
+      duration: '2m'
+    };
+
+    const payload = buildUnifiedReportPayload(checkin, tasks, { totalDuration: '3m' });
+    assert.strictEqual(payload.meta.checkinCoinsGained, 0, 'já coletado hoje => 0');
+    assert.strictEqual(payload.meta.tasksCoinsGained, 100, 'tarefas preservadas');
+    assert.strictEqual(payload.meta.totalCoinsGained, 100);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - check-in não vaza para o extrato das tarefas com saldo defasado ou creditado', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    // Cenário saldo JÁ creditado: collect não soma; initialBalance já inclui o check-in
+    const checkinCredited = {
+      alreadyCollected: false,
+      coinsGainedToday: '50',
+      streakDays: 10,
+      totalBalance: '2050'
+    };
+    const tasksCredited = {
+      coinsGained: 50,
+      initialBalance: 2050,
+      finalBalance: 2100,
+      results: []
+    };
+    assert.strictEqual(computeCheckinCoinsGained(checkinCredited), 50);
+    assert.strictEqual(
+      computeTasksCoinsGained(tasksCredited, checkinCredited),
+      50,
+      'tarefas não podem absorver as moedas do check-in'
+    );
+
+    // Cenário saldo DEFASADO: collect sincroniza base=2050; initialBalance das tarefas=2050
+    const checkinStale = {
+      alreadyCollected: false,
+      coinsGainedToday: '50',
+      streakDays: 10,
+      totalBalance: '2050'
+    };
+    const tasksStale = {
+      coinsGained: 50,
+      initialBalance: 2050,
+      finalBalance: 2100,
+      results: []
+    };
+    assert.strictEqual(computeTasksCoinsGained(tasksStale, checkinStale), 50);
+
+    const payload = buildUnifiedReportPayload(checkinStale, tasksStale, { totalDuration: '1m' });
+    assert.strictEqual(payload.meta.checkinCoinsGained, 50);
+    assert.strictEqual(payload.meta.tasksCoinsGained, 50);
+    assert.strictEqual(payload.meta.totalCoinsGained, 100);
+  } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });

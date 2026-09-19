@@ -22,7 +22,7 @@ const {
   getCheckinCoinsFromStreak,
   closeCachedDesktopContext
 } = require('./libs/ui');
-const { renderCheckinReport } = require('./libs/report');
+const { renderCheckinReport, resolveStreakDays } = require('./libs/report');
 const logger = require('./logger');
 
 /**
@@ -317,66 +317,18 @@ async function runCheckin(options = {}) {
               ? earlyDesktopStreak
               : null;
 
-      let streakDays = detectedStreak !== null ? detectedStreak : 'N/D';
-
-      // Proteção contra regressão espúria de streak e garantia de incremento ao realizar check-in
-      if (typeof previousStreakDays === 'number' && previousStreakDays > 0) {
-        const parsedDetected =
-          typeof detectedStreak === 'number'
-            ? detectedStreak
-            : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
-
-        const isSpuriousWeeklyCycle =
-          !isNaN(parsedDetected) &&
-          previousStreakDays > 7 &&
-          parsedDetected <= 7 &&
-          parsedDetected > 1;
-
-        if (justCollected) {
-          // Quando o check-in acabou de ser realizado hoje, o streak DEVE subir (+1).
-          // Se a leitura da tela for espúria (<= 7), ausente, ou ainda não tiver sido atualizada pela UI (<= previousStreakDays),
-          // incrementamos o streak anterior.
-          if (
-            detectedStreak === null ||
-            isNaN(parsedDetected) ||
-            isSpuriousWeeklyCycle ||
-            parsedDetected <= previousStreakDays
-          ) {
-            logger.info(
-              { detectedStreak, previousStreak: previousStreakDays },
-              'Check-in realizado com sucesso hoje. Incrementando streak anterior (+1).'
-            );
-            streakDays = previousStreakDays + 1;
-          } else {
-            streakDays = parsedDetected;
-          }
-        } else if (alreadyCollected || wasAlreadyCollectedToday) {
-          // Re-execução no mesmo dia: preservar streak já consolidado
-          if (
-            detectedStreak === null ||
-            isNaN(parsedDetected) ||
-            isSpuriousWeeklyCycle ||
-            parsedDetected < previousStreakDays
-          ) {
-            logger.info(
-              { detectedStreak, previousStreak: previousStreakDays },
-              'Streak detectado na tela é espúrio (<= 7) ou ausente em re-execução. Preservando streak real da sessão.'
-            );
-            streakDays = previousStreakDays;
-          } else {
-            streakDays = parsedDetected;
-          }
-        } else {
-          streakDays = !isNaN(parsedDetected) ? parsedDetected : previousStreakDays;
-        }
-      } else if (justCollected) {
-        // Primeira execução sem histórico prévio de streak
-        const parsedDetected =
-          typeof detectedStreak === 'number'
-            ? detectedStreak
-            : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
-        streakDays = !isNaN(parsedDetected) && parsedDetected >= 1 ? parsedDetected : 1;
-      }
+      // Resolve o streak final (incremento determinístico, preservação em re-execução,
+      // proteção contra ciclo semanal espúrio e fallback para a leitura do desktop).
+      const { streakDays } = resolveStreakDays({
+        detectedStreak,
+        previousStreakDays,
+        earlyDesktopStreak:
+          typeof earlyDesktopStreak === 'number'
+            ? earlyDesktopStreak
+            : parseInt(String(earlyDesktopStreak).replace(/[^0-9]/g, ''), 10) || null,
+        justCollected,
+        alreadyCollected: alreadyCollected || wasAlreadyCollectedToday
+      });
 
       const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
       const isAlreadyCollected = (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected;
@@ -394,7 +346,8 @@ async function runCheckin(options = {}) {
         checkinCoinsNum = getCheckinCoinsFromStreak(streakDays);
       }
 
-      // Se o check-in já havia ocorrido hoje, não contabiliza nada nesta execução (+0 moedas)
+      // Se o check-in já havia ocorrido hoje, não contabiliza nada nesta execução (+0 moedas).
+      // O valor do check-in é reportado SEPARADAMENTE (nunca somado ao saldo das tarefas).
       const coinsGainedToday = isAlreadyCollected
         ? '0'
         : checkinCoinsNum !== null
@@ -403,27 +356,33 @@ async function runCheckin(options = {}) {
             ? String(getCheckinCoinsFromStreak(streakDays))
             : '0';
 
+      // Saldo base das tarefas.
+      // Quando o check-in acabou de ser feito e o saldo lido do desktop ainda NÃO reflete
+      // o crédito (ledger defasado), sincronizamos somando as moedas do check-in. Caso
+      // contrário, o ganho do check-in vazaria para o extrato das tarefas (all.js usa este
+      // valor como `initialBalance` e do_tasks mede final - inicial).
+      // O valor do check-in continua reportado à parte em `coinsGainedToday`.
       let totalBalance = desktopResult.totalBalance;
-      // Se acabou de coletar o check-in e o saldo desktop não refletiu ainda a adição das moedas
-      // (ex: desktopResult foi consultado antes do ledger registrar ou desktopCheck tinha o mesmo saldo)
       if (justCollected && checkinCoinsNum && totalBalance !== 'N/D') {
         const currentBalNum = parseInt(String(totalBalance).replace(/[^0-9]/g, ''), 10);
         const earlyBalNum =
           earlyTotalBalance !== null && earlyTotalBalance !== 'N/D'
             ? parseInt(String(earlyTotalBalance).replace(/[^0-9]/g, ''), 10)
             : NaN;
-        if (
-          (!isNaN(earlyBalNum) && currentBalNum <= earlyBalNum) ||
-          (!desktopResult.hasAppCheckinToday && !isNaN(currentBalNum))
-        ) {
-          totalBalance = String(currentBalNum + checkinCoinsNum);
+
+        const balanceAlreadyCredited =
+          !isNaN(earlyBalNum) && currentBalNum >= earlyBalNum + checkinCoinsNum;
+
+        if (!balanceAlreadyCredited && !isNaN(currentBalNum)) {
+          const base = !isNaN(earlyBalNum) ? earlyBalNum : currentBalNum;
+          totalBalance = String(base + checkinCoinsNum);
           logger.info(
             {
-              baseBalance: currentBalNum,
+              baseBalance: base,
               checkinCoins: checkinCoinsNum,
               updatedBalance: totalBalance
             },
-            'Saldo pós-checkin sincronizado com as moedas recebidas no check-in.'
+            'Saldo pós-checkin sincronizado com as moedas recebidas no check-in (ledger defasado).'
           );
         }
       }

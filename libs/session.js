@@ -512,7 +512,9 @@ async function updateSessionStreak(streakDays, options = {}) {
       return meta;
     }
   } catch (err) {
-    logger.debug({ err: err.message }, 'Aviso ao persistir streak em session_meta.json');
+    // warn (e não debug): falha ao persistir o streak deve ser visível, pois impacta
+    // diretamente o alerta de quebra de sequência na próxima execução.
+    logger.warn({ err: err.message }, 'Falha ao persistir streak em session_meta.json');
   }
   return null;
 }

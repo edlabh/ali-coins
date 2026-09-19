@@ -688,3 +688,33 @@ test('security.js - mensagem pública de descriptografia não expõe detalhes in
     }
   );
 });
+
+test('security.js - safeWriteFile faz fallback in-place quando rename falha (bind mount EBUSY)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('safe-write-ebusy-');
+  const file = path.join(tmpDir, 'session_meta.json');
+  const originalRename = fs.promises.rename;
+
+  try {
+    fs.writeFileSync(file, JSON.stringify({ lastStreakDays: 214 }), 'utf-8');
+
+    fs.promises.rename = async () => {
+      const err = new Error('resource busy or locked');
+      err.code = 'EBUSY';
+      throw err;
+    };
+
+    await safeWriteFile(file, JSON.stringify({ lastStreakDays: 216 }), 'utf-8', {
+      durable: false
+    });
+
+    const content = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    assert.strictEqual(content.lastStreakDays, 216, 'fallback in-place deve gravar o conteúdo');
+    const leftovers = fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp-'));
+    assert.deepStrictEqual(leftovers, [], 'fallback não deve deixar temporários órfãos');
+  } finally {
+    fs.promises.rename = originalRename;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

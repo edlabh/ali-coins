@@ -151,6 +151,78 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
 }
 
 /**
+ * Resolve o valor final de `streakDays` para o check-in, aplicando:
+ *  - incremento determinístico (+1) quando o check-in acabou de ser feito hoje;
+ *  - preservação do streak consolidado em re-execução no mesmo dia;
+ *  - proteção contra leitura espúria do ciclo semanal (<= 7 com base > 7);
+ *  - fallback para `earlyDesktopStreak` quando o meta local não tem histórico.
+ *
+ * @param {object} params
+ * @param {number|string|null} params.detectedStreak Valor lido na tela (mobile/desktop)
+ * @param {number|null} params.previousStreakDays Último streak persistido nos metadados
+ * @param {number|null} [params.earlyDesktopStreak=null] Streak lido no desktop pré-check-in
+ * @param {boolean} [params.justCollected=false] Check-in recém-realizado nesta execução
+ * @param {boolean} [params.alreadyCollected=false] Check-in já constava como feito hoje
+ * @returns {{ streakDays: number|string, baseStreak: number|null }}
+ */
+function resolveStreakDays({
+  detectedStreak,
+  previousStreakDays,
+  earlyDesktopStreak = null,
+  justCollected = false,
+  alreadyCollected = false
+}) {
+  const numericCandidates = [previousStreakDays, earlyDesktopStreak].filter(
+    (v) => typeof v === 'number' && v > 0
+  );
+  const baseStreak = numericCandidates.length > 0 ? Math.max(...numericCandidates) : null;
+
+  const parsedDetected =
+    typeof detectedStreak === 'number'
+      ? detectedStreak
+      : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+
+  let streakDays = detectedStreak !== null && detectedStreak !== undefined ? detectedStreak : 'N/D';
+
+  if (typeof baseStreak === 'number' && baseStreak > 0) {
+    const isSpuriousWeeklyCycle =
+      !isNaN(parsedDetected) && baseStreak > 7 && parsedDetected <= 7 && parsedDetected > 1;
+
+    if (justCollected) {
+      if (
+        detectedStreak === null ||
+        detectedStreak === undefined ||
+        isNaN(parsedDetected) ||
+        isSpuriousWeeklyCycle ||
+        parsedDetected <= baseStreak
+      ) {
+        streakDays = baseStreak + 1;
+      } else {
+        streakDays = parsedDetected;
+      }
+    } else if (alreadyCollected) {
+      if (
+        detectedStreak === null ||
+        detectedStreak === undefined ||
+        isNaN(parsedDetected) ||
+        isSpuriousWeeklyCycle ||
+        parsedDetected < baseStreak
+      ) {
+        streakDays = baseStreak;
+      } else {
+        streakDays = parsedDetected;
+      }
+    } else {
+      streakDays = !isNaN(parsedDetected) ? parsedDetected : baseStreak;
+    }
+  } else if (justCollected) {
+    streakDays = !isNaN(parsedDetected) && parsedDetected >= 1 ? parsedDetected : 1;
+  }
+
+  return { streakDays, baseStreak };
+}
+
+/**
  * Calcula as moedas ganhas no check-in para os relatórios.
  * IMPORTANTE: quando `alreadyCollected` é true, `coinsGainedToday` é apenas um eco
  * informativo do check-in já realizado (não é ganho desta execução) e deve ser ignorado.
@@ -176,10 +248,20 @@ function computeCheckinCoinsGained(checkin) {
 }
 
 /**
- * Calcula as moedas ganhas pelas tarefas (somente valores numéricos válidos).
- * Se o check-in foi realizado nesta execução e o saldo inicial das tarefas
- * não tiver sido ajustado (correspondendo ao saldo pré-checkin), desconta as moedas
- * do check-in para que o extrato das tarefas reflita estritamente o ganho das tarefas.
+ * Calcula as moedas ganhas pelas tarefas, de forma ISOLADA do check-in.
+ *
+ * Como o ganho das tarefas é medido por diferença de saldo (final - inicial) e o
+ * `initialBalance` é capturado em `all.js` a partir de `checkinResult.totalBalance`,
+ * precisamos descontar o check-in apenas quando esse saldo inicial NÃO refletia o
+ * crédito do check-in (saldo pré-crédito). Caso contrário o valor do check-in
+ * apareceria somado ao extrato das tarefas.
+ *
+ * Regras (compatíveis com os formatos antigos):
+ *  1. `checkin.totalBalance` é explícito como pré-crédito → desconta.
+ *  2. `initialBalance` corresponder a `totalBalance - checkinCoins` → desconta (legado).
+ *
+ * O check-in em si é contabilizado exclusivamente por `computeCheckinCoinsGained`,
+ * que retorna 0 quando `alreadyCollected === true` (já ocorreu no dia).
  * @param {object|null} tasks
  * @param {object|null} [checkin=null]
  * @returns {number}
@@ -197,9 +279,14 @@ function computeTasksCoinsGained(tasks, checkin = null) {
   const initBal = parseInt(String(tasks.initialBalance || '').replace(/\D/g, ''), 10);
   const checkinBal = parseInt(String(checkin.totalBalance || '').replace(/\D/g, ''), 10);
 
-  // Se o saldo inicial das tarefas corresponde ao saldo pré-checkin (totalBalance - checkinCoins),
-  // a diferença de saldo das tarefas absorveu as moedas do check-in. Descontamos para evitar soma/duplicação.
+  // Legado: saldo inicial das tarefas capturado ANTES do crédito do check-in
   if (!isNaN(initBal) && !isNaN(checkinBal) && initBal === checkinBal - checkinCoins) {
+    return Math.max(0, rawCoins - checkinCoins);
+  }
+
+  // Sinal explícito de que o saldo informado é pré-crédito do check-in
+  // (compatibilidade com consumidores que o definam)
+  if (checkin.balanceBeforeCheckin === true) {
     return Math.max(0, rawCoins - checkinCoins);
   }
 
@@ -795,5 +882,6 @@ module.exports = {
   renderTasksReport,
   renderUnifiedReport,
   renderMultiAccountReport,
-  isStreakBreak
+  isStreakBreak,
+  resolveStreakDays
 };
