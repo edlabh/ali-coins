@@ -714,15 +714,23 @@ function truncateMessageIfNeeded(text) {
   if (text.length <= TELEGRAM_MAX_LENGTH) {
     return text;
   }
-  // Corta por code points (evita partir emojis/pares substitutos do UTF-16) e remove
-  // o último tag HTML aberto sem fechamento (evita entidades inválidas -> HTTP 400).
-  const codePoints = Array.from(text);
-  let cut = codePoints.slice(0, TELEGRAM_SAFE_LIMIT).join('');
+  // O limite do Telegram é em unidades UTF-16 (`text.length`): cortar por code points
+  // podia exceder 4096 com emojis astrais (cada um ocupa 2). Itera code points até o
+  // teto seguro em UTF-16, sem partir par substituto.
+  let cut = '';
+  let used = 0;
+  for (const ch of text) {
+    if (used + ch.length > TELEGRAM_SAFE_LIMIT) break;
+    cut += ch;
+    used += ch.length;
+  }
   const lastNewline = cut.lastIndexOf('\n');
   if (lastNewline > 2000) cut = cut.slice(0, lastNewline);
   const lastOpen = cut.lastIndexOf('<');
   const lastClose = cut.lastIndexOf('>');
   if (lastOpen > lastClose) cut = cut.slice(0, lastOpen);
+  // Não deixa uma entidade HTML parcial no fim (ex.: "&am"), que gera HTML inválido.
+  cut = cut.replace(/&[a-z#0-9]*;?$/i, '');
   return `${cut}\n\n<i>... [mensagem truncada pelo limite de caracteres]</i>`;
 }
 
@@ -805,7 +813,16 @@ async function sendTelegram({
 
     // Fallback: se retornar 400 por erro de parse de entidades HTML, tenta enviar como texto puro
     if (response.status === 400) {
-      const plainText = truncateMessageIfNeeded(messageHtml.replace(/<[^>]+>/g, ''));
+      const plainText = truncateMessageIfNeeded(
+        messageHtml
+          .replace(/<[^>]+>/g, '')
+          // Desescapa entidades: sem isto o fallback de texto puro mantinha `&amp;`/
+          // `&lt;` literais (e um `&am` de corte virava lixo visível).
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+      );
       response = await postToTelegramWithRetry(
         apiUrl,
         {

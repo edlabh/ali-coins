@@ -83,4 +83,6 @@ USER appuser
 HEALTHCHECK --interval=5m --timeout=30s --start-period=60s --retries=5 \
     CMD node all.js --dry-run --json > /dev/null 2>&1
 
-CMD ["npm", "start"]
+STOPSIGNAL SIGTERM
+
+CMD ["node", "all.js"]

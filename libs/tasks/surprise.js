@@ -439,7 +439,9 @@ async function executeSurpriseItems(
       }
     }
 
-    clickedCount++;
+    if (clickSucceeded) {
+      clickedCount++;
+    }
     if (typeof page.waitForTimeout === 'function') {
       await page.waitForTimeout(400).catch(() => {});
     }

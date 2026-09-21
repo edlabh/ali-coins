@@ -44,6 +44,13 @@ function setupGlobalCrashHandler(getContext = () => ({})) {
     // Sem unref(): o timer DEVE manter o processo vivo para garantir o exit code 6 —
     // com unref, se o event loop drenasse, o Node sairia com código 0.
     setTimeout(() => {
+      // Garante que as últimas linhas do log fatal cheguem ao stderr antes de sair
+      // (o buffer do pino/sonic-boom pode não ter sido drenado).
+      try {
+        if (logger && typeof logger.flushLogs === 'function') logger.flushLogs();
+      } catch {
+        // Ignora falha de flush no caminho de emergência
+      }
       process.exit(6);
     }, 15000);
 

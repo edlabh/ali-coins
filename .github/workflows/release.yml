@@ -25,6 +25,7 @@ jobs:
   verify:
     name: Verify tag
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
@@ -83,6 +84,7 @@ jobs:
     name: Publish GitHub Release
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:

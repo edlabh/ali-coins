@@ -60,7 +60,8 @@ test('tasks - executeSearchTask preenche termo de busca com mock page', async ()
     };
 
     const mockPage = {
-      $: async (selector) => (selector === 'input' ? mockInput : null),
+      $: async (selector) => (String(selector).includes('input') ? mockInput : null),
+      $$: async () => [mockInput],
       evaluate: async () => {},
       waitForTimeout: async () => {},
       on: () => {},
@@ -2508,7 +2509,11 @@ test('tasks - selectReopenableTasks retorna vazio sem falhas', () => {
 
 test('config.js - TASK_RETRY_UNFINISHED/PASSES/DELAY são validados e desligados por padrão', () => {
   const { configSchema } = require('../config');
-  const base = { ALI_USER: 'a@b.co', ALI_PASSWORD: 'pwd' };
+  const base = {
+    ALI_USER: 'a@b.co',
+    ALI_PASSWORD: 'pwd',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
   const parsed = configSchema.parse(base);
   assert.strictEqual(parsed.TASK_RETRY_UNFINISHED, false, 'padrão false');
   assert.strictEqual(parsed.TASK_RETRY_PASSES, 1);

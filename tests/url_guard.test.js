@@ -48,6 +48,26 @@ test('libs/url_guard.js - isPrivateIp cobre 6to4 hextets 2-3, multicast e canoni
   assert.strictEqual(isPrivateIp('2002:808:808::'), false, '6to4 de 8.8.8.8 é público');
 });
 
+test('libs/url_guard.js - M1: lookup pinado bloqueia IP privado na conexão', async () => {
+  const { filterSafeAddresses, createSafeLookup } = require('../libs/url_guard');
+  assert.deepStrictEqual(
+    filterSafeAddresses([
+      { address: '127.0.0.1', family: 4 },
+      { address: '8.8.8.8', family: 4 },
+      { address: '2002:a9fe:a9fe::', family: 6 }
+    ]).map((a) => a.address),
+    ['8.8.8.8'],
+    'filtro deve descartar loopback e 6to4 de metadata'
+  );
+  await new Promise((resolve) => {
+    createSafeLookup()('localhost', {}, (err) => {
+      assert.ok(err, 'localhost deve ser bloqueado no lookup pinado');
+      assert.strictEqual(err.code, 'SSRF_BLOCKED');
+      resolve();
+    });
+  });
+});
+
 test('libs/url_guard.js - allowPrivateTargets lê ALLOW_PRIVATE_WEBHOOKS', () => {
   assert.strictEqual(allowPrivateTargets({}), false);
   assert.strictEqual(allowPrivateTargets({ ALLOW_PRIVATE_WEBHOOKS: 'false' }), false);

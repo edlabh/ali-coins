@@ -19,10 +19,32 @@ async function executeSearchTask({
   signal = null
 } = {}) {
   logger.info(`Executando busca por produto: "${query}"...`);
-  const searchInput = await page.$('input').catch(() => null);
+  // Seletor específico e VISÍVEL: o primeiro `<input>` do documento costuma ser um campo
+  // oculto (CSRF/tracking) e o `fill` falhava silenciosamente, sem iniciar a busca.
+  let searchInput = await page
+    .$(
+      'input[type="search"], input[name*="SearchText" i], input[placeholder*="search" i], input[aria-label*="search" i], input[name*="search" i]'
+    )
+    .catch(() => null);
+  if (!searchInput && typeof page.$$ === 'function') {
+    // Último recurso: primeiro input VISÍVEL (evita o oculto)
+    const candidates = await page.$$('input').catch(() => []);
+    for (const candidate of candidates) {
+      const visible =
+        typeof candidate.isVisible === 'function'
+          ? await candidate.isVisible().catch(() => false)
+          : true;
+      if (visible) {
+        searchInput = candidate;
+        break;
+      }
+    }
+  }
   if (searchInput) {
     if (searchInput.fill) await searchInput.fill(query).catch(() => {});
     if (searchInput.press) await searchInput.press('Enter').catch(() => {});
+  } else {
+    logger.warn('Campo de busca não localizado na página; tarefa de busca não iniciada.');
   }
   if (typeof waitWithScroll === 'function') {
     await waitWithScroll(page, scrollWaitSeconds, {

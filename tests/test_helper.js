@@ -86,6 +86,11 @@ function assertRealFilesUntouched(snapshot) {
       prev.mtimeMs,
       `Arquivo produtivo "${file}" teve seu mtime alterado indevidamente pelo teste!`
     );
+    assert.strictEqual(
+      stat.size,
+      prev.size,
+      `Arquivo produtivo "${file}" teve seu tamanho alterado indevidamente pelo teste!`
+    );
   }
 }
 

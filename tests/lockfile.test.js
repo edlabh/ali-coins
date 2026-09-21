@@ -117,7 +117,20 @@ test('lockfile.js - refresh periódico mantém o lock ativo em execuções longa
 
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    const refreshed = JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
+    // Leitura tolerante à janela de renovação: o refresh move o lock para um claim
+    // por poucos ms (o acquire cobre isso com a carência de leitura).
+    const readLockWithRetry = async () => {
+      for (let i = 0; i < 40; i++) {
+        try {
+          return JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
+        } catch (err) {
+          if (err.code !== 'ENOENT') throw err;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      throw new Error('lock não reapareceu após a renovação');
+    };
+    const refreshed = await readLockWithRetry();
     assert.strictEqual(
       refreshed.lockId,
       first.lockId,

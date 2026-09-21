@@ -182,7 +182,8 @@ test('libs/notify.js - buildMessage gera mensagens formatadas em PT-BR para todo
 test('config.js - validação Zod para variáveis do Telegram', () => {
   const baseConfig = {
     ALI_USER: 'test@example.com',
-    ALI_PASSWORD: 'password123'
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
   };
 
   // 1. TELEGRAM_ENABLED=false permite campos vazios
@@ -1161,7 +1162,11 @@ test('libs/notify.js - shouldSkipAccountNotification suprime conta com chat igua
 test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () => {
   const { configSchema } = require('../config');
   const { version: APP_VERSION } = require('../package.json');
-  const base = { ALI_USER: 'a@b.co', ALI_PASSWORD: 'pwd' };
+  const base = {
+    ALI_USER: 'a@b.co',
+    ALI_PASSWORD: 'pwd',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
   assert.strictEqual(configSchema.parse(base).TELEGRAM_PER_ACCOUNT, false, 'padrão false');
   for (const on of ['true', '1', 'TRUE']) {
     assert.strictEqual(
@@ -1175,6 +1180,18 @@ test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () =
       false
     );
   }
+});
+
+test('libs/notify.js - truncamento respeita UTF-16 e não deixa entidade parcial', () => {
+  const { truncateMessageIfNeeded } = require('../libs/notify');
+  // Emojis astrais ocupam 2 unidades UTF-16: o corte não pode exceder o teto do Telegram.
+  const emojis = truncateMessageIfNeeded('😀'.repeat(5000));
+  assert.ok(emojis.length <= 4096, `mensagem truncada excedeu o limite UTF-16: ${emojis.length}`);
+  // Entidade parcial no fim deve ser removida
+  const withEntity = 'a'.repeat(3990) + '&amp;' + 'b'.repeat(50);
+  const out2 = truncateMessageIfNeeded(withEntity);
+  const body = out2.replace(/\n\n<i>[\s\S]*$/, '');
+  assert.ok(!/&[a-z#0-9]*;?$/i.test(body), 'não pode terminar em entidade parcial');
 });
 
 test('libs/notify.js - versão do app aparece na notificação (Host com vX.Y.Z)', () => {

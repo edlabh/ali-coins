@@ -23,7 +23,14 @@ async function performMobileLogin(page, context, config, options = {}) {
     .catch(() => null);
 
   if (!loginInput) {
-    loginInput = await page.$(SELECTORS.login.usernameInput);
+    // Fallback: `waitForSelector` já filtra por visibilidade; o `$` direto não.
+    // Um input oculto matching causaria "element is not visible" cru no fill.
+    const fallback = await page.$(SELECTORS.login.usernameInput);
+    const visible =
+      fallback && typeof fallback.isVisible === 'function'
+        ? await fallback.isVisible().catch(() => false)
+        : Boolean(fallback);
+    loginInput = visible ? fallback : null;
   }
 
   if (!loginInput) {

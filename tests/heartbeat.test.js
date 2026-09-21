@@ -218,6 +218,7 @@ test('config.js - validações Zod e CLI de heartbeat', () => {
       configSchema.parse({
         ALI_USER: 'test@example.com',
         ALI_PASSWORD: 'secretpassword',
+        SESSION_SECRET: '12345678901234567890123456789012',
         HEARTBEAT_ENABLED: true,
         HEARTBEAT_URL: 'invalid-url'
       });
@@ -227,6 +228,7 @@ test('config.js - validações Zod e CLI de heartbeat', () => {
     const valid = configSchema.parse({
       ALI_USER: 'test@example.com',
       ALI_PASSWORD: 'secretpassword',
+      SESSION_SECRET: '12345678901234567890123456789012',
       HEARTBEAT_ENABLED: true,
       HEARTBEAT_URL: 'https://hc-ping.com/a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     });

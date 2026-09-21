@@ -1,6 +1,11 @@
 node_modules/
 libs/extracted/
 credentials.env*
+!credentials.env.example
+.env
+.env.*
+.npmrc
+sbom.json
 session*.json
 session*.json.enc
 session*.enc

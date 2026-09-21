@@ -30,15 +30,20 @@ function trackWebhook(promise) {
  * @returns {Promise<void>}
  */
 async function flushWebhooks(timeoutMs = 5000) {
-  if (pendingWebhooks.size === 0) return;
-  let timer = null;
-  const timeout = new Promise((resolve) => {
-    timer = setTimeout(resolve, timeoutMs);
-  });
-  try {
-    await Promise.race([Promise.allSettled([...pendingWebhooks]), timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
+  const deadline = Date.now() + timeoutMs;
+  // Repete enquanto houver webhooks em voo: um relatório disparado DURANTE o flush
+  // (ex.: em finally de shutdown) não pode ficar de fora.
+  while (pendingWebhooks.size > 0 && Date.now() < deadline) {
+    let timer = null;
+    const remaining = Math.max(1, deadline - Date.now());
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(resolve, remaining);
+    });
+    try {
+      await Promise.race([Promise.allSettled([...pendingWebhooks]), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 }
 

@@ -11,6 +11,38 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.5] - 2026-09-21
+
+### Segurança
+
+- **SSRF: DNS rebinding eliminado no `safeFetch` (`libs/url_guard.js`):** a validação resolvia o DNS e o `fetch` resolvia de novo na conexão (TOCTOU): um hostname com TTL 0 podia devolver IP público na checagem e privado/metadata na conexão. Agora o transporte usa **undici com `lookup` pinado**: o IP validado na resolução é o mesmo usado na conexão (SNI/Host preservados), revalidando cada hop de redirect. Sem undici instalado, degrada para o comportamento anterior (validação de DNS) sem quebrar; mocks de `global.fetch` continuam sendo respeitados nos testes.
+- **Lockfile: renovação atômica-condicional (`lockfile.js`):** o refresh periódico sobrescrevia o lock por `rename` incondicional após checar a posse — outra geração assumida na janela era sobrescrita. Agora o refresh move o lock para um claim, confere `lockId`/`pid` e só então reescreve e devolve (sem sobrescrever lock alheio). A janela de ausência é coberta pela carência de leitura, que passou a valer **também para `ENOENT`** (antes um lock momentaneamente ausente era considerado inexistente e um segundo processo assumia a execução).
+- **`SESSION_SECRET` obrigatório com criptografia ativa (`config.js`):** com `ENCRYPT_LOCAL_SESSION=true` (padrão) sem `SESSION_SECRET`, o `saveSession` recusava gravar e a sessão nunca persistia — o erro só aparecia no log do save. Agora a validação falha no startup com mensagem acionável; `ENCRYPT_LOCAL_SESSION=false/off/no/0` continua sendo o opt-out explícito.
+- **`passwordFile` valida o caminho real (`config.js`):** symlink dentro do diretório do `accounts.json` apontando para fora contornava a checagem lexical; agora o `realpath` é revalidado antes da leitura.
+- **Erro de heartbeat sanitizado (`libs/heartbeat.js`):** `err.message` podia textualizar a URL com token; agora passa pelo redator de segredos em logs e no retorno.
+- **Backup de sessão confinado (`libs/session.js`):** `clearSession` gravava o backup em `scratchDir` injetado sem validação (podendo exportar o blob para diretório arbitrário); agora aplica a mesma barreira do `pruneSessionBackups` e apenas registra aviso quando o diretório está fora do scratch.
+
+### Corrigido
+
+- **`rotateSessionSecret` serializado (`libs/session.js`):** passa a usar o mutex por caminho, eliminando a corrida com `saveSession` no mesmo processo (rotação sobrescrevia a sessão recém-gravada).
+- **`crash.js` faz flush do log antes do exit de emergência:** o timer de 15s chamava `process.exit(6)` sem drenar o buffer do logger; as últimas linhas do log fatal agora chegam ao stderr.
+- **`surprise.js` conta apenas clique efetivo:** `clickedCount` incrementava mesmo com `clickSucceeded=false`, inflando o retorno e o gate de detalhe.
+- **`search.js` usa campo de busca específico e visível:** o primeiro `<input>` do documento (frequentemente oculto/CSRF) fazia o `fill` falhar em silêncio; agora prioriza seletores de busca e cai para o primeiro input visível.
+- **Telegram: truncamento em UTF-16 e entidades (`libs/notify.js`):** o corte era por code points, podendo exceder 4096 unidades UTF-16 com emojis astrais; agora corta respeitando o limite real e remove entidade HTML parcial no fim. O fallback de texto puro desescapa `&amp;`/`&lt;`/`&gt;`/`&quot;`.
+- **Webhook acima de 32 KB envia payload mínimo válido (`libs/report.js`):** o corpo truncado genérico não tinha `content`/`text` e era rejeitado com 400 (notificação perdida); agora monta `{content}` (Discord) ou `{text}` (Bot API) com o resumo.
+- **`flushWebhooks` aguarda webhooks iniciados durante o flush (`libs/webhooks.js`):** repete até esvaziar (com teto de tempo), em vez de fotografar o Set uma vez.
+- **`--dry-run` mostra o webhook (`config.js`):** resumo JSON e texto passam a indicar `NOTIFY_WEBHOOK_URL` configurado e `ALLOW_PRIVATE_WEBHOOKS=true` (antes invisíveis no diagnóstico).
+- **Login: fallback valida visibilidade (`libs/ui/login.js`):** o `page.$` direto podia devolver input oculto e lançar erro cru no `fill`.
+- **Multi-conta: "Saldo Final" não imprime mais `N/D moedas` (`libs/report.js`):** reutiliza `computeFinalBalance`.
+- **Docker: `CMD ["node","all.js"]` + `STOPSIGNAL SIGTERM` (`Dockerfile`):** elimina o processo `npm`/`sh -c` intermediário como PID 1, melhorando o encaminhamento de sinal no `docker stop`.
+- **`.gitignore`/`.dockerignore`:** adicionados `.env*`, `.npmrc`, `sbom.json` e `!credentials.env.example`; `*.bak-*`/`*.tmp-*` já cobertos desde a 1.4.4.
+- **CI/Release com `timeout-minutes`:** jobs deixam de herdar o default de 360 min.
+- **`tests/test_helper.js` compara também o tamanho:** alterações de conteúdo com mesmo mtime passam a ser detectadas.
+
+### Testes
+
+- +3 testes: lookup pinado (M1), falha de `SESSION_SECRET`/opt-out (M3) e truncamento UTF-16 do Telegram; total **375**. Testes de config atualizados para o novo requisito e teste de refresh do lockfile tolerante à janela de claim (coberta pela carência).
+
 ## [1.4.4] - 2026-09-21
 
 ### Corrigido

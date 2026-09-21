@@ -81,7 +81,8 @@ const configSchema = z
     ENCRYPT_LOCAL_SESSION: z
       .preprocess((val) => {
         if (typeof val === 'string') {
-          return val.toLowerCase() !== 'false' && val !== '0';
+          // Aceita as mesmas formas dos demais booleanos (off/no/0/false desligam).
+          return !/^(false|0|off|no)$/i.test(val.trim());
         }
         return val !== undefined ? Boolean(val) : true;
       }, z.boolean())
@@ -261,6 +262,17 @@ const configSchema = z
           path: ['HEARTBEAT_URL']
         });
       }
+    }
+    // Segurança at-rest: com a criptografia ligada (padrão), a ausência de SESSION_SECRET
+    // faz o saveSession recusar gravar — a sessão nunca persiste e o erro só aparecia no
+    // log do save (engolido no fluxo). Falha no startup com mensagem acionável.
+    if (data.ENCRYPT_LOCAL_SESSION !== false && !data.SESSION_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'SESSION_SECRET é obrigatório (>= 32 caracteres) quando ENCRYPT_LOCAL_SESSION=true (padrão): sem ele a sessão NÃO é persistida. Defina SESSION_SECRET ou use ENCRYPT_LOCAL_SESSION=false explicitamente.',
+        path: ['SESSION_SECRET']
+      });
     }
   });
 
@@ -605,6 +617,16 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
               if (rel.startsWith('..') || path.isAbsolute(rel)) {
                 throw new Error('passwordFile deve residir no mesmo diretório do accounts.json.');
               }
+              // Symlink dentro do diretório apontando para fora contornaria a checagem
+              // lexical: revalida o caminho REAL antes de ler.
+              const realBase = fs.realpathSync(baseDir);
+              const realPw = fs.realpathSync(pwPath);
+              const relReal = path.relative(realBase, realPw);
+              if (relReal.startsWith('..') || path.isAbsolute(relReal)) {
+                throw new Error(
+                  'passwordFile não pode apontar (via symlink) para fora do diretório do accounts.json.'
+                );
+              }
               password = fs.readFileSync(pwPath, 'utf-8').trim();
               safeChmod600(pwPath);
             } catch (pwErr) {
@@ -819,6 +841,10 @@ async function handleDryRun() {
           urlConfigured: Boolean(cfg.HEARTBEAT_URL),
           timeoutMs: cfg.HEARTBEAT_TIMEOUT_MS
         },
+        webhook: {
+          urlConfigured: Boolean(process.env.NOTIFY_WEBHOOK_URL),
+          allowPrivateWebhooks: process.env.ALLOW_PRIVATE_WEBHOOKS === 'true'
+        },
         accounts: maskedAccounts
       };
       process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
@@ -853,6 +879,9 @@ async function handleDryRun() {
       );
       logger.info(
         ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}`
+      );
+      logger.info(
+        ` • Webhook de notificação: ${process.env.NOTIFY_WEBHOOK_URL ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}${process.env.ALLOW_PRIVATE_WEBHOOKS === 'true' ? ' (ALLOW_PRIVATE_WEBHOOKS=true)' : ''}`
       );
       logger.info(
         ` • Notificações Telegram: ${

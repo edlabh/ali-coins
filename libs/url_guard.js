@@ -6,7 +6,19 @@
  * ALLOW_PRIVATE_WEBHOOKS=true (útil em testes locais), mantendo compatibilidade.
  */
 const dns = require('dns').promises;
+const dnsNative = require('node:dns');
 const net = require('net');
+
+// undici é opcional: quando disponível, o transporte usa um dispatcher com `lookup`
+// PINADO — o IP validado na checagem é o mesmo usado na conexão, eliminando o TOCTOU
+// de DNS rebinding (o fetch nativo resolve o DNS de novo no momento de conectar).
+let undici = null;
+try {
+  undici = require('undici');
+} catch {
+  undici = null;
+}
+const NATIVE_FETCH = globalThis.fetch;
 
 const PRIVATE_HOSTNAMES = new Set([
   'localhost',
@@ -248,6 +260,76 @@ function withTimeout(promise, ms, message) {
 }
 
 /**
+ * Filtra endereços resolvidos, mantendo apenas os que NÃO são privados/loopback/metadata.
+ * @param {Array<{address: string, family: number}>} addresses
+ * @returns {Array<{address: string, family: number}>}
+ */
+function filterSafeAddresses(addresses) {
+  if (!Array.isArray(addresses)) return [];
+  return addresses.filter((a) => a && typeof a.address === 'string' && !isPrivateIp(a.address));
+}
+
+/**
+ * Cria um `lookup` para o conector HTTP: resolve UMA vez, descarta IPs privados e
+ * devolve o endereço validado — a conexão usa exatamente esse IP (anti DNS rebinding).
+ * @returns {(hostname: string, options: object, callback: Function) => void}
+ */
+function createSafeLookup() {
+  return (hostname, options, callback) => {
+    dnsNative.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+      if (err) return callback(err);
+      const list = Array.isArray(addresses) ? addresses : [{ address: addresses, family: 4 }];
+      const safe = filterSafeAddresses(list);
+      if (safe.length === 0) {
+        const blocked = new Error(
+          'Destino bloqueado pelo guard SSRF: resolve para rede privada na conexão.'
+        );
+        blocked.code = 'SSRF_BLOCKED';
+        return callback(blocked);
+      }
+      if (options && options.all) return callback(null, safe);
+      callback(null, safe[0].address, safe[0].family);
+    });
+  };
+}
+
+let pinnedAgentStrict = null;
+let pinnedAgentAllowPrivate = null;
+
+/**
+ * Dispatcher pinado (undici) para o modo estrito ou permissivo (ALLOW_PRIVATE_WEBHOOKS).
+ * Reutilizado no processo para aproveitar keep-alive; sem `close()` explícito.
+ * @param {boolean} allowPrivate
+ * @returns {object|null}
+ */
+function getPinnedDispatcher(allowPrivate) {
+  if (!undici || typeof undici.Agent !== 'function') return null;
+  if (allowPrivate) {
+    if (!pinnedAgentAllowPrivate) pinnedAgentAllowPrivate = new undici.Agent();
+    return pinnedAgentAllowPrivate;
+  }
+  if (!pinnedAgentStrict) {
+    pinnedAgentStrict = new undici.Agent({ connect: { lookup: createSafeLookup() } });
+  }
+  return pinnedAgentStrict;
+}
+
+/**
+ * Decide o transporte do safeFetch: mantém o mock de `global.fetch` quando presente
+ * (testes) e, em produção, usa undici com lookup pinado quando disponível.
+ * @param {object} [options={}]
+ * @param {boolean} [options.allowPrivate]
+ * @returns {{ fetchImpl: Function, dispatcher: object|null }}
+ */
+function resolveFetchTransport({ allowPrivate = false } = {}) {
+  const usingMock = globalThis.fetch !== NATIVE_FETCH;
+  if (!usingMock && undici && typeof undici.fetch === 'function') {
+    return { fetchImpl: undici.fetch, dispatcher: getPinnedDispatcher(allowPrivate) };
+  }
+  return { fetchImpl: globalThis.fetch, dispatcher: null };
+}
+
+/**
  * fetch para destinos externos com proteção SSRF que NÃO é contornável por redirects.
  *
  * O `fetch` nativo segue redirects por padrão (redirect: 'follow'), então um destino
@@ -269,6 +351,7 @@ async function safeFetch(rawUrl, init = {}, options = {}) {
   const maxRedirects = Number.isInteger(options.maxRedirects) ? options.maxRedirects : 5;
   let currentUrl = rawUrl;
   let currentInit = { ...init };
+  const transport = resolveFetchTransport({ allowPrivate: options.allowPrivate });
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const guard = await validateExternalUrl(currentUrl, {
@@ -282,7 +365,13 @@ async function safeFetch(rawUrl, init = {}, options = {}) {
       throw err;
     }
 
-    const response = await fetch(currentUrl, { ...currentInit, redirect: 'manual' });
+    // O dispatcher (quando presente) pina o IP validado no lookup da conexão: um DNS
+    // com TTL 0 que devolva IP privado só na segunda resolução não consegue mais.
+    const response = await transport.fetchImpl(currentUrl, {
+      ...currentInit,
+      redirect: 'manual',
+      ...(transport.dispatcher ? { dispatcher: transport.dispatcher } : {})
+    });
 
     // 3xx com Location: segue manualmente revalidando o próximo hop
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
@@ -328,5 +417,8 @@ module.exports = {
   allowPrivateTargets,
   validateExternalUrl,
   safeFetch,
+  filterSafeAddresses,
+  createSafeLookup,
+  resolveFetchTransport,
   PRIVATE_HOSTNAMES
 };

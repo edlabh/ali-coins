@@ -310,7 +310,20 @@ async function clearSessionUnlocked(options = {}) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const baseName = path.basename(sPath, '.json');
     const tag = baseName === 'session' ? '' : `-${baseName}`;
-    if (fs.existsSync(encPath)) {
+    // Segurança destrutiva/exportação: o backup só é gravado dentro do scratch esperado
+    // (mesma barreira do pruneSessionBackups) — `scratchDir` é injetável.
+    const defaultScratch = resolveSessionPaths({ ...options, scratchDir: undefined }).scratchDir;
+    const allowedRoot = path.resolve(
+      options.baseDir ? path.join(options.baseDir, 'scratch') : defaultScratch
+    );
+    const relToScratch = path.relative(allowedRoot, path.resolve(targetScratchDir));
+    const scratchAllowed = !relToScratch.startsWith('..') && !path.isAbsolute(relToScratch);
+    if (!scratchAllowed) {
+      logger.warn(
+        { targetScratchDir, allowedRoot },
+        'Backup da sessão ignorado: diretório fora do scratch do projeto.'
+      );
+    } else if (fs.existsSync(encPath)) {
       await fs.promises.mkdir(targetScratchDir, { recursive: true });
       const bakPath = path.join(targetScratchDir, `session.bak${tag}-${timestamp}.json.enc`);
       const data = await fs.promises.readFile(encPath, 'utf-8');
@@ -763,7 +776,7 @@ async function pruneSessionBackups(options = {}) {
  * @param {string} [options.newSecret] Nova chave (ou SESSION_SECRET_NEW / SESSION_SECRET)
  * @returns {Promise<{ success: boolean, user: string, backupPath: string }>}
  */
-async function rotateSessionSecret(options = {}) {
+async function rotateSessionSecretUnlocked(options = {}) {
   const { encPath, sPath, mPath, scratchDir: targetScratchDir } = resolveSessionPaths(options);
 
   const oldSecret =
@@ -1032,6 +1045,11 @@ function clearSession(options = {}) {
 function updateSessionStreak(streakDays, options = {}) {
   const { sPath } = resolveSessionPaths(options);
   return withSessionLock(sPath, () => updateSessionStreakUnlocked(streakDays, options));
+}
+
+function rotateSessionSecret(options = {}) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => rotateSessionSecretUnlocked(options));
 }
 
 module.exports = {

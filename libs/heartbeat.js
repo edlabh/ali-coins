@@ -150,11 +150,12 @@ async function pingStart(url, options = {}) {
     );
     return { ok: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {
+    const safeErr = sanitizeSensitiveQueryParams(String((err && err.message) || err));
     logger.warn(
-      { heartbeat: 'failed', url: masked, stage: 'start', err: err.message },
-      `Falha ao enviar heartbeat de início: ${err.message}`
+      { heartbeat: 'failed', url: masked, stage: 'start', err: safeErr },
+      `Falha ao enviar heartbeat de início: ${safeErr}`
     );
-    return { ok: false, error: err.message };
+    return { ok: false, error: safeErr };
   }
 }
 
@@ -240,11 +241,12 @@ async function pingSuccess(url, report = null, options = {}) {
     );
     return { ok: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (err) {
+    const safeErr = sanitizeSensitiveQueryParams(String((err && err.message) || err));
     logger.warn(
-      { heartbeat: 'failed', url: masked, stage: 'success', err: err.message },
-      `Falha ao enviar heartbeat de sucesso: ${err.message}`
+      { heartbeat: 'failed', url: masked, stage: 'success', err: safeErr },
+      `Falha ao enviar heartbeat de sucesso: ${safeErr}`
     );
-    return { ok: false, error: err.message };
+    return { ok: false, error: safeErr };
   }
 }
 

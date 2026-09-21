@@ -6,7 +6,8 @@ const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper
 test('config.js - defaults schema Zod', () => {
   const minimalData = {
     ALI_USER: 'test@example.com',
-    ALI_PASSWORD: 'password123'
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
   };
 
   const parsed = configSchema.parse(minimalData);
@@ -39,7 +40,11 @@ test('config.js - defaults schema Zod', () => {
 });
 
 test('config.js - SKIP_APP_ONLY_TASKS aceita variações de string para desligar', () => {
-  const base = { ALI_USER: 'test@example.com', ALI_PASSWORD: 'password123' };
+  const base = {
+    ALI_USER: 'test@example.com',
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
   for (const off of ['false', 'FALSE', '0', 'off', 'no']) {
     assert.strictEqual(
       configSchema.parse({ ...base, SKIP_APP_ONLY_TASKS: off }).SKIP_APP_ONLY_TASKS,
@@ -69,6 +74,7 @@ test('config.js - preprocessing de strings para boolean e números', () => {
   const dataWithStrings = {
     ALI_USER: 'test@example.com',
     ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012',
     ALLOW_MEDIA: 'true',
     HEADLESS: 'false',
     NAV_TIMEOUT: '45000',
@@ -260,10 +266,30 @@ test('config.js - locks de contas secundárias também ficam no diretório do pr
   }
 });
 
+test('config.js - M3: ENCRYPT_LOCAL_SESSION=true sem SESSION_SECRET falha no startup', () => {
+  const semSecret = configSchema.safeParse({ ALI_USER: 'a@b.co', ALI_PASSWORD: 'p' });
+  assert.strictEqual(semSecret.success, false);
+  assert.ok(
+    semSecret.error.issues.some((i) => i.path.join('.') === 'SESSION_SECRET'),
+    'deve acusar SESSION_SECRET ausente'
+  );
+  // Opt-out explícito de criptografia passa e aceita off/no/0/false
+  for (const off of ['false', '0', 'off', 'no']) {
+    const parsed = configSchema.safeParse({
+      ALI_USER: 'a@b.co',
+      ALI_PASSWORD: 'p',
+      ENCRYPT_LOCAL_SESSION: off
+    });
+    assert.strictEqual(parsed.success, true, `ENCRYPT_LOCAL_SESSION=${off} deve passar`);
+    assert.strictEqual(parsed.data.ENCRYPT_LOCAL_SESSION, false);
+  }
+});
+
 test('config.js - positiveInt rejeita valores não numéricos e aceita strings numéricas', () => {
   const ok = configSchema.safeParse({
     ALI_USER: 'u@example.com',
     ALI_PASSWORD: 'pwd',
+    SESSION_SECRET: '12345678901234567890123456789012',
     NAV_TIMEOUT: '25000'
   });
   assert.strictEqual(ok.success, true);
@@ -272,6 +298,7 @@ test('config.js - positiveInt rejeita valores não numéricos e aceita strings n
   const garbage = configSchema.safeParse({
     ALI_USER: 'u@example.com',
     ALI_PASSWORD: 'pwd',
+    SESSION_SECRET: '12345678901234567890123456789012',
     NAV_TIMEOUT: '10abc'
   });
   assert.strictEqual(garbage.success, true);
@@ -280,6 +307,7 @@ test('config.js - positiveInt rejeita valores não numéricos e aceita strings n
   const zero = configSchema.safeParse({
     ALI_USER: 'u@example.com',
     ALI_PASSWORD: 'pwd',
+    SESSION_SECRET: '12345678901234567890123456789012',
     TASK_MAX_ACTIONS: '0'
   });
   assert.strictEqual(zero.success, true);

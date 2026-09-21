@@ -166,7 +166,17 @@ async function acquireLock(
           }
         }
       } catch (err) {
-        if (err.code === 'ENOENT') return { lock: null, status: 'missing' };
+        if (err.code === 'ENOENT') {
+          // Ausência momentânea: pode ser a janela de renovação (o refresh move o lock
+          // para um claim por poucos ms). Com allowGrace, espera antes de considerar
+          // definitivamente ausente — sem isto, um segundo processo assumiria o lock
+          // no meio da renovação do primeiro.
+          if (Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, LOCK_READ_RETRY_MS));
+            continue;
+          }
+          return { lock: null, status: 'missing' };
+        }
         // Diretório no caminho: cai no fluxo de remoção/falha clara
         if (err.code === 'EISDIR') return { lock: null, status: 'invalid' };
         // Erro transitório de I/O (EBUSY/EPERM/EACCES em Windows/AV): NUNCA remover
@@ -408,30 +418,58 @@ async function acquireLock(
   const refreshLock = () => {
     if (released || refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
-      let tmpPath = null;
+      let claimPath = null;
       try {
-        // Renova somente se o lock ainda for nosso. Lê e confere a posse ANTES de
-        // sobrescrever, e grava num arquivo temporário renomeado por cima (overwrite
-        // atômico). Diferente de mover o lock para um claim, o caminho final NUNCA fica
-        // ausente durante a renovação — evita que terceiros (ou um check de stale)
-        // observem o lock como inexistente (regressão observada no Windows).
         if (!fs.existsSync(targetLockPath)) return;
+
+        // Renovação atômica CONDICIONAL: move o lock para um caminho privado, confere
+        // a geração e só então reescreve e devolve. Antes, o `rename` incondicional
+        // sobrescrevia o lock de outra geração assumida entre a leitura e a escrita.
+        // A janela em que o caminho fica ausente é de poucos ms e coberta pela carência
+        // de leitura (LOCK_READ_GRACE_MS) do acquire.
+        claimPath = `${targetLockPath}.refresh-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+        try {
+          await fs.promises.rename(targetLockPath, claimPath);
+        } catch {
+          return; // lock já removido/substituído por outro processo
+        }
+
+        const devolveClaim = async () => {
+          // Devolve apenas se o caminho ainda estiver livre: se outro processo publicou
+          // no intervalo, NÃO sobrescreve (perderíamos a exclusão mútua).
+          const occupied = await fs.promises
+            .lstat(targetLockPath)
+            .then(() => true)
+            .catch(() => false);
+          if (occupied) {
+            await fs.promises.unlink(claimPath).catch(() => {});
+          } else {
+            await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+          }
+          claimPath = null;
+        };
+
         let isOurs = false;
         try {
-          const current = JSON.parse(await fs.promises.readFile(targetLockPath, 'utf-8'));
+          const current = JSON.parse(await fs.promises.readFile(claimPath, 'utf-8'));
           isOurs = current.lockId
             ? current.lockId === lockData.lockId
             : current.pid === process.pid;
         } catch {
           isOurs = false;
         }
-        if (!isOurs || released) return;
+
+        if (!isOurs || released) {
+          // Outra geração assumiu: devolve o lock alheio intacto (sem sobrescrever).
+          await devolveClaim();
+          return;
+        }
 
         lockData.createdAt = new Date().toISOString();
-        tmpPath = `${targetLockPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
-        await fs.promises.writeFile(tmpPath, JSON.stringify(lockData, null, 2), { mode: 0o600 });
-        await fs.promises.rename(tmpPath, targetLockPath);
-        tmpPath = null;
+        await fs.promises.writeFile(claimPath, JSON.stringify(lockData, null, 2), {
+          mode: 0o600
+        });
+        await devolveClaim();
         refreshFailures = 0;
       } catch (err) {
         // Erro transitório (lock substituído, permissão, AV): avisa sem travar o run.
@@ -445,8 +483,18 @@ async function acquireLock(
           );
         }
       } finally {
-        // Se o temp foi criado mas a rename não concluiu, remove o resíduo.
-        if (tmpPath) await fs.promises.unlink(tmpPath).catch(() => {});
+        // Claim ficou conosco por erro no meio do caminho: devolve se possível.
+        if (claimPath) {
+          const occupied = await fs.promises
+            .lstat(targetLockPath)
+            .then(() => true)
+            .catch(() => false);
+          if (occupied) {
+            await fs.promises.unlink(claimPath).catch(() => {});
+          } else {
+            await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+          }
+        }
       }
     })().finally(() => {
       refreshInFlight = null;

@@ -603,6 +603,15 @@ async function performWebhookNotification(payload, customUrl = null) {
         note: `Payload excedeu ${WEBHOOK_MAX_PAYLOAD_BYTES} bytes`,
         summary: payload?.meta || null
       });
+      // Payload mínimo VÁLIDO por provedor: o corpo genérico acima não tem
+      // content/embeds (Discord) nem text/chat_id (Bot API) e era rejeitado com 400,
+      // perdendo a notificação em vez de truncá-la.
+      const summaryText = `AliExpress Coins (${payload?.type || 'report'}): payload excedeu o limite de ${WEBHOOK_MAX_PAYLOAD_BYTES} bytes.`;
+      if (isDiscord) {
+        bodyData = JSON.stringify({ content: summaryText });
+      } else if (isTelegram) {
+        bodyData = JSON.stringify({ text: summaryText });
+      }
     }
 
     // safeFetch revalida CADA hop de redirect com o guard SSRF e não segue redirects
@@ -988,13 +997,8 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
       }
     }
 
-    const finalBal =
-      res.tasksResult && res.tasksResult.finalCoins && res.tasksResult.finalCoins !== 'N/D'
-        ? res.tasksResult.finalCoins
-        : res.checkinResult
-          ? `${res.checkinResult.totalBalance} moedas`
-          : 'N/D';
-    logger.info(`  • Saldo Final: ${finalBal}`);
+    const finalBal = computeFinalBalance(res.checkinResult, res.tasksResult);
+    logger.info(`  • Saldo Final: ${finalBal === 'N/D' ? 'N/D' : `${finalBal} moedas`}`);
 
     if (accMeta) {
       logger.info(

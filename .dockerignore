@@ -7,6 +7,9 @@ libs/extracted/
 # SEGURANÇA (nunca remover): credenciais, sessões, tokens e metadados
 credentials.env
 credentials.env*
+.env
+.env.*
+.npmrc
 session.json
 session.json.enc
 session*.json
