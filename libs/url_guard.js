@@ -42,9 +42,17 @@ function isPrivateIp(ip) {
     if (lower === '::1' || lower === '::') return true; // loopback/unspecified
     if (lower.startsWith('fe80')) return true; // link-local
     if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local fc00::/7
-    // IPv4 mapeado (::ffff:a.b.c.d)
+    // IPv4 mapeado em decimal (::ffff:a.b.c.d)
     const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isPrivateIp(mapped[1]);
+    // IPv4 mapeado em hexadecimal (::ffff:7f00:1) — forma para a qual new URL() normaliza
+    // um literal como [::ffff:127.0.0.1]. Também cobre IPv4 compatível (::7f00:1, sem ffff).
+    const mappedHex = lower.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mappedHex) {
+      const hi = parseInt(mappedHex[1], 16);
+      const lo = parseInt(mappedHex[2], 16);
+      return isPrivateIp(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
     return false;
   }
 
@@ -89,8 +97,13 @@ async function validateExternalUrl(rawUrl, options = {}) {
   const allowPrivate =
     typeof options.allowPrivate === 'boolean' ? options.allowPrivate : allowPrivateTargets();
 
-  // Host literal (IP ou hostname conhecido) — checagem síncrona
-  const host = parsed.hostname.toLowerCase();
+  // Host literal (IP ou hostname conhecido) — checagem síncrona.
+  // URL.hostname devolve IPv6 entre colchetes ("[::1]"); remove os colchetes e o ponto
+  // final (FQDN absoluto, ex.: "localhost.") antes de classificar.
+  const host = parsed.hostname
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, '$1')
+    .replace(/\.$/, '');
   if (PRIVATE_HOSTNAMES.has(host)) {
     if (!allowPrivate) return { ok: false, reason: 'Destino loopback bloqueado (SSRF).' };
     return { ok: true, url: parsed };

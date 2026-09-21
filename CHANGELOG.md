@@ -34,12 +34,13 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Segurança
 
+- **SSRF: IPv6 literal privado/loopback agora é bloqueado (`libs/url_guard.js`):** `validateExternalUrl` deixava passar **qualquer** IPv6 literal (ex.: `http://[::1]/`, `[fd00::1]`, `[fe80::1]`, `[::ffff:7f00:1]` = `127.0.0.1` e `[::ffff:a9fe:a9fe]` = `169.254.169.254`/metadata da nuvem), anulando o controle introduzido na 1.4.0 para `NOTIFY_WEBHOOK_URL`/`HEARTBEAT_URL`. Duas causas: (1) `URL.hostname` devolve IPv6 entre colchetes, então `net.isIP` retornava 0 e o host caía no ramo de DNS, cuja falha era tolerada (`ok: true`); (2) o classificador só reconhecia IPv4 mapeado na forma decimal, mas `new URL()` normaliza para hexadecimal. Corrigido removendo colchetes/ponto final do hostname e decodificando IPv4 mapeado/compatível em hexadecimal.
 - **Menor privilégio no workflow de release (`.github/workflows/release.yml`):** permissão global passa a `contents: read`, elevando para `contents: write` apenas no job que publica a release.
 - **Hardening do container de cron (`docker-run.example.sh`):** `--cap-drop=ALL` e `--security-opt=no-new-privileges`, além de rotação simples do `cron.log` (5 MB, configurável via `ALI_COINS_LOG_MAX_BYTES`) para evitar crescimento indefinido em VPS pequena.
 
 ### Testes
 
-- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup, cgroup, `buildActionUrl`/`normalizeBaseUrl`, separador de milhar no extrato, reconhecimento de "Bônus diário" no histórico, truncamento seguro de mensagem, saneamento do ambiente do Chromium e paridade dos contratos de migração (CLI estrita vs. biblioteca tolerante) — **341/341**.
+- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup, cgroup, `buildActionUrl`/`normalizeBaseUrl`, separador de milhar no extrato, reconhecimento de "Bônus diário" no histórico, truncamento seguro de mensagem, saneamento do ambiente do Chromium, paridade dos contratos de migração (CLI estrita vs. biblioteca tolerante) e bloqueio de IPv6 literal privado no SSRF — **342/342**.
 
 ## [1.4.1] - 2026-09-21
 

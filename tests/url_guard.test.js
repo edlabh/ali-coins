@@ -70,3 +70,34 @@ test('libs/url_guard.js - validateExternalUrl bloqueia hostname que resolve para
   assert.strictEqual(res.ok, false);
   assert.match(res.reason, /loopback|bloqueado/i);
 });
+
+test('libs/url_guard.js - bloqueia IPv6 literal privado/loopback e IPv4 mapeado', async () => {
+  // Regressão: URL.hostname devolve IPv6 entre colchetes ("[::1]"), o que fazia net.isIP()
+  // retornar 0 e o host cair no ramo de DNS (que tolera falha) → ok: true indevidamente.
+  const bloqueados = [
+    'http://[::1]/x', // loopback
+    'http://[fd00::1]/x', // unique local
+    'http://[fe80::1]/x', // link-local
+    'http://[::ffff:127.0.0.1]/x', // IPv4 mapeado (forma decimal)
+    'http://[::ffff:7f00:1]/x', // IPv4 mapeado (forma hexadecimal, normalizada por new URL)
+    'http://[::ffff:a9fe:a9fe]/x', // 169.254.169.254 (metadata da nuvem) em hex
+    'http://[::7f00:1]/x', // IPv4 compatível (sem ffff)
+    'http://localhost./x' // FQDN absoluto de loopback
+  ];
+  for (const url of bloqueados) {
+    const res = await validateExternalUrl(url, { allowPrivate: false });
+    assert.strictEqual(res.ok, false, `${url} deveria ser bloqueado (SSRF)`);
+  }
+
+  // IPv6 público continua permitido
+  assert.strictEqual(
+    (await validateExternalUrl('https://[2606:4700:4700::1111]/', { allowPrivate: false })).ok,
+    true
+  );
+
+  // Opt-in explícito libera o loopback IPv6
+  assert.strictEqual(
+    (await validateExternalUrl('http://[::1]/x', { allowPrivate: true })).ok,
+    true
+  );
+});
