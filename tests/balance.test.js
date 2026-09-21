@@ -474,3 +474,44 @@ test('libs/ui/balance.js - extractTodayLedger no extrato real em inglês (Coin p
   assert.strictEqual(res.missionsCoins, 21, 'soma das tarefas = 5+5+5+5+1');
   assert.strictEqual(res.missionsCount, 5);
 });
+
+test('libs/ui/balance.js - extractTodayLedger conta tudo que não é check-in como tarefa (Widget coins)', () => {
+  const { extractTodayLedger } = require('../libs/ui/balance');
+  // Extrato real observado na VM (conta 1, hoje): 13x "Coin page task +5",
+  // 1x "Coin page task +1", 1x "Widget coins +5" e "App daily check-in +40".
+  let real = '';
+  for (let i = 0; i < 13; i++) real += 'Coin page task\n+5\n';
+  real += 'Coin page task\n+1\n';
+  real += 'Widget coins\n+5\n';
+  real += 'App daily check-in\n+40\n';
+
+  const r = extractTodayLedger(real);
+  assert.strictEqual(r.bonusCoins, 40, 'check-in real = 40');
+  assert.strictEqual(r.missionsCoins, 71, 'tarefas = 13x5 + 1 (Coin page task) + 5 (Widget coins)');
+  assert.strictEqual(r.bonusCount, 1);
+  assert.strictEqual(r.missionsCount, 15);
+});
+
+test('libs/report.js - computeCheckinCoinsGained contabiliza check-in do extrato mesmo com alreadyCollected', () => {
+  const { computeCheckinCoinsGained } = require('../libs/report');
+  // check-in já coletado (feito no app) mas com crédito real do dia no extrato
+  assert.strictEqual(
+    computeCheckinCoinsGained({
+      alreadyCollected: true,
+      coinsGainedToday: '40',
+      checkinCoinsFromLedger: true
+    }),
+    40,
+    'deve contabilizar o check-in do dia vindo do extrato'
+  );
+  // já coletado sem crédito no extrato -> 0
+  assert.strictEqual(
+    computeCheckinCoinsGained({ alreadyCollected: true, coinsGainedToday: '0' }),
+    0
+  );
+  // não coletado -> valor normal
+  assert.strictEqual(
+    computeCheckinCoinsGained({ alreadyCollected: false, coinsGainedToday: '25' }),
+    25
+  );
+});

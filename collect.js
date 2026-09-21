@@ -386,15 +386,25 @@ async function runCheckin(options = {}) {
         );
       }
 
-      // Se o check-in já havia ocorrido hoje, não contabiliza nada nesta execução (+0 moedas).
-      // O valor do check-in é reportado SEPARADAMENTE (nunca somado ao saldo das tarefas).
-      const coinsGainedToday = isAlreadyCollected
-        ? '0'
-        : checkinCoinsNum !== null
-          ? String(checkinCoinsNum)
-          : isCollected
-            ? String(getCheckinCoinsFromStreak(streakDays))
-            : '0';
+      // Valor do check-in reportado no extrato do dia.
+      // O extrato desktop é a fonte de verdade: se HOJE há crédito de check-in (mesmo que
+      // o clique tenha sido feito pelo usuário no app), o valor é contabilizado. O flag
+      // `alreadyCollected` continua servindo apenas para NÃO clicar de novo no check-in.
+      const bonusFromLedgerToday =
+        desktopResult.todayBonusCoins !== null && desktopResult.todayBonusCoins !== undefined
+          ? parseInt(String(desktopResult.todayBonusCoins).replace(/[^0-9]/g, ''), 10)
+          : NaN;
+      const hasBonusFromLedger = !isNaN(bonusFromLedgerToday) && bonusFromLedgerToday > 0;
+
+      const coinsGainedToday = hasBonusFromLedger
+        ? String(bonusFromLedgerToday)
+        : isAlreadyCollected
+          ? '0'
+          : checkinCoinsNum !== null
+            ? String(checkinCoinsNum)
+            : isCollected
+              ? String(getCheckinCoinsFromStreak(streakDays))
+              : '0';
 
       // Saldo base das tarefas.
       // Quando o check-in acabou de ser feito e o saldo lido do desktop ainda NÃO reflete
@@ -480,6 +490,10 @@ async function runCheckin(options = {}) {
         userEmail,
         alreadyCollected: isAlreadyCollected,
         coinsGainedToday,
+        // Verdadeiro quando o valor do check-in veio do extrato de HOJE (fonte de verdade).
+        // Nesse caso o relatório contabiliza o valor mesmo com `alreadyCollected=true`,
+        // pois o crédito ocorreu no dia (possivelmente via app/usuário).
+        checkinCoinsFromLedger: hasBonusFromLedger,
         totalBalance,
         streakDays,
         previousStreakDays,

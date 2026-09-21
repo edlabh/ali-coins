@@ -324,7 +324,11 @@ async function main() {
 
       // Código 4 se streak foi quebrado (perda irreversível após dias de sequência)
       // Código 2 se já havia sido coletado e nenhuma tarefa nova foi executada; 0 se sucesso com novas ações
-      const hadNewCheckin = checkinResult && !checkinResult.alreadyCollected;
+      // Considera "nova ação" também quando o check-in do dia foi creditado via extrato
+      // (ex.: feito pelo usuário no app), mesmo que o bot não tenha clicado.
+      const hadNewCheckin =
+        checkinResult &&
+        (!checkinResult.alreadyCollected || checkinResult.checkinCoinsFromLedger === true);
       const hadTaskActions = tasksResult && tasksResult.totalActions > 0;
       const event = streakBroken
         ? 'streak_break'
@@ -526,7 +530,9 @@ async function main() {
 
           anyAccountSuccess = true;
           consecutiveFailures = 0;
-          const hadNewCheckin = accCheckin && !accCheckin.alreadyCollected;
+          const hadNewCheckin =
+            accCheckin &&
+            (!accCheckin.alreadyCollected || accCheckin.checkinCoinsFromLedger === true);
           const hadTaskActions = accTasks && accTasks.totalActions > 0;
           if (hadNewCheckin || hadTaskActions) {
             anyAccountHadNewAction = true;

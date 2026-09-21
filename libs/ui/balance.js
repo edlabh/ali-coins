@@ -109,17 +109,22 @@ function getCheckinCoinsFromStreak(streak) {
   }
 }
 
-// Rótulos do extrato desktop (mycoin) observados em campo:
-// - Crédito do check-in: "Bônus diário" (pt) / "Daily bonus" (en) / "App daily check-in" (legado).
-// - Ganho das tarefas: "Missões de moedas" (pt) / "Coin missions" / "Coin page task" (en).
-const DAILY_BONUS_LABEL_PATTERN =
-  '(?:B[ôo]nus di[áa]rio|Daily bonus|App daily check-in|Check-in di[áa]rio no app)';
-const COIN_MISSIONS_LABEL_PATTERN = '(?:Miss[õo]es de moedas|Coin missions|Coin page task)';
+// Rótulos de CHECK-IN no extrato desktop (mycoin), bilíngues:
+// "App daily check-in" / "Check-in diário no app" / "Bônus diário" / "Daily bonus".
+// Todo o RESTANTE dos créditos do dia (Coin page task, Widget coins, Missões de moedas,
+// Coin missions, etc.) é contabilizado como ganho de tarefas — evita manter uma lista
+// de rótulos que muda com o tempo (ex.: "Widget coins" não estava mapeado).
+const CHECKIN_LABEL_PATTERN =
+  '(?:App daily check-in|Check-in di[áa]rio no app|B[ôo]nus di[áa]rio|Daily bonus)';
 
 /**
- * Extrai, da seção de HOJE do extrato desktop, o valor do "Bônus diário" (check-in real)
- * e a soma dos ganhos de tarefas ("Missões de moedas"). Esses rótulos são a fonte de
- * verdade do valor efetivamente creditado, independentemente do tier sugerido na tela.
+ * Extrai, da seção de HOJE do extrato desktop, o valor REAL do check-in e a soma dos
+ * ganhos de TAREFAS. Fonte de verdade do que foi efetivamente creditado no dia,
+ * independentemente do tier sugerido na tela.
+ *
+ * Estratégia: varre cada lançamento "<rótulo>\n+<valor>" do dia; lançamentos de check-in
+ * somam em `bonusCoins`; todos os demais somam em `missionsCoins`.
+ *
  * @param {string} todaySection Texto do extrato restrito ao dia de hoje (fuso PT)
  * @returns {{ bonusCoins: number|null, missionsCoins: number, bonusCount: number, missionsCount: number }}
  */
@@ -130,21 +135,17 @@ function extractTodayLedger(todaySection) {
   let missionsCoins = 0;
   let missionsCount = 0;
 
-  // Cada lançamento costuma aparecer como "<rótulo>\n+<valor>"; o regex tolera quebras
-  // de linha e espaços entre o rótulo e o valor.
-  const bonusRe = new RegExp(`${DAILY_BONUS_LABEL_PATTERN}[\\s\\S]{0,40}?\\+([0-9]+)`, 'gi');
-  for (const m of text.matchAll(bonusRe)) {
-    const value = parseInt(m[1], 10);
-    if (!isNaN(value)) {
+  // Cada lançamento é "<rótulo>\n+<valor>". Captura rótulo + valor de todos os créditos.
+  const entryRe = /([^\n+][^\n]*)\n\s*\+([0-9]+)/g;
+  for (const m of text.matchAll(entryRe)) {
+    const label = (m[1] || '').trim();
+    const value = parseInt(m[2], 10);
+    if (!label || isNaN(value)) continue;
+
+    if (new RegExp(`^${CHECKIN_LABEL_PATTERN}$`, 'i').test(label)) {
       bonusCount++;
       bonusCoins = (bonusCoins || 0) + value;
-    }
-  }
-
-  const missionsRe = new RegExp(`${COIN_MISSIONS_LABEL_PATTERN}[\\s\\S]{0,40}?\\+([0-9]+)`, 'gi');
-  for (const m of text.matchAll(missionsRe)) {
-    const value = parseInt(m[1], 10);
-    if (!isNaN(value)) {
+    } else {
       missionsCount++;
       missionsCoins += value;
     }

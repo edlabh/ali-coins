@@ -236,7 +236,14 @@ function resolveStreakDays({
  * @returns {number}
  */
 function computeCheckinCoinsGained(checkin) {
-  if (!checkin || checkin.alreadyCollected !== false) {
+  if (!checkin) return 0;
+  // Valor vindo do extrato de HOJE: é o crédito real do dia e deve ser contabilizado
+  // mesmo que o check-in já constasse como coletado (ex.: feito pelo usuário no app).
+  if (checkin.checkinCoinsFromLedger === true) {
+    const fromLedger = parseInt(String(checkin.coinsGainedToday || '').replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(fromLedger) && fromLedger > 0) return fromLedger;
+  }
+  if (checkin.alreadyCollected !== false) {
     return 0;
   }
   if (checkin.coinsGainedToday && checkin.coinsGainedToday !== 'N/D') {

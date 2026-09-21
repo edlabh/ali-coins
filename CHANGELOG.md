@@ -11,6 +11,16 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.1] - 2026-09-21
+
+### Corrigido
+
+- **Contabilização do extrato fiel ao site (`libs/ui/balance.js`, `collect.js`, `libs/report.js`, `all.js`):** o parser do extrato desktop passou a somar **todos** os créditos do dia que não são check-in como ganho de tarefas (antes `Widget coins` era ignorado — tarefas reportadas 66 em vez de 71), e o **check-in real do dia** passa a ser contabilizado mesmo quando já constava como coletado (ex.: feito pelo usuário no app), usando a seção de HOJE do extrato como fonte de verdade. O evento da notificação também considera esse crédito como nova ação.
+
+### Testes
+
+- Novo caso com o extrato real da VM (Widget coins) e `computeCheckinCoinsGained` com `checkinCoinsFromLedger` — **328/328**.
+
 ## [1.4.0] - 2026-09-21
 
 ### Segurança
