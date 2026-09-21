@@ -1,8 +1,12 @@
 const logger = require('../logger');
-const { validateExternalUrl } = require('./url_guard');
+const { sanitizeSensitiveQueryParams } = require('../logger');
+const { validateExternalUrl, safeFetch } = require('./url_guard');
 
 const { version: APP_VERSION } = require('../package.json');
 const USER_AGENT = `ali-coins/${APP_VERSION}`;
+
+// Teto do corpo enviado ao endpoint externo (mesmo limite do webhook).
+const HEARTBEAT_MAX_BODY_BYTES = 32 * 1024;
 
 /**
  * Mascara uma URL de heartbeat/ping para exibição segura em logs, preservando
@@ -106,7 +110,7 @@ async function pingStart(url, options = {}) {
   const masked = maskHeartbeatUrl(startUrl);
 
   try {
-    const res = await fetch(startUrl, {
+    const res = await safeFetch(startUrl, {
       method: 'POST',
       body: options.body || 'AliExpress Coins job started',
       signal: AbortSignal.timeout(timeoutMs),
@@ -126,7 +130,7 @@ async function pingStart(url, options = {}) {
 
     // Se o serviço não aceitar POST no /start (ex: 405 Method Not Allowed), tenta GET como fallback
     if (res.status === 405) {
-      const getRes = await fetch(startUrl, {
+      const getRes = await safeFetch(startUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'User-Agent': USER_AGENT }
@@ -188,8 +192,17 @@ async function pingSuccess(url, report = null, options = {}) {
     }
   }
 
+  // Teto de tamanho: evita POSTar um relatório grande/inesperado a um endpoint de terceiros.
+  if (Buffer.byteLength(body, 'utf8') > HEARTBEAT_MAX_BODY_BYTES) {
+    body =
+      typeof body === 'string' && body.length > HEARTBEAT_MAX_BODY_BYTES
+        ? `${body.slice(0, HEARTBEAT_MAX_BODY_BYTES)}\n...[truncado]`
+        : 'AliExpress Coins job finished successfully (payload excedeu o limite)';
+    contentType = 'text/plain';
+  }
+
   try {
-    const res = await fetch(base, {
+    const res = await safeFetch(base, {
       method: 'POST',
       body,
       signal: AbortSignal.timeout(timeoutMs),
@@ -209,7 +222,7 @@ async function pingSuccess(url, report = null, options = {}) {
 
     // Fallback GET caso POST retorne 405
     if (res.status === 405) {
-      const getRes = await fetch(base, {
+      const getRes = await safeFetch(base, {
         method: 'GET',
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'User-Agent': USER_AGENT }
@@ -258,16 +271,15 @@ async function pingFail(url, err = null, options = {}) {
 
   let body = 'AliExpress Coins job encountered a failure';
   if (err) {
-    if (err instanceof Error) {
-      // Não envia stack trace a serviços externos (pode conter caminhos internos e URLs sensíveis)
-      body = `${err.name}: ${err.message}`.slice(0, 2000);
-    } else {
-      body = String(err).slice(0, 2000);
-    }
+    // Redige segredos que possam aparecer na mensagem (URLs com token/code, headers).
+    const safeMsg = sanitizeSensitiveQueryParams(
+      err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    );
+    body = safeMsg.slice(0, 2000);
   }
 
   try {
-    const res = await fetch(failUrl, {
+    const res = await safeFetch(failUrl, {
       method: 'POST',
       body,
       signal: AbortSignal.timeout(timeoutMs),
@@ -287,7 +299,7 @@ async function pingFail(url, err = null, options = {}) {
 
     // Fallback GET caso POST retorne 405
     if (res.status === 405) {
-      const getRes = await fetch(failUrl, {
+      const getRes = await safeFetch(failUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(timeoutMs),
         headers: { 'User-Agent': USER_AGENT }

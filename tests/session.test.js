@@ -1001,3 +1001,30 @@ test('libs/session.js - saveSession filtra localStorage de telemetria (allowlist
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/session.js - pruneSessionBackups recusa apagar fora do scratch do projeto (anti-destrutivo)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-prune-scope-');
+
+  try {
+    // Diretório "externo" (fora de <tmpDir>/scratch) com um .png antigo que NÃO pode ser apagado
+    const outsideDir = path.join(tmpDir, 'dados-do-usuario');
+    fs.mkdirSync(outsideDir, { recursive: true });
+    const alvo = path.join(outsideDir, 'foto.png');
+    fs.writeFileSync(alvo, 'nao apagar', 'utf-8');
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    fs.utimesSync(alvo, old, old);
+
+    const pruned = await pruneSessionBackups({
+      baseDir: tmpDir,
+      scratchDir: outsideDir,
+      retentionDays: 7
+    });
+
+    assert.deepStrictEqual(pruned, [], 'não deve podar fora do scratch');
+    assert.strictEqual(fs.existsSync(alvo), true, 'arquivo do usuário deve permanecer intacto');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

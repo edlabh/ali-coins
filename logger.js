@@ -117,12 +117,17 @@ function sanitizeLogStrings(value, depth = 0, seen = new WeakSet()) {
  */
 function sanitizeSensitiveQueryParams(str) {
   if (typeof str !== 'string') return str;
-  return str
-    .replace(
-      /([?&](?:access_token|api[_-]?key|apikey|auth|authorization|code|password|passwd|secret|session|ticket|token)=)[^&#\s]+/gi,
-      '$1[REDACTED]'
-    )
-    .replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]');
+  return (
+    str
+      .replace(
+        /([?&;#](?:access_token|api[_-]?key|apikey|auth|authorization|code|password|passwd|secret|session|ticket|token)=)[^&#;\s]+/gi,
+        '$1[REDACTED]'
+      )
+      .replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]')
+      // Cabeçalhos textualizados (Bearer/authorization/cookie) vazam segredo em logs
+      .replace(/(Bearer\s+)[\w\-._~+/=]+/gi, '$1[REDACTED]')
+      .replace(/((?:authorization|cookie|x-api-key)\s*[:=]\s*)[^\s,;"']+/gi, '$1[REDACTED]')
+  );
 }
 
 /**
@@ -251,3 +256,4 @@ logger.flushLogs = function flushLogs() {
 };
 
 module.exports = logger;
+module.exports.sanitizeSensitiveQueryParams = sanitizeSensitiveQueryParams;

@@ -5,6 +5,7 @@ const { formatDate, formatDateTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
 const { computeCheckinCoinsGained, computeTasksCoinsGained } = require('./report');
 const logger = require('../logger');
+const { sanitizeSensitiveQueryParams } = require('../logger');
 
 const TELEGRAM_MAX_LENGTH = 4096;
 const TELEGRAM_SAFE_LIMIT = 3900;
@@ -336,7 +337,9 @@ function buildMessage({
 
   // 4. Falha na execução
   if (event === 'failure') {
-    const errorSnippet = extractRelevantErrorMessage(error);
+    // Redige segredos em URLs/headers que possam vir na mensagem de erro (ex.: tokens
+    // de sessão/código 2FA em query string) antes de enviar a um canal externo.
+    const errorSnippet = sanitizeSensitiveQueryParams(extractRelevantErrorMessage(error));
 
     const lines = [
       `🔴 ali-coins — ${now}`,
@@ -383,7 +386,7 @@ function buildMessage({
       '⚠️ <b>Atenção:</b> A sequência diária de check-in foi interrompida ou resetada!',
       ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
-      `📉 <b>Ontem:</b> ${yesterdayStreak} dias ➔ <b>Hoje:</b> ${todayStreak} dias`,
+      `📉 <b>Ontem:</b> ${escapeHtml(toSafeStreak(yesterdayStreak))} ➔ <b>Hoje:</b> ${escapeHtml(toSafeStreak(todayStreak))}`,
       `💰 <b>Saldo Atual:</b> ${escapeHtml(balance)}`
     ];
 

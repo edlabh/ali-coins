@@ -582,7 +582,12 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
           let password = null;
           if (acc.passwordEnv && typeof acc.passwordEnv === 'string') {
             const envName = acc.passwordEnv.trim();
-            password = env[envName] || null;
+            // Somente propriedades PRÓPRIAS do env: evita resolver propriedades herdadas
+            // de Object.prototype (ex.: passwordEnv="constructor"/"toString") como senha.
+            const raw = Object.prototype.hasOwnProperty.call(env, envName)
+              ? env[envName]
+              : undefined;
+            password = typeof raw === 'string' && raw.length > 0 ? raw : null;
             if (!password) {
               logger.warn(
                 { account: maskUser(trimmedUser), passwordEnv: envName },
@@ -592,7 +597,14 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
             }
           } else if (acc.passwordFile && typeof acc.passwordFile === 'string') {
             try {
-              const pwPath = path.resolve(path.dirname(accountsFile), acc.passwordFile);
+              // Confina o caminho ao diretório do accounts.json: impede path traversal
+              // (ex.: "../../etc/passwd") e chmod 0600 em arquivo arbitrário do sistema.
+              const baseDir = path.dirname(accountsFile);
+              const pwPath = path.resolve(baseDir, acc.passwordFile);
+              const rel = path.relative(baseDir, pwPath);
+              if (rel.startsWith('..') || path.isAbsolute(rel)) {
+                throw new Error('passwordFile deve residir no mesmo diretório do accounts.json.');
+              }
               password = fs.readFileSync(pwPath, 'utf-8').trim();
               safeChmod600(pwPath);
             } catch (pwErr) {

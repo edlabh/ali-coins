@@ -11,6 +11,23 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.3] - 2026-09-21
+
+### Segurança
+
+- **SSRF: guard não é mais contornável por redirecionamento (`libs/url_guard.js`, `libs/report.js`, `libs/heartbeat.js`):** o `fetch` nativo seguia redirects (`redirect: 'follow'`), então um destino público podia responder `302` para rede privada/metadata (`169.254.169.254`) e o guard nunca via o alvo. Novo `safeFetch` segue os redirects manualmente, **revalidando cada hop** com o mesmo guard, com limite de saltos e sem propagar credenciais entre origens. Webhook e heartbeat passam a usá-lo.
+- **SSRF: DNS falha fechada (`libs/url_guard.js`):** quando o hostname não resolve, o destino agora é **bloqueado** (antes a falha de resolução era tolerada, permitindo que um hostname só resolvesse no momento do fetch). Adicionado timeout de DNS.
+- **SSRF: IPv6 especiais bloqueados (`libs/url_guard.js`):** link-local via faixa `fe80::/10` (antes só o prefixo literal `fe80`), site-local `fec0::/10`, e prefixos que **embutem IPv4** — NAT64 `64:ff9b::/96`, 6to4 `2002::/16` e Teredo `2001::/32` (em rede com DNS64, `[64:ff9b::a9fe:a9fe]` alcança o metadata da nuvem).
+- **PII em webhook: telefone/ID mascarado (`libs/report.js`):** a sanitização só mascarava identificadores contendo `@`; login por telefone era enviado em claro ao webhook externo. Agora qualquer string em contexto de usuário é mascarada, e o objeto cru **não é mais devolvido** além do limite de profundidade (antes vazava segredos aninhados).
+- **`accounts.json`: `passwordEnv` não resolve mais propriedades herdadas (`config.js`):** `passwordEnv: "constructor"`/`"toString"` resolvia função herdada como senha; agora exige propriedade própria e tipo string.
+- **`accounts.json`: `passwordFile` confinado ao diretório (`config.js`):** impede path traversal (`../../etc/passwd`) e `chmod 0600` em arquivo arbitrário do sistema.
+- **Poda de artefatos confinada ao `scratch/` (`libs/session.js`):** a política de retenção só apaga dentro do scratch esperado; antes, apontar `PW_OUTPUT_DIR` para um diretório de dados do usuário apagava arquivos silenciosamente.
+- **Segredos redigidos em Telegram/heartbeat (`libs/notify.js`, `libs/heartbeat.js`, `logger.js`):** mensagens de erro enviadas a canais externos passam pelo redator de query/headers (`?token=`, `code=`, `Bearer`, `authorization:`/`cookie:`) e o corpo do heartbeat ganhou teto de 32 KB. Também corrigida injeção de HTML no alerta de streak quebrado (valores agora passam por `toSafeStreak`/`escapeHtml`).
+
+### Testes
+
+- Novos testes de regressão: prefixos IPv6 especiais, DNS fail-closed, `safeFetch` bloqueando redirect para rede privada, mascaramento de telefone no webhook, profundidade do sanitizador, `passwordEnv`/`passwordFile`, escopo da poda e redigitação/escaping no Telegram — **351/351**.
+
 ## [1.4.2] - 2026-09-21
 
 ### Corrigido

@@ -596,6 +596,25 @@ function isPrunableArtifact(file) {
 async function pruneSessionBackups(options = {}) {
   const { scratchDir: defaultScratchDir, encPath } = resolveSessionPaths(options);
   const targetScratchDir = options.scratchDir || defaultScratchDir;
+
+  // Segurança destrutiva: a poda só pode ocorrer dentro do diretório scratch esperado.
+  // `scratchDir` é injetável (ex.: PW_OUTPUT_DIR via diagnostics.js); sem esta barreira,
+  // apontá-lo para dados reais apagaria silenciosamente arquivos do usuário.
+  // A raiz permitida é <baseDir>/scratch quando baseDir é informado (testes/isolamento),
+  // senão o scratch padrão do projeto.
+  const allowedRoot = path.resolve(
+    options.baseDir ? path.join(options.baseDir, 'scratch') : defaultScratchDir
+  );
+  const resolvedTarget = path.resolve(targetScratchDir);
+  const relToScratch = path.relative(allowedRoot, resolvedTarget);
+  if (relToScratch.startsWith('..') || path.isAbsolute(relToScratch)) {
+    logger.warn(
+      { targetScratchDir: resolvedTarget, allowedRoot },
+      'Poda de artefatos ignorada: diretório fora do scratch do projeto.'
+    );
+    return [];
+  }
+
   const envDays = Number(
     process.env.DIAGNOSTICS_RETENTION_DAYS || process.env.SESSION_BACKUP_RETENTION_DAYS
   );

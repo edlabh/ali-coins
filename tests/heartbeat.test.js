@@ -47,6 +47,9 @@ test('libs/heartbeat.js - normalizeBaseUrl limpa barras e rotas de ação', () =
 
 test('libs/heartbeat.js - pingStart, pingSuccess e pingFail com mock de fetch', async () => {
   const originalFetch = global.fetch;
+  const originalAllowPrivate = process.env.ALLOW_PRIVATE_WEBHOOKS;
+  // Testa a lógica de heartbeat (não o guard SSRF): libera destino privado e evita DNS real
+  process.env.ALLOW_PRIVATE_WEBHOOKS = 'true';
   const calls = [];
 
   global.fetch = async (targetUrl, options) => {
@@ -102,11 +105,16 @@ test('libs/heartbeat.js - pingStart, pingSuccess e pingFail com mock de fetch', 
     );
   } finally {
     global.fetch = originalFetch;
+    if (originalAllowPrivate !== undefined)
+      process.env.ALLOW_PRIVATE_WEBHOOKS = originalAllowPrivate;
+    else delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   }
 });
 
 test('libs/heartbeat.js - fallback GET quando serviço retorna 405 Method Not Allowed', async () => {
   const originalFetch = global.fetch;
+  const originalAllowPrivate = process.env.ALLOW_PRIVATE_WEBHOOKS;
+  process.env.ALLOW_PRIVATE_WEBHOOKS = 'true';
   const calls = [];
 
   global.fetch = async (targetUrl, options) => {
@@ -127,11 +135,16 @@ test('libs/heartbeat.js - fallback GET quando serviço retorna 405 Method Not Al
     assert.strictEqual(calls[1].method, 'GET');
   } finally {
     global.fetch = originalFetch;
+    if (originalAllowPrivate !== undefined)
+      process.env.ALLOW_PRIVATE_WEBHOOKS = originalAllowPrivate;
+    else delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   }
 });
 
 test('libs/heartbeat.js - resiliência: falha de rede nunca lança exceção', async () => {
   const originalFetch = global.fetch;
+  const originalAllowPrivate = process.env.ALLOW_PRIVATE_WEBHOOKS;
+  process.env.ALLOW_PRIVATE_WEBHOOKS = 'true';
 
   global.fetch = async () => {
     throw new Error('ETIMEDOUT: Connection timed out');
@@ -152,12 +165,17 @@ test('libs/heartbeat.js - resiliência: falha de rede nunca lança exceção', a
     assert.strictEqual(failRes.ok, false);
   } finally {
     global.fetch = originalFetch;
+    if (originalAllowPrivate !== undefined)
+      process.env.ALLOW_PRIVATE_WEBHOOKS = originalAllowPrivate;
+    else delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   }
 });
 
 test('libs/heartbeat.js - sendHeartbeat respeita desativação e URLs vazias', async () => {
   let fetchCalled = false;
   const originalFetch = global.fetch;
+  const originalAllowPrivate = process.env.ALLOW_PRIVATE_WEBHOOKS;
+  process.env.ALLOW_PRIVATE_WEBHOOKS = 'true';
   global.fetch = async () => {
     fetchCalled = true;
     return { ok: true, status: 200 };
@@ -186,6 +204,9 @@ test('libs/heartbeat.js - sendHeartbeat respeita desativação e URLs vazias', a
     assert.strictEqual(fetchCalled, true);
   } finally {
     global.fetch = originalFetch;
+    if (originalAllowPrivate !== undefined)
+      process.env.ALLOW_PRIVATE_WEBHOOKS = originalAllowPrivate;
+    else delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   }
 });
 
@@ -264,6 +285,9 @@ test('libs/heartbeat.js - maskHeartbeatUrl mascara token no meio do path e crede
 
 test('libs/heartbeat.js - sendHeartbeat bloqueia destino loopback/privado (SSRF)', async () => {
   const originalFetch = global.fetch;
+  const originalAllowPrivate = process.env.ALLOW_PRIVATE_WEBHOOKS;
+  // Garante que o opt-in NÃO está ativo, para exercitar o bloqueio SSRF real
+  delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   let fetchCalled = false;
   try {
     global.fetch = async () => {
@@ -280,6 +304,9 @@ test('libs/heartbeat.js - sendHeartbeat bloqueia destino loopback/privado (SSRF)
     assert.strictEqual(fetchCalled, false, 'não deve chamar fetch para destino privado');
   } finally {
     global.fetch = originalFetch;
+    if (originalAllowPrivate !== undefined)
+      process.env.ALLOW_PRIVATE_WEBHOOKS = originalAllowPrivate;
+    else delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   }
 });
 

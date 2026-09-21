@@ -2,7 +2,7 @@ const { z } = require('zod');
 const { formatDate, formatTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
 const { getCheckinCoinsFromStreak } = require('./ui/balance');
-const { validateExternalUrl } = require('./url_guard');
+const { validateExternalUrl, safeFetch } = require('./url_guard');
 const logger = require('../logger');
 
 // Teto de payload enviado a webhooks externos (32 KB): protege memória e destinos.
@@ -454,8 +454,13 @@ const WEBHOOK_USER_KEYS = new Set(['user', 'userEmail', 'email', 'maskedUser', '
  * @returns {*}
  */
 function sanitizeWebhookPayload(value, depth = 0, userContext = false) {
-  if (depth > 6 || value === null || typeof value !== 'object') {
-    if (userContext && typeof value === 'string' && value.includes('@')) return maskUser(value);
+  // Limite duro de profundidade: em vez de devolver o objeto cru (vazaria segredos),
+  // retorna um marcador — a defesa em profundidade não pode ser contornada por aninhamento.
+  if (depth > 6) return '[profundidade máxima excedida]';
+  if (value === null || typeof value !== 'object') {
+    // Mascara QUALQUER identificador em contexto de usuário (e-mail OU telefone/ID).
+    // Antes exigia '@', deixando logins por telefone vazarem para o webhook externo.
+    if (userContext && typeof value === 'string') return maskUser(value);
     return value;
   }
   if (Array.isArray(value)) {
@@ -565,23 +570,26 @@ async function performWebhookNotification(payload, customUrl = null) {
       bodyData = JSON.stringify({ text });
     }
 
-    // Revalida imediatamente antes do fetch para reduzir a janela de DNS rebinding
-    // (a resolução pode mudar entre a validação inicial e o envio).
-    const recheck = await validateExternalUrl(webhookUrl);
-    if (!recheck.ok) {
-      logger.warn(
-        { reason: recheck.reason },
-        'Webhook abortado: destino mudou para rede privada entre a validação e o envio.'
-      );
-      return false;
+    // safeFetch revalida CADA hop de redirect com o guard SSRF e não segue redirects
+    // para rede privada/metadata (o fetch nativo seguiria, contornando o guard).
+    let response;
+    try {
+      response = await safeFetch(webhookUrl, {
+        method: 'POST',
+        headers,
+        body: bodyData,
+        signal: AbortSignal.timeout(5000)
+      });
+    } catch (err) {
+      if (err && err.code === 'SSRF_BLOCKED') {
+        logger.warn(
+          { reason: err.reason },
+          'Webhook abortado: destino (ou redirect) apontou para rede privada (SSRF).'
+        );
+        return false;
+      }
+      throw err;
     }
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers,
-      body: bodyData,
-      signal: AbortSignal.timeout(5000)
-    });
 
     if (!response.ok) {
       logger.warn(
@@ -966,5 +974,6 @@ module.exports = {
   renderUnifiedReport,
   renderMultiAccountReport,
   isStreakBreak,
-  resolveStreakDays
+  resolveStreakDays,
+  sanitizeWebhookPayload
 };

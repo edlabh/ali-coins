@@ -101,3 +101,65 @@ test('libs/url_guard.js - bloqueia IPv6 literal privado/loopback e IPv4 mapeado'
     true
   );
 });
+
+test('libs/url_guard.js - bloqueia IPv6 especiais (link-local /10, site-local, NAT64, 6to4, Teredo)', async () => {
+  const { isPrivateIp } = require('../libs/url_guard');
+  // link-local fe80::/10 completo + site-local fec0::/10
+  for (const ip of ['fe80::1', 'fe90::1', 'fea0::1', 'feb0::1', 'fec0::1', 'fc00::1', 'fd12::1']) {
+    assert.strictEqual(isPrivateIp(ip), true, `${ip} deve ser privado`);
+  }
+  // NAT64 (embute IPv4, ex.: metadata 169.254.169.254 e loopback)
+  for (const ip of ['64:ff9b::a9fe:a9fe', '64:ff9b::7f00:1', '64:ff9b:1::a9fe:a9fe']) {
+    assert.strictEqual(isPrivateIp(ip), true, `${ip} (NAT64) deve ser bloqueado`);
+  }
+  // 6to4 (2002::/16) e Teredo (2001::/32)
+  assert.strictEqual(isPrivateIp('2002:7f00:1::'), true, '6to4 com 127.0.0.1 embutido');
+  assert.strictEqual(isPrivateIp('2002:a9fe:a9fe::'), true, '6to4 com 169.254.169.254 embutido');
+  assert.strictEqual(isPrivateIp('2001::1'), true, 'Teredo 2001::/32');
+  // Públicos continuam liberados
+  for (const ip of ['2606:4700:4700::1111', '2001:4860:4860::8888', '2a00:1450:4001::1']) {
+    assert.strictEqual(isPrivateIp(ip), false, `${ip} deve ser público`);
+  }
+});
+
+test('libs/url_guard.js - validateExternalUrl falha fechada quando o DNS não resolve', async () => {
+  const { validateExternalUrl } = require('../libs/url_guard');
+  const res = await validateExternalUrl('https://nao-existe-mesmo-xyz-12345.invalid/hook', {
+    allowPrivate: false
+  });
+  assert.strictEqual(res.ok, false, 'deve bloquear quando não resolve (fail-closed)');
+  assert.match(res.reason, /resolver|DNS|SSRF/i);
+});
+
+test('libs/url_guard.js - safeFetch revalida cada hop e bloqueia redirect para rede privada', async () => {
+  const { safeFetch } = require('../libs/url_guard');
+  const originalFetch = global.fetch;
+  const fetched = [];
+  // Primeiro hop: 8.8.8.8 (IP público literal, sem DNS) responde 302 para o metadata.
+  // O guard deve bloquear o SEGUNDO hop (169.254.169.254) e nunca buscá-lo.
+  global.fetch = async (u) => {
+    fetched.push(String(u));
+    return {
+      status: 302,
+      ok: false,
+      headers: {
+        get: (k) =>
+          String(k).toLowerCase() === 'location' ? 'http://169.254.169.254/latest/meta-data/' : null
+      },
+      body: { cancel: async () => {} }
+    };
+  };
+  try {
+    await assert.rejects(
+      () => safeFetch('http://8.8.8.8/hook', { method: 'POST' }, { allowPrivate: false }),
+      (err) => err && err.code === 'SSRF_BLOCKED',
+      'deve lançar SSRF_BLOCKED ao tentar seguir redirect para IP privado'
+    );
+    assert.ok(
+      fetched.every((u) => !u.includes('169.254.169.254')),
+      'nunca deve buscar o destino interno'
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

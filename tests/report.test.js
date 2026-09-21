@@ -1551,3 +1551,31 @@ test('libs/report.js - renderCheckinReport --json não vaza sessionData no webho
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/report.js - sanitizeWebhookPayload mascara telefone/ID (sem @) e não vaza por profundidade', () => {
+  const { sanitizeWebhookPayload } = require('../libs/report');
+  const out = sanitizeWebhookPayload({
+    user: '5511999998888',
+    userEmail: 'alice@example.com',
+    account: { user: '5511888887777' },
+    meta: { totalCoinsGained: 10 },
+    sessionData: { cookies: [{ name: 'xman_us_t', value: 'SEGREDO' }] }
+  });
+  assert.strictEqual(out.user, '55***', 'telefone deve ser mascarado');
+  assert.strictEqual(out.account.user, '55***');
+  assert.strictEqual(out.userEmail, 'al***@example.com');
+  assert.strictEqual(out.sessionData, undefined, 'sessionData deve ser removido');
+  assert.strictEqual(out.meta.totalCoinsGained, 10);
+});
+
+test('libs/report.js - sanitizeWebhookPayload não devolve objeto cru além da profundidade máxima', () => {
+  const { sanitizeWebhookPayload } = require('../libs/report');
+  let deep = { password: 'SEGREDO' };
+  for (let i = 0; i < 10; i++) deep = { nested: deep };
+  const out = sanitizeWebhookPayload(deep);
+  assert.strictEqual(
+    JSON.stringify(out).includes('SEGREDO'),
+    false,
+    'não deve vazar segredo profundo'
+  );
+});

@@ -16,6 +16,27 @@ const PRIVATE_HOSTNAMES = new Set([
 ]);
 
 /**
+ * Extrai um IPv4 embutido nos últimos 32 bits de um IPv6 em notação hexadecimal
+ * (ex.: "64:ff9b::a9fe:a9fe" -> "169.254.169.254", "2002:7f00:1::" -> "127.0.0.1").
+ * Retorna null quando não há 32 bits finais interpretáveis.
+ * @param {string} lower IPv6 em minúsculas
+ * @returns {string|null}
+ */
+function extractTrailingIpv4FromV6(lower) {
+  // Expande "::" para os hextetos completos e pega os 2 últimos
+  const [head, tail = ''] = lower.split('::');
+  const headParts = head ? head.split(':').filter(Boolean) : [];
+  const tailParts = tail ? tail.split(':').filter(Boolean) : [];
+  const missing = 8 - headParts.length - tailParts.length;
+  const full = [...headParts, ...Array(Math.max(0, missing)).fill('0'), ...tailParts];
+  if (full.length < 2) return null;
+  const hi = parseInt(full[full.length - 2], 16);
+  const lo = parseInt(full[full.length - 1], 16);
+  if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
+  return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+}
+
+/**
  * Verifica se um IP (v4/v6) é privado/loopback/link-local/reservado.
  * @param {string} ip
  * @returns {boolean}
@@ -40,8 +61,35 @@ function isPrivateIp(ip) {
   if (net.isIPv6(ip)) {
     const lower = ip.toLowerCase();
     if (lower === '::1' || lower === '::') return true; // loopback/unspecified
-    if (lower.startsWith('fe80')) return true; // link-local
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local fc00::/7
+    // Link-local fe80::/10 e site-local (depreciado) fec0::/10: testa a faixa
+    // numericamente no primeiro hexteto (fe80..febf e fec0..feff), não só o prefixo "fe80".
+    const firstHextet = parseInt(lower.split(':')[0], 16);
+    if (Number.isFinite(firstHextet) && (firstHextet & 0xffc0) === 0xfe80) return true;
+    if (Number.isFinite(firstHextet) && (firstHextet & 0xffc0) === 0xfec0) return true;
+    if ((firstHextet & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
+    // Prefixos que EMBUTEM um IPv4 e traduzem para ele em redes NAT64/6to4/Teredo:
+    // 64:ff9b::/96 e 64:ff9b:1::/48 (NAT64), 2002::/16 (6to4), 2001::/32 (Teredo).
+    // Em rede com DNS64, [64:ff9b::a9fe:a9fe] alcança 169.254.169.254 (metadata).
+    if (firstHextet === 0x0064) {
+      const h1 = parseInt(lower.split(':')[1], 16);
+      if (h1 === 0xff9b) {
+        const embedded = extractTrailingIpv4FromV6(lower);
+        return embedded ? isPrivateIp(embedded) : true; // NAT64: trata prefixo como privado
+      }
+    }
+    if (firstHextet === 0x2002) {
+      const embedded = extractTrailingIpv4FromV6(lower);
+      return embedded ? isPrivateIp(embedded) : true; // 6to4
+    }
+    // Teredo 2001::/32: o segundo hexteto é 0x0000 (precisa normalizar a expansão de "::")
+    if (firstHextet === 0x2001) {
+      const seconds = lower.split('::')[0].split(':');
+      const secondHextet = seconds.length > 1 ? parseInt(seconds[1], 16) : 0;
+      if (secondHextet === 0x0000) {
+        const embedded = extractTrailingIpv4FromV6(lower);
+        return embedded ? isPrivateIp(embedded) : true;
+      }
+    }
     // IPv4 mapeado em decimal (::ffff:a.b.c.d)
     const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isPrivateIp(mapped[1]);
@@ -116,30 +164,136 @@ async function validateExternalUrl(rawUrl, options = {}) {
   }
 
   // Hostname: resolve e valida todos os IPs (evita DNS rebinding para rede privada).
-  // Falha de DNS é tolerada (o destino simplesmente não responderá); o objetivo é
-  // impedir que um hostname PÚBLICO resolva para IP privado/loopback.
-  if (options.resolveDns !== false) {
+  // FALHA FECHADA: se não conseguir resolver, bloqueia. Antes tolerava a falha, o que
+  // permitia que um hostname que só resolve no momento do fetch escapasse da checagem.
+  // Com allowPrivate, o destino privado é permitido por opt-in — não há o que bloquear.
+  if (options.resolveDns !== false && !allowPrivate) {
+    let records;
     try {
-      const records = await dns.lookup(host, { all: true });
-      for (const rec of records) {
-        if (isPrivateIp(rec.address) && !allowPrivate) {
-          return {
-            ok: false,
-            reason: `Host resolve para IP privado (${rec.address}) — bloqueado (SSRF).`
-          };
-        }
+      records = await withTimeout(
+        dns.lookup(host, { all: true }),
+        options.dnsTimeoutMs || 3000,
+        'Tempo esgotado ao resolver o DNS do destino (SSRF guard).'
+      );
+    } catch (err) {
+      return {
+        ok: false,
+        reason: `Não foi possível resolver o DNS do destino (${err.message}) — bloqueado por segurança (SSRF).`
+      };
+    }
+    if (!Array.isArray(records) || records.length === 0) {
+      return { ok: false, reason: 'Destino sem registros DNS — bloqueado por segurança (SSRF).' };
+    }
+    for (const rec of records) {
+      if (isPrivateIp(rec.address) && !allowPrivate) {
+        return {
+          ok: false,
+          reason: `Host resolve para IP privado (${rec.address}) — bloqueado (SSRF).`
+        };
       }
-    } catch {
-      // Sem resolução DNS: não bloqueia (o fetch irá falhar por conta própria)
     }
   }
 
   return { ok: true, url: parsed };
 }
 
+/**
+ * Corrida entre uma promise e um timeout.
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} ms
+ * @param {string} message
+ * @returns {Promise<T>}
+ */
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+    if (timer.unref) timer.unref();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * fetch para destinos externos com proteção SSRF que NÃO é contornável por redirects.
+ *
+ * O `fetch` nativo segue redirects por padrão (redirect: 'follow'), então um destino
+ * público pode responder 302 para um IP privado/metadata e o guard em
+ * `validateExternalUrl` nunca veria o alvo. Aqui seguimos os redirects manualmente,
+ * revalidando CADA hop com `validateExternalUrl` (mesmo guard), limitando o número
+ * de saltos e rejeitando métodos/URLs inválidos. Segredos no header Authorization
+ * são descartados ao mudar de origem.
+ *
+ * @param {string} rawUrl
+ * @param {object} [init={}] Opções do fetch (method, headers, body, signal)
+ * @param {object} [options={}]
+ * @param {number} [options.maxRedirects=5]
+ * @param {boolean} [options.allowPrivate]
+ * @param {number} [options.dnsTimeoutMs]
+ * @returns {Promise<Response>}
+ */
+async function safeFetch(rawUrl, init = {}, options = {}) {
+  const maxRedirects = Number.isInteger(options.maxRedirects) ? options.maxRedirects : 5;
+  let currentUrl = rawUrl;
+  let currentInit = { ...init };
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const guard = await validateExternalUrl(currentUrl, {
+      allowPrivate: options.allowPrivate,
+      dnsTimeoutMs: options.dnsTimeoutMs
+    });
+    if (!guard.ok) {
+      const err = new Error(`Destino bloqueado pelo guard SSRF: ${guard.reason}`);
+      err.code = 'SSRF_BLOCKED';
+      err.reason = guard.reason;
+      throw err;
+    }
+
+    const response = await fetch(currentUrl, { ...currentInit, redirect: 'manual' });
+
+    // 3xx com Location: segue manualmente revalidando o próximo hop
+    if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
+      if (hop === maxRedirects) {
+        throw new Error(
+          `Número máximo de redirects (${maxRedirects}) excedido no destino externo.`
+        );
+      }
+      const nextUrl = new URL(response.headers.get('location'), currentUrl).toString();
+      const sameOrigin = new URL(nextUrl).origin === new URL(currentUrl).origin;
+      if (!sameOrigin) {
+        // Não propaga credenciais para outra origem
+        const headers = { ...(currentInit.headers || {}) };
+        delete headers.Authorization;
+        delete headers.authorization;
+        delete headers.Cookie;
+        delete headers.cookie;
+        currentInit = { ...currentInit, headers };
+      }
+      // 303 (e 301/302 em POST, por convenção) viram GET sem body
+      const method = String(currentInit.method || 'GET').toUpperCase();
+      if (
+        response.status === 303 ||
+        ((response.status === 301 || response.status === 302) && method === 'POST')
+      ) {
+        currentInit = { ...currentInit, method: 'GET', body: undefined };
+      }
+      if (typeof response.body?.cancel === 'function') {
+        await response.body.cancel().catch(() => {});
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error('Fluxo de redirects não resolvido (guard SSRF).');
+}
+
 module.exports = {
   isPrivateIp,
   allowPrivateTargets,
   validateExternalUrl,
+  safeFetch,
   PRIVATE_HOSTNAMES
 };

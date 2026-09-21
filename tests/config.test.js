@@ -285,3 +285,69 @@ test('config.js - positiveInt rejeita valores não numéricos e aceita strings n
   assert.strictEqual(zero.success, true);
   assert.strictEqual(zero.data.TASK_MAX_ACTIONS, 25, 'Zero deve cair no default');
 });
+
+test('config.js - passwordEnv não resolve propriedades herdadas de Object.prototype', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { loadAccounts } = require('../config');
+  const tmpDir = createIsolatedTestDir('ali-pwenv-proto-');
+  const originalUser = process.env.ALI_USER;
+  const originalPass = process.env.ALI_PASSWORD;
+  delete process.env.ALI_USER;
+  delete process.env.ALI_PASSWORD;
+
+  try {
+    fs.writeFileSync(
+      path.join(tmpDir, 'accounts.json'),
+      JSON.stringify([{ user: 'proto@example.com', passwordEnv: 'constructor' }]),
+      'utf-8'
+    );
+    // env controlado e vazio: isola de ALI_USER/ALI_PASSWORD do ambiente real
+    const accounts = loadAccounts({}, tmpDir);
+    assert.strictEqual(accounts.length, 0, 'passwordEnv herdado não deve virar senha');
+  } finally {
+    if (originalUser !== undefined) process.env.ALI_USER = originalUser;
+    if (originalPass !== undefined) process.env.ALI_PASSWORD = originalPass;
+    cleanupIsolatedTestDir(tmpDir);
+  }
+});
+
+test('config.js - passwordFile não permite path traversal fora do diretório do accounts.json', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { loadAccounts } = require('../config');
+  const tmpDir = createIsolatedTestDir('ali-pwfile-trav-');
+  const originalUser = process.env.ALI_USER;
+  const originalPass = process.env.ALI_PASSWORD;
+  delete process.env.ALI_USER;
+  delete process.env.ALI_PASSWORD;
+
+  try {
+    const baseDir = path.join(tmpDir, 'cfg');
+    fs.mkdirSync(baseDir, { recursive: true });
+    // Arquivo fora do baseDir que NÃO pode ser lido como senha
+    fs.writeFileSync(path.join(tmpDir, 'segredo-fora.txt'), 'nao-deveria-ser-senha', 'utf-8');
+    fs.writeFileSync(
+      path.join(baseDir, 'accounts.json'),
+      JSON.stringify([{ user: 'trav@example.com', passwordFile: '../segredo-fora.txt' }]),
+      'utf-8'
+    );
+    const accounts = loadAccounts({}, baseDir);
+    assert.strictEqual(accounts.length, 0, 'path traversal deve ser recusado');
+
+    // Sem traversal: aceita normalmente
+    fs.writeFileSync(path.join(baseDir, 'conta.pw'), 'senha-valida-123', 'utf-8');
+    fs.writeFileSync(
+      path.join(baseDir, 'accounts.json'),
+      JSON.stringify([{ user: 'ok@example.com', passwordFile: 'conta.pw' }]),
+      'utf-8'
+    );
+    const ok = loadAccounts({}, baseDir);
+    assert.strictEqual(ok.length, 1, 'arquivo dentro do diretório é aceito');
+    assert.strictEqual(ok[0].password, 'senha-valida-123');
+  } finally {
+    if (originalUser !== undefined) process.env.ALI_USER = originalUser;
+    if (originalPass !== undefined) process.env.ALI_PASSWORD = originalPass;
+    cleanupIsolatedTestDir(tmpDir);
+  }
+});

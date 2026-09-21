@@ -1201,3 +1201,23 @@ test('libs/notify.js - truncateMessageIfNeeded não parte emoji nem tags HTML', 
   assert.strictEqual(open, close, 'tags HTML devem estar balanceadas');
   assert.strictEqual(out.includes('\uFFFD'), false, 'não deve corromper emoji (U+FFFD)');
 });
+
+test('libs/notify.js - buildMessage redige token/code do erro e escapa valores de streak', () => {
+  const { buildMessage } = require('../libs/notify');
+
+  // 1. Erro com segredo em query string não deve vazar para o canal externo
+  const msgFail = buildMessage({
+    event: 'failure',
+    error: new Error('navigation failed at https://x.com/p?token=SECRET123&code=456'),
+    report: { userEmail: 'a@b.com' }
+  });
+  assert.strictEqual(msgFail.includes('SECRET123'), false, 'token deve ser redigido');
+  assert.strictEqual(msgFail.includes('456'), false, 'code deve ser redigido');
+
+  // 2. streak_break: valor com HTML não pode injetar tag
+  const msgStreak = buildMessage({
+    event: 'streak_break',
+    report: { checkin: { previousStreakDays: '5 <a href="https://evil">x</a>', streakDays: 0 } }
+  });
+  assert.strictEqual(msgStreak.includes('<a href'), false, 'não deve injetar tag HTML');
+});
