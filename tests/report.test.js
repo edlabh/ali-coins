@@ -1579,3 +1579,38 @@ test('libs/report.js - sanitizeWebhookPayload não devolve objeto cru além da p
     'não deve vazar segredo profundo'
   );
 });
+
+test('libs/report.js - payload de webhook Discord neutraliza menções e markdown', async () => {
+  const { sendWebhookNotification } = require('../libs/report');
+  const originalFetch = global.fetch;
+  const originalWebhook = process.env.NOTIFY_WEBHOOK_URL;
+  let captured = null;
+  global.fetch = async (u, opts) => {
+    captured = opts.body;
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      body: { cancel: async () => {} }
+    };
+  };
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://discord.com/api/webhooks/1/abc';
+    process.env.ALLOW_PRIVATE_WEBHOOKS = 'true';
+    await sendWebhookNotification({
+      type: 'checkin',
+      user: 'a@b.com',
+      coinsGainedToday: '10',
+      totalBalance: '@everyone **pwn**'
+    });
+    await require('../libs/report').flushWebhooks(2000);
+    assert.ok(captured, 'webhook deve ter sido enviado');
+    assert.ok(!captured.includes('@everyone'), 'menção @everyone deve ser neutralizada');
+    assert.ok(!/\*\*pwn\*\*/.test(captured), 'markdown deve ser escapado');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalWebhook !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalWebhook;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
+    delete process.env.ALLOW_PRIVATE_WEBHOOKS;
+  }
+});

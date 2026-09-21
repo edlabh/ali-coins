@@ -42,7 +42,10 @@ function isAllowedStorageKey(keyName) {
 function filterStorageState(storageState) {
   if (!storageState || !Array.isArray(storageState.origins)) return storageState;
   const origins = storageState.origins.map((origin) => {
-    if (!origin || !Array.isArray(origin.localStorage)) return origin;
+    // localStorage ausente/não-array: trata como vazio (não devolve cru, o que
+    // permitiria entradas fora da allowlist escaparem). Preserva o restante do origin.
+    if (!origin) return origin;
+    if (!Array.isArray(origin.localStorage)) return { ...origin, localStorage: [] };
     const filtered = origin.localStorage.filter((item) => isAllowedStorageKey(item && item.name));
     return { ...origin, localStorage: filtered };
   });

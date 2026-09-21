@@ -82,3 +82,14 @@ test('libs/crash.js - uncaughtException em subprocesso encerra com exit code 6 e
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('libs/crash.js - timer de emergência não usa unref (garante exit code 6)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'libs', 'crash.js'), 'utf-8');
+  assert.strictEqual(
+    /emergencyTimer\.unref|setTimeout\([^)]*\)\.unref/.test(src),
+    false,
+    'o timer que garante o exit 6 não pode ser unref (sairia com código 0)'
+  );
+});

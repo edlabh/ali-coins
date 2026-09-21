@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const {
   sessionPath: defaultSessionPath,
   sessionMetaPath: defaultSessionMetaPath,
@@ -26,6 +27,32 @@ class SessionMigrationError extends Error {
     super(message);
     this.name = 'SessionMigrationError';
   }
+}
+
+// M9: serializa mutações de sessão no MESMO processo por caminho (save/clear/streak).
+// O lockfile é inter-processo e não evita que duas operações assíncronas internas
+// intercalem (ex.: clearSession apagar o .enc recém-gravado por saveSession).
+const sessionMutationQueues = new Map();
+
+/**
+ * Executa `fn` em série para um dado caminho de sessão (mutex por caminho).
+ * @template T
+ * @param {string} key
+ * @param {() => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+function withSessionLock(key, fn) {
+  const prev = sessionMutationQueues.get(key) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  // Mantém a fila viva sem propagar rejeição para o próximo encadeado
+  const chained = run.finally(() => {
+    if (sessionMutationQueues.get(key) === chained) sessionMutationQueues.delete(key);
+  });
+  sessionMutationQueues.set(
+    key,
+    chained.catch(() => {})
+  );
+  return run;
 }
 
 /**
@@ -185,23 +212,50 @@ async function loadSessionFiles(options = {}) {
         // Se criptografia está habilitada e autoMigrate permitida, migrar para .enc
         const autoMigrate = options.autoMigrate !== false;
         if (shouldEncrypt && autoMigrate) {
-          logger.info(
-            'Migrando sessão legada em texto claro (session.json) para formato criptografado at-rest (session.json.enc)...'
-          );
-          try {
-            const encrypted = await encryptSessionAsync(
-              JSON.stringify(sessionData, null, 2),
-              secret
+          // M5: NÃO sobrescrever um .enc existente (pode ser uma sessão válida que não
+          // decifrou, ex.: secret rotacionado). Faz backup antes e só então grava.
+          if (fs.existsSync(encPath)) {
+            const bakPath = `${encPath}.bak-${Date.now()}`;
+            try {
+              await fs.promises.rename(encPath, bakPath);
+              safeChmod600(bakPath);
+              logger.warn(
+                { backup: bakPath },
+                'session.json.enc existente preservado como backup antes da migração do texto claro.'
+              );
+            } catch (bakErr) {
+              logger.warn(
+                { err: bakErr.message },
+                'Não foi possível fazer backup do .enc existente; migração abortada para não perder a sessão.'
+              );
+              parsedPlain = null;
+            }
+          }
+
+          if (parsedPlain) {
+            logger.info(
+              'Migrando sessão legada em texto claro (session.json) para formato criptografado at-rest (session.json.enc)...'
             );
-            await safeWriteFile(encPath, encrypted, 'utf-8');
-            safeChmod600(encPath);
-            // Remover o arquivo em texto puro SOMENTE após a migração ser concluída com sucesso
-            await fs.promises.unlink(sPath).catch(() => {});
-          } catch (migrateErr) {
-            logger.warn(
-              { err: migrateErr.message },
-              'Falha ao migrar session.json para .enc. Arquivo em texto claro preservado.'
-            );
+            try {
+              const encrypted = await encryptSessionAsync(
+                JSON.stringify(sessionData, null, 2),
+                secret
+              );
+              await safeWriteFile(encPath, encrypted, 'utf-8');
+              safeChmod600(encPath);
+              // B13: verifica round-trip antes de apagar o único texto claro existente.
+              const verify = JSON.parse(await decryptSessionAsync(encrypted, secret));
+              if (!verify || !Array.isArray(verify.cookies)) {
+                throw new Error('Verificação pós-escrita falhou (conteúdo não reconferido).');
+              }
+              // Remover o arquivo em texto puro SOMENTE após a migração ser verificada
+              await fs.promises.unlink(sPath).catch(() => {});
+            } catch (migrateErr) {
+              logger.warn(
+                { err: migrateErr.message },
+                'Falha ao migrar session.json para .enc. Arquivo em texto claro preservado.'
+              );
+            }
           }
         }
       }
@@ -239,7 +293,7 @@ async function loadSessionFiles(options = {}) {
  * @param {object} [options={}]
  * @returns {Promise<void>}
  */
-async function clearSession(options = {}) {
+async function clearSessionUnlocked(options = {}) {
   const { sPath, encPath, mPath, scratchDir: targetScratchDir } = resolveSessionPaths(options);
   const { secret } = getEncryptionConfig(options);
 
@@ -389,7 +443,7 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
  * @param {object} [options={}]
  * @returns {Promise<{ sessionData: object, metaData: object }>}
  */
-async function saveSession(storageState, user, options = {}) {
+async function saveSessionUnlocked(storageState, user, options = {}) {
   if (!storageState || !Array.isArray(storageState.cookies)) {
     return null;
   }
@@ -507,7 +561,7 @@ async function saveSession(storageState, user, options = {}) {
  * @param {object} [options={}] Opções de caminho de sessão
  * @returns {Promise<object|null>} Metadados atualizados ou null
  */
-async function updateSessionStreak(streakDays, options = {}) {
+async function updateSessionStreakUnlocked(streakDays, options = {}) {
   const { mPath } = resolveSessionPaths(options);
   if (!fs.existsSync(mPath)) return null;
 
@@ -716,7 +770,7 @@ async function rotateSessionSecret(options = {}) {
     );
   }
 
-  if (oldSecret === newSecret) {
+  if (secretsEqual(oldSecret, newSecret)) {
     throw new Error(
       'A nova chave de sessão deve ser diferente da chave atual para efetuar a rotação.'
     );
@@ -876,6 +930,21 @@ async function migrateLegacySession(options = {}) {
   await safeWriteFile(encPath, encrypted, 'utf-8');
   safeChmod600(encPath);
 
+  // B13: verifica o round-trip ANTES de remover o único texto claro existente. Se a
+  // escrita/criptografia falhar, o plaintext permanece para nova tentativa.
+  try {
+    const verify = JSON.parse(await decryptSessionAsync(encrypted, secret));
+    if (!verify || !Array.isArray(verify.cookies)) {
+      throw new Error('conteúdo não reconferido');
+    }
+  } catch (verifyErr) {
+    logger.warn(
+      { err: verifyErr.message },
+      'Verificação pós-escrita da migração falhou. Texto claro preservado; .enc pode estar inválido.'
+    );
+    return fail('Falha na verificação da migração para .enc.');
+  }
+
   // Remover o arquivo em texto claro SOMENTE após gravar e proteger o .enc
   await fs.promises.unlink(sPath).catch(() => {});
 
@@ -893,6 +962,39 @@ async function migrateLegacySession(options = {}) {
     result.encrypted = true;
   }
   return result;
+}
+
+/**
+ * Compara dois segredos em tempo constante (evita timing attack em rotação de chaves).
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function secretsEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return a === b;
+  const bufA = Buffer.from(a, 'utf-8');
+  const bufB = Buffer.from(b, 'utf-8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Wrappers serializados por caminho de sessão (M9). Evitam corrida entre
+ * save/clear/updateStreak no mesmo processo (o lockfile cobre só entre processos).
+ */
+function saveSession(storageState, user, options = {}) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => saveSessionUnlocked(storageState, user, options));
+}
+
+function clearSession(options = {}) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => clearSessionUnlocked(options));
+}
+
+function updateSessionStreak(streakDays, options = {}) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => updateSessionStreakUnlocked(streakDays, options));
 }
 
 module.exports = {

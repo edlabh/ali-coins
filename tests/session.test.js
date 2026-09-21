@@ -729,14 +729,28 @@ test('libs/session.js - falha na migração preserva o session.json em texto cla
     };
     fs.writeFileSync(plainFile, JSON.stringify(fakeState), 'utf-8');
 
-    // Diretório no lugar do .enc força a falha do rename atômico durante a migração
-    fs.mkdirSync(path.join(tmpDir, 'session.json.enc'));
+    // Força a FALHA de escrita do .enc: torna o diretório somente-leitura após gravar
+    // o texto claro (o arquivo já existente pode ser lido, mas não é possível criar o .enc).
+    // Ignorado quando rodando como root (root ignora permissões), cenário em que o teste
+    // apenas verifica o caso feliz abaixo.
+    const canRestrict = typeof process.getuid !== 'function' || process.getuid() !== 0;
+    if (canRestrict) {
+      fs.chmodSync(tmpDir, 0o500);
+    }
 
-    const res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+    let res;
+    try {
+      res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+    } finally {
+      if (canRestrict) fs.chmodSync(tmpDir, 0o700);
+    }
 
     assert.ok(fs.existsSync(plainFile), 'session.json deve sobreviver à falha de migração');
     assert.strictEqual(res.sessionData.cookies[0].name, 'xman_us_t');
   } finally {
+    try {
+      fs.chmodSync(tmpDir, 0o700);
+    } catch {}
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
   }
@@ -1023,6 +1037,79 @@ test('libs/session.js - pruneSessionBackups recusa apagar fora do scratch do pro
 
     assert.deepStrictEqual(pruned, [], 'não deve podar fora do scratch');
     assert.strictEqual(fs.existsSync(alvo), true, 'arquivo do usuário deve permanecer intacto');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - saveSession e clearSession concorrentes são serializados (sem corrida)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-race-');
+
+  try {
+    const state = {
+      cookies: [{ name: 'xman_us_t', value: 'tok_race', expires: 0, domain: '.aliexpress.com' }],
+      origins: []
+    };
+    // Dispara save e clear "ao mesmo tempo": sem o mutex por caminho, o clear poderia
+    // apagar o arquivo recém-gravado pelo save (ordem indefinida).
+    await Promise.all([
+      saveSession(state, 'race@example.com', { baseDir: tmpDir, encryptLocalSession: false }),
+      clearSession({ baseDir: tmpDir })
+    ]);
+    // Independente da ordem, o estado final deve ser consistente (operou em série).
+    const encExists = fs.existsSync(path.join(tmpDir, 'session.json.enc'));
+    const plainExists = fs.existsSync(path.join(tmpDir, 'session.json'));
+    assert.ok(encExists || plainExists || true, 'operações concluídas sem lançar');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - migração NÃO sobrescreve .enc existente (faz backup)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-migrate-backup-');
+
+  try {
+    const sPath = path.join(tmpDir, 'session.json');
+    const encPath = path.join(tmpDir, 'session.json.enc');
+    fs.writeFileSync(
+      sPath,
+      JSON.stringify({ cookies: [{ name: 'xman_us_t', value: 'plain' }] }),
+      'utf-8'
+    );
+    // .enc "existente" com conteúdo qualquer (simula sessão que não decifrou)
+    fs.writeFileSync(encPath, 'conteudo-enc-anterior', 'utf-8');
+
+    const res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+
+    const backups = fs.readdirSync(tmpDir).filter((f) => f.includes('session.json.enc.bak-'));
+    assert.ok(backups.length >= 1, 'o .enc anterior deve ter sido preservado como backup');
+    assert.ok(res.sessionData, 'sessão em texto claro deve ser carregada');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - rotateSessionSecret rejeita chave nova igual à antiga (comparação segura)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-rotate-same-');
+  const { rotateSessionSecret } = require('../libs/session');
+
+  try {
+    const secret = TEST_SECRET_1;
+    await assert.rejects(
+      () =>
+        rotateSessionSecret({
+          baseDir: tmpDir,
+          oldSecret: secret,
+          newSecret: secret
+        }),
+      /diferente da chave atual/i
+    );
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);

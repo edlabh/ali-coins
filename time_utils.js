@@ -6,28 +6,54 @@ function pad(num, size = 2) {
   return num.toString().padStart(size, '0');
 }
 
+// Fuso do negócio (o "dia" da AliExpress reinicia em Pacific Time). Os relatórios usam
+// este fuso em vez do fuso local do host, evitando divergência na virada do dia em VPS UTC.
+// Configurável via REPORT_TIMEZONE (ex.: America/Sao_Paulo) mantendo o mesmo formato.
+const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Los_Angeles';
+
 /**
- * Retorna a data no formato DD/MM/AAAA
+ * Extrai as partes de data/hora de um Date no fuso do relatório.
+ * @param {Date} date
+ * @returns {{ day: string, month: string, year: string, hour: string, minute: string, second: string }}
+ */
+function partsInReportTimezone(date) {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: REPORT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(date)) {
+    if (p.type !== 'literal') parts[p.type] = p.value;
+  }
+  return parts;
+}
+
+/**
+ * Retorna a data no formato DD/MM/AAAA (no fuso do relatório)
  * @param {Date} [date=new Date()]
  * @returns {string}
  */
 function formatDate(date = new Date()) {
-  const d = pad(date.getDate());
-  const m = pad(date.getMonth() + 1);
-  const y = date.getFullYear();
-  return `${d}/${m}/${y}`;
+  const p = partsInReportTimezone(date);
+  // en-GB hour "24" aparece à meia-noite em alguns engines; normaliza
+  return `${p.day}/${p.month}/${p.year}`;
 }
 
 /**
- * Retorna a hora no formato HH:mm:ss
+ * Retorna a hora no formato HH:mm:ss (no fuso do relatório)
  * @param {Date} [date=new Date()]
  * @returns {string}
  */
 function formatTime(date = new Date()) {
-  const hh = pad(date.getHours());
-  const mm = pad(date.getMinutes());
-  const ss = pad(date.getSeconds());
-  return `${hh}:${mm}:${ss}`;
+  const p = partsInReportTimezone(date);
+  const hh = p.hour === '24' ? '00' : p.hour;
+  return `${hh}:${p.minute}:${p.second}`;
 }
 
 /**

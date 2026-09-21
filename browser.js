@@ -178,12 +178,17 @@ const SENSITIVE_ENV_KEY_PREFIX_REGEX = /^(TELEGRAM_|NOTIFY_|ALI_|SESSION_|GITHUB
  */
 function stripUrlCredentials(raw) {
   if (typeof raw !== 'string' || !raw || !raw.includes('@')) return raw;
+  // Proxy sem esquema (ex.: user:pass@proxy:8080): o parser trataria "user" como scheme
+  // e não acharia userinfo. Normaliza adicionando http:// antes de parsear.
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`;
   try {
-    const u = new URL(raw);
+    const u = new URL(candidate);
     if (!u.username && !u.password) return raw;
     u.username = '';
     u.password = '';
-    return u.toString().replace(/\/$/, '');
+    // Retorna no formato original (sem reconstruir scheme adicionado ou barra final)
+    const withoutCreds = u.toString().replace(/\/$/, '');
+    return candidate === raw ? withoutCreds : withoutCreds.replace(/^https?:\/\//i, '');
   } catch {
     return raw;
   }
@@ -581,6 +586,7 @@ module.exports = {
   getChromiumArgs,
   buildChromiumArgs,
   getChromiumEnv,
+  stripUrlCredentials,
   isLowMemoryModeEnabled,
   getLowMemoryChromiumArgs,
   getChromiumJsHeapMb,

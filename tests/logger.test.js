@@ -188,3 +188,31 @@ test('logger.js - sem TTY usa JSON estruturado (sem pino-pretty/worker) mesmo fo
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('logger.js - mascara chaves sensíveis extras (pass/pwd/accessKey/private_key/bearer/senha)', () => {
+  const logger = require('../logger');
+  const out = logger.scrubSensitiveFieldsForTest
+    ? logger.scrubSensitiveFieldsForTest({
+        pass: 'x',
+        pwd: 'x',
+        accessKey: 'x',
+        private_key: 'x',
+        bearer: 'x',
+        senha: 'x',
+        ok: 'visivel'
+      })
+    : null;
+  assert.ok(out, 'helper de teste deve existir');
+  for (const k of ['pass', 'pwd', 'accessKey', 'private_key', 'bearer', 'senha']) {
+    assert.strictEqual(out[k], '[REDACTED]', `${k} deve ser redigido`);
+  }
+  assert.strictEqual(out.ok, 'visivel');
+});
+
+test('logger.js - sanitizeSensitiveQueryParams cobre fragmento/Bearer/authorization', () => {
+  const { sanitizeSensitiveQueryParams } = require('../logger');
+  assert.ok(!sanitizeSensitiveQueryParams('http://x/#token=ABC').includes('ABC'));
+  assert.ok(!sanitizeSensitiveQueryParams('Bearer abc.def.ghi').includes('abc.def.ghi'));
+  assert.ok(!sanitizeSensitiveQueryParams('authorization: segredo123').includes('segredo123'));
+  assert.ok(!sanitizeSensitiveQueryParams('cookie=xyz789').includes('xyz789'));
+});

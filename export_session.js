@@ -308,7 +308,7 @@ async function rotateAllSessions(options = {}) {
         oldSecret: options.oldSecret,
         newSecret: options.newSecret
       });
-      results.push({ ...res, sessionPath: acc.sessionPath });
+      results.push({ ...res, user: maskUser(res.user), sessionPath: acc.sessionPath });
     } catch (err) {
       logger.error(
         { account: acc.maskedUser, err: err.message },

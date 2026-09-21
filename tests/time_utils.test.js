@@ -8,19 +8,35 @@ const {
   calculateAccountBackoff
 } = require('../time_utils');
 
-test('time_utils.js - formatDate formata data no formato DD/MM/AAAA', () => {
-  const date = new Date(2025, 0, 5, 9, 8, 7); // 05/01/2025
+test('time_utils.js - formatDate formata data no formato DD/MM/AAAA (fuso do relatório)', () => {
+  // Instante fixo em UTC; a data exibida é a do fuso do relatório (America/Los_Angeles)
+  const date = new Date('2025-01-05T17:08:07Z'); // 09:08 PT
   assert.strictEqual(formatDate(date), '05/01/2025');
 });
 
-test('time_utils.js - formatTime formata hora no formato HH:mm:ss', () => {
-  const date = new Date(2025, 0, 5, 9, 8, 7); // 09:08:07
+test('time_utils.js - formatTime formata hora no formato HH:mm:ss (fuso do relatório)', () => {
+  const date = new Date('2025-01-05T17:08:07Z'); // 09:08:07 PT
   assert.strictEqual(formatTime(date), '09:08:07');
 });
 
-test('time_utils.js - formatDateTime combina data e hora', () => {
-  const date = new Date(2025, 5, 15, 14, 30, 45); // 15/06/2025 14:30:45
+test('time_utils.js - formatDateTime combina data e hora (fuso do relatório)', () => {
+  const date = new Date('2025-06-15T21:30:45Z'); // 14:30:45 PT
   assert.strictEqual(formatDateTime(date), '15/06/2025 14:30:45');
+});
+
+test('time_utils.js - REPORT_TIMEZONE permite usar outro fuso', () => {
+  // Verificação do mecanismo: com TZ de São Paulo (UTC-3), o instante UTC muda de dia
+  const original = process.env.REPORT_TIMEZONE;
+  delete require.cache[require.resolve('../time_utils')];
+  try {
+    process.env.REPORT_TIMEZONE = 'UTC';
+    const { formatDateTime } = require('../time_utils');
+    assert.strictEqual(formatDateTime(new Date('2025-01-05T17:08:07Z')), '05/01/2025 17:08:07');
+  } finally {
+    if (original !== undefined) process.env.REPORT_TIMEZONE = original;
+    else delete process.env.REPORT_TIMEZONE;
+    delete require.cache[require.resolve('../time_utils')];
+  }
 });
 
 test('time_utils.js - formatDuration formata milissegundos legíveis', () => {

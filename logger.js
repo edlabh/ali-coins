@@ -41,8 +41,9 @@ const redactKeys = [
 ];
 
 // Chaves cujo nome sugere segredo são mascaradas recursivamente (ex: my_secret_field, userToken, apiKey)
+// Cobre também `pass`/`pwd`/`accessKey`/`private_key`/`bearer`/`senha` (variantes comuns).
 const SENSITIVE_KEY_REGEX =
-  /(secret|passwd|password|token|cookie|authorization|credential|api[_-]?key)/i;
+  /(secret|passwd|password|\bpass\b|\bpwd\b|senha|token|cookie|authorization|\bbearer\b|credential|access[_-]?key|private[_-]?key|api[_-]?key)/i;
 
 /**
  * Verifica se o valor é um objeto simples (não Error, Buffer, Date, etc.)
@@ -60,21 +61,27 @@ function isPlainObject(value) {
  * sem mutar a referência original do chamador.
  * @param {*} value
  * @param {number} [depth=0]
- * @param {WeakSet} [seen]
+ * @param {WeakMap} [seen] mapa objeto->cópia (preserva referências compartilhadas; evita
+ *   tratar reaparecimento do mesmo objeto em ramos irmãos como "circular")
  * @returns {*}
  */
-function scrubSensitiveFields(value, depth = 0, seen = new WeakSet()) {
-  if (depth > 4 || value === null || typeof value !== 'object') return value;
+const MAX_LOG_DEPTH = 12;
+
+function scrubSensitiveFields(value, depth = 0, seen = new WeakMap()) {
+  if (depth > MAX_LOG_DEPTH || value === null || typeof value !== 'object') return value;
   if (value instanceof Error || Buffer.isBuffer(value)) return value;
-  if (seen.has(value)) return '[Circular]';
-  seen.add(value);
+  if (seen.has(value)) return seen.get(value);
+  if (!isPlainObject(value) && !Array.isArray(value)) return value;
 
   if (Array.isArray(value)) {
-    return value.map((item) => scrubSensitiveFields(item, depth + 1, seen));
+    const arr = [];
+    seen.set(value, arr);
+    for (const item of value) arr.push(scrubSensitiveFields(item, depth + 1, seen));
+    return arr;
   }
-  if (!isPlainObject(value)) return value;
 
   const result = {};
+  seen.set(value, result);
   for (const [key, val] of Object.entries(value)) {
     result[key] = SENSITIVE_KEY_REGEX.test(key)
       ? '[REDACTED]'
@@ -88,22 +95,25 @@ function scrubSensitiveFields(value, depth = 0, seen = new WeakSet()) {
  * cobrindo campos estruturados como { url } que não passam pelo hook de msg/err.
  * @param {*} value
  * @param {number} [depth=0]
- * @param {WeakSet} [seen]
+ * @param {WeakMap} [seen]
  * @returns {*}
  */
-function sanitizeLogStrings(value, depth = 0, seen = new WeakSet()) {
+function sanitizeLogStrings(value, depth = 0, seen = new WeakMap()) {
   if (typeof value === 'string') return sanitizeSensitiveQueryParams(value);
-  if (depth > 4 || value === null || typeof value !== 'object') return value;
+  if (depth > MAX_LOG_DEPTH || value === null || typeof value !== 'object') return value;
   if (value instanceof Error || Buffer.isBuffer(value)) return value;
-  if (seen.has(value)) return value;
-  seen.add(value);
+  if (seen.has(value)) return seen.get(value);
+  if (!isPlainObject(value) && !Array.isArray(value)) return value;
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeLogStrings(item, depth + 1, seen));
+    const arr = [];
+    seen.set(value, arr);
+    for (const item of value) arr.push(sanitizeLogStrings(item, depth + 1, seen));
+    return arr;
   }
-  if (!isPlainObject(value)) return value;
 
   const result = {};
+  seen.set(value, result);
   for (const [key, val] of Object.entries(value)) {
     result[key] = sanitizeLogStrings(val, depth + 1, seen);
   }
@@ -205,9 +215,17 @@ const logger = pino(
           sanitized.msg = sanitizeSensitiveQueryParams(sanitized.msg);
         }
         if (sanitized.err && typeof sanitized.err.message === 'string') {
+          // Preserva stack/type: o spread de um Error copia só propriedades enumeráveis
+          // (message/stack são non-enumerable em V8), o que quebrava o errSerializer.
+          const origErr = sanitized.err;
           sanitized.err = {
-            ...sanitized.err,
-            message: sanitizeSensitiveQueryParams(sanitized.err.message)
+            type: origErr.name || origErr.type || 'Error',
+            message: sanitizeSensitiveQueryParams(origErr.message),
+            stack:
+              typeof origErr.stack === 'string'
+                ? sanitizeSensitiveQueryParams(origErr.stack)
+                : undefined,
+            ...Object.fromEntries(Object.entries(origErr))
           };
         }
         if (typeof sanitized.err === 'string') {
@@ -257,3 +275,5 @@ logger.flushLogs = function flushLogs() {
 
 module.exports = logger;
 module.exports.sanitizeSensitiveQueryParams = sanitizeSensitiveQueryParams;
+module.exports.scrubSensitiveFieldsForTest = scrubSensitiveFields;
+module.exports.sanitizeLogStringsForTest = sanitizeLogStrings;

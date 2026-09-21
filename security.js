@@ -187,7 +187,12 @@ function sanitizeScryptParams(rawN, rawR, rawP, fallback = SCRYPT_PARAMS_V3) {
 function safeChmod600(filePath) {
   try {
     if (fs.existsSync(filePath)) {
-      fs.chmodSync(filePath, 0o600);
+      // Não alterar a permissão do ALVO de um symlink (poderia virar chmod 0600 em
+      // arquivo arbitrário). Aplica só a arquivos regulares.
+      const stat = fs.lstatSync(filePath);
+      if (!stat.isSymbolicLink()) {
+        fs.chmodSync(filePath, 0o600);
+      }
     }
   } catch {
     // Windows e alguns sistemas de arquivos ignoram chmod sem erro fatal
@@ -240,6 +245,22 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
 
       if (!canFallback) throw renameErr;
 
+      // Segurança: NUNCA seguir symlink no fallback. Se o destino for um link simbólico,
+      // abrir com 'w' truncaria/gravaria no alvo (arquivo arbitrário) e o chmod
+      // alteraria sua permissão. Remove apenas o link e grava no caminho real.
+      try {
+        const lst = await fs.promises.lstat(filePath);
+        if (lst.isSymbolicLink()) {
+          logger.warn(
+            { filePath },
+            'safeWriteFile: destino é symlink; removendo o link para gravar com segurança.'
+          );
+          await fs.promises.unlink(filePath);
+        }
+      } catch {
+        // lstat falhou (corrida): prossegue; a abertura abaixo usa O_NOFOLLOW quando disponível
+      }
+
       // Backup do conteúdo atual antes de truncar o destino: se o processo for morto
       // (ex.: OOM killer em VPS de 1 GB) no meio da escrita direta, o backup preserva
       // a versão anterior íntegra em vez de deixar o arquivo vazio/parcial.
@@ -254,7 +275,13 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
 
       let direct = null;
       try {
-        direct = await fs.promises.open(filePath, 'w', 0o600);
+        // O_NOFOLLOW impede seguir symlink que apareça entre o lstat e o open (TOCTOU).
+        const openFlags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC;
+        const flagsWithNoFollow =
+          typeof fs.constants.O_NOFOLLOW === 'number'
+            ? openFlags | fs.constants.O_NOFOLLOW
+            : openFlags;
+        direct = await fs.promises.open(filePath, flagsWithNoFollow, 0o600);
         if (Buffer.isBuffer(data)) {
           // Escrita completa: loop sobre bytesWritten (write pode ser parcial)
           let offset = 0;

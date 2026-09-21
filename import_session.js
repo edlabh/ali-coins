@@ -29,6 +29,25 @@ class ImportSessionError extends Error {
   }
 }
 
+// Lê um arquivo com timeout, limpando o timer em ambos os casos (evita vazar timer
+// que manteria o event loop vivo e travaria a suíte de testes encerrando).
+async function readFileWithTimeout(filePath, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      fs.promises.readFile(filePath, 'utf-8'),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new ImportSessionError('Tempo esgotado ao ler --from-file.')),
+          timeoutMs
+        );
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function readTokenFromInput(customFilePath = null) {
   const args = process.argv.slice(2);
   let filePath = customFilePath || getFromFile();
@@ -58,7 +77,27 @@ async function readTokenFromInput(customFilePath = null) {
         `Arquivo especificado em --from-file não encontrado: "${resolvedPath}"`
       );
     }
-    const content = await fs.promises.readFile(resolvedPath, 'utf-8');
+    // B12: mesmo teto/timeout do STDIN — evita OOM com arquivo gigante e travamento
+    // indefinido ao apontar para um FIFO/dispositivo sem writer.
+    const MAX_FILE_BYTES = 2 * 1024 * 1024;
+    const FILE_READ_TIMEOUT_MS = 60000;
+    let stat;
+    try {
+      stat = await fs.promises.stat(resolvedPath);
+    } catch (statErr) {
+      throw new ImportSessionError(`Falha ao inspecionar --from-file: ${statErr.message}`);
+    }
+    if (!stat.isFile()) {
+      throw new ImportSessionError(
+        `--from-file deve apontar para um arquivo regular: "${resolvedPath}"`
+      );
+    }
+    if (stat.size > MAX_FILE_BYTES) {
+      throw new ImportSessionError(
+        `Arquivo em --from-file excede o limite de ${MAX_FILE_BYTES} bytes.`
+      );
+    }
+    const content = await readFileWithTimeout(resolvedPath, FILE_READ_TIMEOUT_MS);
     return Buffer.from(content.trim(), 'utf-8');
   }
 

@@ -23,10 +23,22 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **`accounts.json`: `passwordFile` confinado ao diretório (`config.js`):** impede path traversal (`../../etc/passwd`) e `chmod 0600` em arquivo arbitrário do sistema.
 - **Poda de artefatos confinada ao `scratch/` (`libs/session.js`):** a política de retenção só apaga dentro do scratch esperado; antes, apontar `PW_OUTPUT_DIR` para um diretório de dados do usuário apagava arquivos silenciosamente.
 - **Segredos redigidos em Telegram/heartbeat (`libs/notify.js`, `libs/heartbeat.js`, `logger.js`):** mensagens de erro enviadas a canais externos passam pelo redator de query/headers (`?token=`, `code=`, `Bearer`, `authorization:`/`cookie:`) e o corpo do heartbeat ganhou teto de 32 KB. Também corrigida injeção de HTML no alerta de streak quebrado (valores agora passam por `toSafeStreak`/`escapeHtml`).
+- **Escrita atômica não segue symlink (`security.js`):** o fallback de escrita direta (bind mount) agora rejeita/remove symlink no destino e abre com `O_NOFOLLOW`, e `safeChmod600` não altera a permissão do alvo de um link — evita escrever sessão em arquivo arbitrário via link plantado.
+- **Migração legada não sobrescreve `.enc` válido e verifica round-trip (`libs/session.js`):** se já existe `session.json.enc`, ele é preservado como backup antes da migração; o `.enc` recém-gravado é **decifrado e reconferido** antes de apagar o único `session.json` em texto claro.
+- **Mutações de sessão serializadas por caminho (`libs/session.js`):** `saveSession`/`clearSession`/`updateSessionStreak` passam a usar um mutex por caminho, eliminando a corrida em que um `clear` apagava o arquivo recém-gravado por um `save` no mesmo processo.
+- **Comparação de segredos em tempo constante na rotação (`libs/session.js`):** `oldSecret === newSecret` substituído por `crypto.timingSafeEqual`.
+- **Redação de segredos no logger ampliada (`logger.js`):** chaves `pass`/`pwd`/`accessKey`/`private_key`/`bearer`/`senha`; redator cobre fragmento (`#token=`), `Bearer` e `authorization:`/`cookie:`; preserva referências compartilhadas (não trata reuso como circular) e mantém `stack`/`type` do `Error`.
+- **PII mascarada no log de rotação (`export_session.js`):** o resumo agregado passa a usar `maskUser`.
+- **Injeção no Discord neutralizada (`libs/report.js`):** menções (`@everyone`/`@here`/`@&`) e markdown em valores raspados são escapados; teto do webhook medido em **bytes** (`Buffer.byteLength`), não code units.
+- **Poda do storage: `localStorage` não-array tratado como vazio (`libs/storage_filter.js`):** impede que uma entrada malformada escape da allowlist.
+- **Relatórios no fuso do negócio (`time_utils.js`):** `formatDate`/`formatTime` usam `America/Los_Angeles` (configurável via `REPORT_TIMEZONE`), evitando divergência de virada de dia em VPS UTC.
+- **`--from-file` com teto e timeout (`import_session.js`):** limita a 2 MB, exige arquivo regular e aplica timeout (antes um FIFO travava o processo).
+- **`crash.js` garante o exit code 6:** o timer de emergência não é mais `unref()`, evitando encerramento com código 0 em crash.
+- **Credenciais de proxy sem esquema removidas (`browser.js`):** `user:pass@host` também é sanitizado antes de ir ao Chromium.
 
 ### Testes
 
-- Novos testes de regressão: prefixos IPv6 especiais, DNS fail-closed, `safeFetch` bloqueando redirect para rede privada, mascaramento de telefone no webhook, profundidade do sanitizador, `passwordEnv`/`passwordFile`, escopo da poda e redigitação/escaping no Telegram — **351/351**.
+- Novos testes de regressão: prefixos IPv6 especiais, DNS fail-closed, `safeFetch` bloqueando redirect para rede privada, mascaramento de telefone no webhook, profundidade do sanitizador, `passwordEnv`/`passwordFile`, escopo da poda, redigitação/escaping no Telegram, symlink na escrita/chmod, mutex de sessão, backup/round-trip da migração, tempo constante na rotação, chaves sensíveis do logger, storage não-array, menções do Discord, fuso dos relatórios, `crash.js` e proxy sem esquema — **364/364**.
 
 ## [1.4.2] - 2026-09-21
 

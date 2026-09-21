@@ -498,6 +498,18 @@ async function performWebhookNotification(payload, customUrl = null) {
     const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
     const isTelegram = webhookUrl.includes('api.telegram.org/bot');
 
+    /**
+     * Neutraliza markdown e menções do Discord em valores derivados da página raspada
+     * (evita spoof de formatação e ping de @everyone/@here/roles).
+     * @param {*} v
+     * @returns {string}
+     */
+    const escapeDiscord = (v) =>
+      String(v)
+        .replace(/\\/g, '\\\\')
+        .replace(/([*_`~|])/g, '\\$1')
+        .replace(/@(?=everyone|here|&)/g, '@\u200b');
+
     // Teto de payload: evita enviar corpos gigantes (multi-conta grande) e picos de memória.
     let bodyData = JSON.stringify(payload);
     if (bodyData.length > WEBHOOK_MAX_PAYLOAD_BYTES) {
@@ -537,10 +549,10 @@ async function performWebhookNotification(payload, customUrl = null) {
       }
 
       const summaryText =
-        `**AliExpress Coins Report** (${payload.type || 'relatório'})\n` +
-        `Conta: ${targetUser}\n` +
-        `Ganhas hoje: ${coinsText}\n` +
-        `Saldo: ${targetBalance}`;
+        `**AliExpress Coins Report** (${escapeDiscord(payload.type || 'relatório')})\n` +
+        `Conta: ${escapeDiscord(targetUser)}\n` +
+        `Ganhas hoje: ${escapeDiscord(coinsText)}\n` +
+        `Saldo: ${escapeDiscord(targetBalance)}`;
       bodyData = JSON.stringify({
         content: summaryText,
         embeds: [
@@ -548,13 +560,13 @@ async function performWebhookNotification(payload, customUrl = null) {
             title: 'Relatório AliExpress Moedas',
             description: 'Execução concluída com sucesso.',
             fields: [
-              { name: 'Tipo', value: String(payload.type || 'N/D'), inline: true },
-              { name: 'Conta', value: String(targetUser), inline: true },
-              { name: 'Ganhas hoje', value: String(coinsText), inline: true },
-              { name: 'Saldo', value: String(targetBalance), inline: true },
+              { name: 'Tipo', value: escapeDiscord(payload.type || 'N/D'), inline: true },
+              { name: 'Conta', value: escapeDiscord(targetUser), inline: true },
+              { name: 'Ganhas hoje', value: escapeDiscord(coinsText), inline: true },
+              { name: 'Saldo', value: escapeDiscord(targetBalance), inline: true },
               {
                 name: 'Duração',
-                value: String(payload.meta?.totalDuration || payload.duration || 'N/D'),
+                value: escapeDiscord(payload.meta?.totalDuration || payload.duration || 'N/D'),
                 inline: true
               }
             ]
@@ -568,6 +580,20 @@ async function performWebhookNotification(payload, customUrl = null) {
       }
       const text = `AliExpress Coins (${payload.type})\nConta: ${targetUser}${coinsText}\nSaldo: ${targetBalance}`;
       bodyData = JSON.stringify({ text });
+    }
+
+    // B8: teto por BYTES (não por code units UTF-16). O length de string pode ser ~3×
+    // menor que os bytes reais em conteúdo multibyte.
+    if (Buffer.byteLength(bodyData, 'utf8') > WEBHOOK_MAX_PAYLOAD_BYTES) {
+      logger.warn(
+        { size: Buffer.byteLength(bodyData, 'utf8'), limit: WEBHOOK_MAX_PAYLOAD_BYTES },
+        'Payload final do webhook excede o limite em bytes; enviando versão truncada.'
+      );
+      bodyData = JSON.stringify({
+        truncated: true,
+        note: `Payload excedeu ${WEBHOOK_MAX_PAYLOAD_BYTES} bytes`,
+        summary: payload?.meta || null
+      });
     }
 
     // safeFetch revalida CADA hop de redirect com o guard SSRF e não segue redirects

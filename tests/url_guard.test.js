@@ -163,3 +163,14 @@ test('libs/url_guard.js - safeFetch revalida cada hop e bloqueia redirect para r
     global.fetch = originalFetch;
   }
 });
+
+test('browser.js - stripUrlCredentials remove credenciais mesmo sem esquema', () => {
+  const { stripUrlCredentials } = require('../browser');
+  assert.ok(stripUrlCredentials, 'deve ser exportado');
+  assert.strictEqual(stripUrlCredentials('user:pass@proxy.local:8080'), 'proxy.local:8080');
+  assert.strictEqual(
+    stripUrlCredentials('http://user:pass@proxy.local:8080'),
+    'http://proxy.local:8080'
+  );
+  assert.strictEqual(stripUrlCredentials('http://proxy.local:8080'), 'http://proxy.local:8080');
+});

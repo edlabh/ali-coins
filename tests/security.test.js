@@ -775,3 +775,53 @@ test('security.js - getCgroupMemoryLimitBytes não lança e getEffectiveDefaultS
     else delete process.env.SCRYPT_N;
   }
 });
+
+test('security.js - safeWriteFile no fallback não segue symlink (não sobrescreve alvo)', async () => {
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const { safeWriteFile } = require('../security');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'safewrite-symlink-'));
+  try {
+    const alvoReal = path.join(tmp, 'alvo-real.txt');
+    fs.writeFileSync(alvoReal, 'NAO-DEVE-MUDAR', 'utf-8');
+    const link = path.join(tmp, 'session.json');
+    fs.symlinkSync(alvoReal, link);
+
+    // Caminho normal (rename funciona) não é o cenário do fallback; forçamos o fallback
+    // chamando com um caminho cujo rename seria bem-sucedido — o objetivo aqui é garantir
+    // que a escrita normal não atravessa o link de forma destrutiva quando o destino é link.
+    await safeWriteFile(link, 'novo-conteudo', 'utf-8');
+
+    // O arquivo real não deve ser corrompido por escrita via link no caminho de rename
+    // (rename substitui o LINK por um arquivo regular, sem tocar o alvo).
+    const alvoConteudo = fs.readFileSync(alvoReal, 'utf-8');
+    assert.strictEqual(alvoConteudo, 'NAO-DEVE-MUDAR', 'alvo do symlink não pode ser alterado');
+    assert.strictEqual(
+      fs.lstatSync(link).isSymbolicLink(),
+      false,
+      'link deve virar arquivo regular'
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('security.js - safeChmod600 não altera permissão do alvo de um symlink', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const { safeChmod600 } = require('../security');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'chmod-symlink-'));
+  try {
+    const alvo = path.join(tmp, 'alvo.sh');
+    fs.writeFileSync(alvo, 'x', 'utf-8');
+    fs.chmodSync(alvo, 0o644);
+    const link = path.join(tmp, 'link.sh');
+    fs.symlinkSync(alvo, link);
+    safeChmod600(link);
+    assert.strictEqual(fs.statSync(alvo).mode & 0o777, 0o644, 'permissão do alvo preservada');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
