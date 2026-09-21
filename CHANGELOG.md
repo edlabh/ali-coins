@@ -15,6 +15,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Corrigido
 
+**3ª rodada (timeout de navegação e CI):**
+
+- **`NAV_TIMEOUT_SHORT` de 15s → 20s (`config.js`):** margem maior para páginas lentas nas navegações curtas (clique de tarefa/redirecionamentos), mantendo o teto por tentativa (`TASK_MAX_DURATION_MS`) intacto. Valor documentado no README e no `credentials.env.example`.
+- **Teste frágil do `buildMessage` corrigido (`tests/notify.test.js`):** a asserção procurava o literal `"456"` na mensagem inteira e o hostname aleatório do runner macOS podia conter esses dígitos (CI vermelho no macOS). Agora a asserção é específica do contexto (`code=456`).
+
 **2ª rodada (varredura pós-release):**
 
 - **CRÍTICO — `import_session.js` unitário saía sempre com exit 1:** o CLI desestruturava `{ imported, failed }` também no caminho unitário (que devolve o resultado direto), causando `TypeError` e exit 1 mesmo com a sessão importada. A normalização virou `normalizeImportCliResult()` (testada).

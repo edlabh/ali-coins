@@ -152,7 +152,7 @@ LOG_LEVEL=info
 # Timeouts e ritmo
 # SELECTOR_TIMEOUT=8000        # timeout de seletores (padrão: 8000)
 # ELEMENT_TIMEOUT=4000         # timeout de elementos (padrão: 4000)
-# NAV_TIMEOUT_SHORT=15000      # navegações curtas (padrão: 15000)
+# NAV_TIMEOUT_SHORT=20000      # navegações curtas (padrão: 20000)
 # SCROLL_WAIT_SECONDS=10       # permanência/scroll nas tarefas (padrão: 10)
 
 # Lock entre execuções e backoff multi-conta

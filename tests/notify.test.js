@@ -1254,7 +1254,9 @@ test('libs/notify.js - buildMessage redige token/code do erro e escapa valores d
     report: { userEmail: 'a@b.com' }
   });
   assert.strictEqual(msgFail.includes('TOKEN_FALSO_TESTE'), false, 'token deve ser redigido');
-  assert.strictEqual(msgFail.includes('456'), false, 'code deve ser redigido');
+  // Asserção específica do contexto: procurar só "456" globalmente era frágil (o
+  // hostname aleatório do runner de CI pode conter esses dígitos).
+  assert.strictEqual(msgFail.includes('code=456'), false, 'code deve ser redigido');
 
   // 2. streak_break: valor com HTML não pode injetar tag
   const msgStreak = buildMessage({

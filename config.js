@@ -118,7 +118,7 @@ const configSchema = z
 
     // Timeouts e limites configuráveis
     NAV_TIMEOUT: positiveInt(35000),
-    NAV_TIMEOUT_SHORT: positiveInt(15000),
+    NAV_TIMEOUT_SHORT: positiveInt(20000),
     SELECTOR_TIMEOUT: positiveInt(8000),
     ELEMENT_TIMEOUT: positiveInt(4000),
     TASK_MAX_ACTIONS: positiveInt(25),
