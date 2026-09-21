@@ -356,3 +356,121 @@ test('libs/ui/balance.js - shouldReuseDesktopContext é true por padrão e aceit
     else delete process.env.DESKTOP_REUSE_CONTEXT;
   }
 });
+
+test('libs/ui/balance.js - extractTodayLedger lê Bônus diário e Missões de moedas (pt/en)', () => {
+  const { extractTodayLedger } = require('../libs/ui/balance');
+
+  const pt = `
+    20/09/2026 PT
+    Bônus diário
+    +1
+    Missões de moedas
+    +5
+    Missões de moedas
+    +5
+    Bônus diário
+    +40
+  `;
+  const ptRes = extractTodayLedger(pt);
+  assert.strictEqual(ptRes.bonusCoins, 41, 'soma do Bônus diário do dia');
+  assert.strictEqual(ptRes.bonusCount, 2);
+  assert.strictEqual(ptRes.missionsCoins, 10, 'soma das Missões de moedas');
+  assert.strictEqual(ptRes.missionsCount, 2);
+
+  const en = `
+    9/20/2026 PT
+    Daily bonus
+    +1
+    Coin missions
+    +15
+    Coin page task
+    +5
+  `;
+  const enRes = extractTodayLedger(en);
+  assert.strictEqual(enRes.bonusCoins, 1);
+  assert.strictEqual(enRes.missionsCoins, 20);
+
+  assert.deepStrictEqual(extractTodayLedger(''), {
+    bonusCoins: null,
+    missionsCoins: 0,
+    bonusCount: 0,
+    missionsCount: 0
+  });
+});
+
+test('libs/report.js - coinsFromLedger não é descontado por computeTasksCoinsGained', () => {
+  const { computeTasksCoinsGained } = require('../libs/report');
+  const checkin = { alreadyCollected: false, coinsGainedToday: '40', totalBalance: '1000' };
+  // coinsGained do extrato já isolado; não deve descontar o check-in
+  assert.strictEqual(
+    computeTasksCoinsGained(
+      { coinsGained: 56, initialBalance: 1000, coinsFromLedger: true },
+      checkin
+    ),
+    56
+  );
+  // Sem o flag, mantém o comportamento anterior (diferença de saldo)
+  assert.strictEqual(
+    computeTasksCoinsGained({ coinsGained: 96, initialBalance: 1000 }, checkin),
+    96
+  );
+});
+
+test('libs/ui/balance.js - getBalanceDesktop expõe todayBonusCoins e todayMissionsCoins do extrato', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { getBalanceDesktop } = require('../libs/ui/balance');
+  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Los_Angeles' });
+  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Los_Angeles'
+  });
+
+  try {
+    const desktopText = `
+      Minhas moedas
+      2917
+      ${hoje} PT
+      Bônus diário
+      +1
+      Missões de moedas
+      +56
+      ${yesterday} PT
+      Bônus diário
+      +40
+    `;
+    const context = {
+      isClosed: () => false,
+      route: async () => {},
+      tracing: { start: async () => {}, stop: async () => {} },
+      newPage: async () => ({
+        goto: async () => {},
+        waitForSelector: async () => {},
+        innerText: async () => desktopText,
+        screenshot: async () => {},
+        close: async () => {}
+      }),
+      close: async () => {}
+    };
+    const browser = { newContext: async () => context };
+
+    const res = await getBalanceDesktop(browser, { cookies: [] });
+    assert.strictEqual(res.totalBalance, '2917');
+    assert.strictEqual(res.todayBonusCoins, 1, 'usa o Bônus diário de HOJE (valor real)');
+    assert.strictEqual(res.todayMissionsCoins, 56, 'soma das Missões de moedas de hoje');
+    assert.strictEqual(res.todayMissionsCount, 1);
+    assert.strictEqual(res.hasAppCheckinToday, true, 'Bônus diário conta como check-in do dia');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - extractTodayLedger no extrato real em inglês (Coin page task + App daily check-in)', () => {
+  const { extractTodayLedger } = require('../libs/ui/balance');
+  // Texto real observado na VM (conta com UI em inglês)
+  const realEn =
+    'Coin page task\n+5\nCoin page task\n+5\nCoin page task\n+5\nCoin page task\n+5\nCoin page task\n+1\nApp daily check-in\n+40\n';
+  const res = extractTodayLedger(realEn);
+  assert.strictEqual(res.bonusCoins, 40, 'check-in real = 40 (App daily check-in)');
+  assert.strictEqual(res.bonusCount, 1);
+  assert.strictEqual(res.missionsCoins, 21, 'soma das tarefas = 5+5+5+5+1');
+  assert.strictEqual(res.missionsCount, 5);
+});

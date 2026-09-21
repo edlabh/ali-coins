@@ -338,17 +338,52 @@ async function runCheckin(options = {}) {
       const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
       const isAlreadyCollected = (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected;
 
-      // Determinação das moedas recebidas no check-in
+      // Determinação das moedas recebidas no check-in.
+      // PRIORIDADE 1: valor REAL creditado no extrato desktop ("Bônus diário"), que pode
+      // ser diferente do tier sugerido na tela (ex.: tier 40 mas creditado 1).
+      // PRIORIDADE 2: valor lido no modal mobile. PRIORIDADE 3: estimativa pelo streak.
       let checkinCoinsNum = null;
-      if (desktopResult.todayCheckinCoins) {
+      let checkinCoinsSource = null;
+      const desktopBonusNum =
+        desktopResult.todayBonusCoins !== null && desktopResult.todayBonusCoins !== undefined
+          ? parseInt(String(desktopResult.todayBonusCoins).replace(/[^0-9]/g, ''), 10)
+          : NaN;
+      if (!isNaN(desktopBonusNum) && desktopBonusNum > 0) {
+        checkinCoinsNum = desktopBonusNum;
+        checkinCoinsSource = 'desktop-bonus';
+      } else if (desktopResult.todayCheckinCoins) {
         const p = parseInt(String(desktopResult.todayCheckinCoins).replace(/[^0-9]/g, ''), 10);
-        if (!isNaN(p) && p > 0) checkinCoinsNum = p;
+        if (!isNaN(p) && p > 0) {
+          checkinCoinsNum = p;
+          checkinCoinsSource = 'desktop-checkin';
+        }
       }
       if (checkinCoinsNum === null && mobileCheckinCoins) {
         checkinCoinsNum = mobileCheckinCoins;
+        checkinCoinsSource = 'mobile-modal';
       }
       if (checkinCoinsNum === null && isCollected) {
         checkinCoinsNum = getCheckinCoinsFromStreak(streakDays);
+        checkinCoinsSource = 'streak-estimate';
+      }
+
+      // Quando o extrato traz o valor real, loga a divergência em relação ao tier sugerido
+      // pela UI — é o caso em que o site promete 40 e credita 1.
+      const tierSuggested = getCheckinCoinsFromStreak(streakDays);
+      if (
+        checkinCoinsSource === 'desktop-bonus' &&
+        typeof tierSuggested === 'number' &&
+        checkinCoinsNum !== tierSuggested
+      ) {
+        logger.warn(
+          {
+            tierSuggested,
+            credited: checkinCoinsNum,
+            streakDays,
+            source: checkinCoinsSource
+          },
+          'Valor do check-in creditado difere do tier sugerido pela UI; usando o valor real do extrato.'
+        );
       }
 
       // Se o check-in já havia ocorrido hoje, não contabiliza nada nesta execução (+0 moedas).

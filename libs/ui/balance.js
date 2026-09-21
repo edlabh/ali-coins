@@ -109,6 +109,50 @@ function getCheckinCoinsFromStreak(streak) {
   }
 }
 
+// Rótulos do extrato desktop (mycoin) observados em campo:
+// - Crédito do check-in: "Bônus diário" (pt) / "Daily bonus" (en) / "App daily check-in" (legado).
+// - Ganho das tarefas: "Missões de moedas" (pt) / "Coin missions" / "Coin page task" (en).
+const DAILY_BONUS_LABEL_PATTERN =
+  '(?:B[ôo]nus di[áa]rio|Daily bonus|App daily check-in|Check-in di[áa]rio no app)';
+const COIN_MISSIONS_LABEL_PATTERN = '(?:Miss[õo]es de moedas|Coin missions|Coin page task)';
+
+/**
+ * Extrai, da seção de HOJE do extrato desktop, o valor do "Bônus diário" (check-in real)
+ * e a soma dos ganhos de tarefas ("Missões de moedas"). Esses rótulos são a fonte de
+ * verdade do valor efetivamente creditado, independentemente do tier sugerido na tela.
+ * @param {string} todaySection Texto do extrato restrito ao dia de hoje (fuso PT)
+ * @returns {{ bonusCoins: number|null, missionsCoins: number, bonusCount: number, missionsCount: number }}
+ */
+function extractTodayLedger(todaySection) {
+  const text = typeof todaySection === 'string' ? todaySection : '';
+  let bonusCoins = null;
+  let bonusCount = 0;
+  let missionsCoins = 0;
+  let missionsCount = 0;
+
+  // Cada lançamento costuma aparecer como "<rótulo>\n+<valor>"; o regex tolera quebras
+  // de linha e espaços entre o rótulo e o valor.
+  const bonusRe = new RegExp(`${DAILY_BONUS_LABEL_PATTERN}[\\s\\S]{0,40}?\\+([0-9]+)`, 'gi');
+  for (const m of text.matchAll(bonusRe)) {
+    const value = parseInt(m[1], 10);
+    if (!isNaN(value)) {
+      bonusCount++;
+      bonusCoins = (bonusCoins || 0) + value;
+    }
+  }
+
+  const missionsRe = new RegExp(`${COIN_MISSIONS_LABEL_PATTERN}[\\s\\S]{0,40}?\\+([0-9]+)`, 'gi');
+  for (const m of text.matchAll(missionsRe)) {
+    const value = parseInt(m[1], 10);
+    if (!isNaN(value)) {
+      missionsCount++;
+      missionsCoins += value;
+    }
+  }
+
+  return { bonusCoins, missionsCoins, bonusCount, missionsCount };
+}
+
 /**
  * Extrai a sequência de check-ins consecutivos a partir do texto do histórico de moedas no desktop.
  * Analisa as transações com "App daily check-in" ou "Check-in diário no app" e conta dias consecutivos.
@@ -384,7 +428,20 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
 
     const hasAppCheckinToday =
       todaySec.includes('App daily check-in') || todaySec.includes('Check-in diário no app');
-    const todayCheckinCoins = todayCheckinMatch ? todayCheckinMatch[1] : null;
+    // Valor efetivamente creditado no dia: "Bônus diário" (check-in) e "Missões de moedas"
+    // (tarefas). Fonte de verdade do extrato, independente do tier sugerido na tela.
+    const todayLedger = extractTodayLedger(todaySec);
+    const todayCheckinCoins =
+      todayLedger.bonusCoins !== null
+        ? String(todayLedger.bonusCoins)
+        : todayCheckinMatch
+          ? todayCheckinMatch[1]
+          : null;
+    const hasBonusToday = todayLedger.bonusCoins !== null;
+    const todayMissionsCoins = todayLedger.missionsCoins;
+    // "Já coletado hoje" quando houver QUALQUER crédito de check-in no extrato de hoje
+    // (rótulo novo "Bônus diário" ou o legado "App daily check-in").
+    const hasCheckinToday = hasAppCheckinToday || hasBonusToday;
 
     if (totalBalance === 'N/D') {
       logger.warn('Saldo desktop não detectado diretamente. Salvando screenshot de diagnóstico...');
@@ -401,7 +458,11 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
     return {
       totalBalance,
       todayCheckinCoins,
-      hasAppCheckinToday,
+      hasAppCheckinToday: hasCheckinToday,
+      // Campos adicionais (fonte de verdade do extrato):
+      todayBonusCoins: todayLedger.bonusCoins, // check-in real do dia (ex.: +1, +40)
+      todayMissionsCoins, // soma dos ganhos de tarefas do dia
+      todayMissionsCount: todayLedger.missionsCount,
       desktopStreak,
       rawText: desktopText
     };
@@ -418,6 +479,7 @@ module.exports = {
   closeCachedDesktopContext,
   shouldReuseDesktopContext,
   extractStreakFromText,
+  extractTodayLedger,
   getStreakFromCheckinCoins,
   getCheckinCoinsFromStreak,
   getStreakFromDesktopHistory

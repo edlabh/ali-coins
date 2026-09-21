@@ -561,6 +561,7 @@ async function runTasks(options = {}) {
 
       let finalBalance = 'N/D';
       let finalCoins = 'N/D';
+      let missionsCoinsFromLedger = null;
       try {
         const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
           allowMedia: config.ALLOW_MEDIA,
@@ -571,11 +572,21 @@ async function runTasks(options = {}) {
           finalBalance = desktopResult.totalBalance;
           finalCoins = `${desktopResult.totalBalance} moedas`;
         }
+        // Fonte de verdade do ganho das tarefas: soma dos lançamentos "Missões de moedas"
+        // de hoje no extrato. Evita que o bônus do check-in (crédito separado) contamine o
+        // ganho das tarefas medido por diferença de saldo.
+        if (
+          typeof desktopResult.todayMissionsCoins === 'number' &&
+          desktopResult.todayMissionsCount > 0
+        ) {
+          missionsCoinsFromLedger = desktopResult.todayMissionsCoins;
+        }
       } catch {
         // Ignorar
       }
 
-      // Cálculo determinístico do ganho real pelas tarefas por diferença de saldo
+      // Cálculo do ganho das tarefas. Prioriza o extrato ("Missões de moedas"); recorre à
+      // diferença de saldo apenas quando o extrato não trouxer lançamentos de tarefas.
       const initNum =
         initialBalance !== null && initialBalance !== 'N/D'
           ? parseInt(String(initialBalance).replace(/[^0-9]/g, ''), 10)
@@ -584,7 +595,9 @@ async function runTasks(options = {}) {
         finalBalance !== 'N/D' ? parseInt(String(finalBalance).replace(/[^0-9]/g, ''), 10) : NaN;
 
       let coinsGained = 0;
-      if (!isNaN(initNum) && !isNaN(finalNum)) {
+      if (missionsCoinsFromLedger !== null) {
+        coinsGained = missionsCoinsFromLedger;
+      } else if (!isNaN(initNum) && !isNaN(finalNum)) {
         coinsGained = Math.max(0, finalNum - initNum);
       }
 
@@ -598,6 +611,9 @@ async function runTasks(options = {}) {
         finalBalance: !isNaN(finalNum) ? finalNum : finalBalance,
         finalCoins,
         coinsGained,
+        // Indica que `coinsGained` veio do extrato ("Missões de moedas") e já está isolado
+        // do check-in; nesse caso o relatório não deve descontar nada.
+        coinsFromLedger: missionsCoinsFromLedger !== null,
         totalActions,
         startTime: tasksStartTime,
         endTime: tasksEndTime,

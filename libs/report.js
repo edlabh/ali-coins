@@ -271,6 +271,8 @@ function computeTasksCoinsGained(tasks, checkin = null) {
     return 0;
   }
   const rawCoins = tasks.coinsGained;
+  // Quando o ganho veio do extrato ("Missões de moedas"), ele já está isolado do check-in.
+  if (tasks.coinsFromLedger === true) return rawCoins;
   if (!checkin) return rawCoins;
 
   const checkinCoins = computeCheckinCoinsGained(checkin);

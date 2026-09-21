@@ -11,6 +11,21 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.3.4] - 2026-09-21
+
+### Corrigido
+
+- **Valor real do check-in ("Bônus diário") e ganho real das tarefas ("Missões de moedas") (`libs/ui/balance.js`, `collect.js`, `do_tasks.js`, `libs/report.js`):** o extrato desktop passa a ser a **fonte de verdade** dos valores efetivamente creditados:
+  - `getBalanceDesktop` agora extrai `todayBonusCoins` (linha **Bônus diário** / _Daily bonus_) e `todayMissionsCoins`/`todayMissionsCount` (linhas **Missões de moedas** / _Coin missions_) da seção de hoje, bilíngue.
+  - O valor do check-in passa a priorizar o **real do extrato** sobre a estimativa pelo tier do streak (o site às vezes promete 40 e credita 1); divergências são logadas em `warn`.
+  - O ganho das tarefas passa a ser a **soma das "Missões de moedas"** do extrato, e não a diferença de saldo — que absorvia o crédito do check-in e inflava o valor das tarefas (ex.: `+96` em vez de `+56`).
+  - `computeTasksCoinsGained` respeita `coinsFromLedger` e não desconta o check-in quando o valor já vem isolado do extrato.
+- **Check-in reconhecido pelo rótulo novo:** o check-in do dia é considerado realizado também quando o extrato traz **"Bônus diário"** (antes só `App daily check-in`).
+
+### Testes
+
+- `extractTodayLedger` (pt/en), `getBalanceDesktop` expondo os campos do extrato e `coinsFromLedger` no relatório — **317/317**.
+
 ## [1.3.3] - 2026-09-19
 
 ### Adicionado
