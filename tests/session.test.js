@@ -724,33 +724,20 @@ test('libs/session.js - falha na migração preserva o session.json em texto cla
   const plainFile = path.join(tmpDir, 'session.json');
 
   try {
-    const fakeState = {
-      cookies: [{ name: 'xman_us_t', value: 'token123', expires: 0 }]
-    };
-    fs.writeFileSync(plainFile, JSON.stringify(fakeState), 'utf-8');
+    // Payload que é JSON válido (portanto chega à etapa de migração) mas NÃO tem cookies:
+    // a verificação de round-trip pós-escrita falha e o texto claro deve ser preservado.
+    // Gatilho portável (não depende de chmod/symlink, que diferem no Windows).
+    fs.writeFileSync(plainFile, JSON.stringify({ semCookies: true }), 'utf-8');
 
-    // Força a FALHA de escrita do .enc: torna o diretório somente-leitura após gravar
-    // o texto claro (o arquivo já existente pode ser lido, mas não é possível criar o .enc).
-    // Ignorado quando rodando como root (root ignora permissões), cenário em que o teste
-    // apenas verifica o caso feliz abaixo.
-    const canRestrict = typeof process.getuid !== 'function' || process.getuid() !== 0;
-    if (canRestrict) {
-      fs.chmodSync(tmpDir, 0o500);
-    }
-
-    let res;
-    try {
-      res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
-    } finally {
-      if (canRestrict) fs.chmodSync(tmpDir, 0o700);
-    }
+    const res = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
 
     assert.ok(fs.existsSync(plainFile), 'session.json deve sobreviver à falha de migração');
-    assert.strictEqual(res.sessionData.cookies[0].name, 'xman_us_t');
+    // Não deve ter sido convertido num .enc verificado/utilizável
+    assert.ok(
+      !res.sessionData || !Array.isArray(res.sessionData.cookies),
+      'payload sem cookies não vira sessão autenticada'
+    );
   } finally {
-    try {
-      fs.chmodSync(tmpDir, 0o700);
-    } catch {}
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);
   }
