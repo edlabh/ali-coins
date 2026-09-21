@@ -319,11 +319,12 @@ async function pingFail(url, err = null, options = {}) {
     );
     return { ok: false, status: res.status, error: `HTTP ${res.status}` };
   } catch (e) {
+    const safeErr = sanitizeSensitiveQueryParams(String((e && e.message) || e));
     logger.warn(
-      { heartbeat: 'failed', url: masked, stage: 'fail', err: e.message },
-      `Falha ao enviar heartbeat de falha: ${e.message}`
+      { heartbeat: 'failed', url: masked, stage: 'fail', err: safeErr },
+      `Falha ao enviar heartbeat de falha: ${safeErr}`
     );
-    return { ok: false, error: e.message };
+    return { ok: false, error: safeErr };
   }
 }
 

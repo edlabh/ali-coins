@@ -204,7 +204,7 @@ function findNextPendingTask(tasks, attemptsMapArg = {}, maxAttemptsArg = 4, opt
  * @returns {number} Novo contador de tentativas
  */
 function recordTaskAttempt(attemptsMap, title) {
-  if (!title) return 0;
+  if (!attemptsMap || !title) return 0;
   attemptsMap[title] = (attemptsMap[title] || 0) + 1;
   return attemptsMap[title];
 }

@@ -380,13 +380,26 @@ async function safeFetch(rawUrl, init = {}, options = {}) {
         ...(transport.dispatcher ? { dispatcher: transport.dispatcher } : {})
       });
     } catch (fetchErr) {
-      // O undici embrulha o erro do conector em `TypeError: fetch failed` com `cause`;
-      // propaga o bloqueio SSRF com o código que os callers esperam.
-      const cause = fetchErr && fetchErr.cause;
-      if (cause && cause.code === 'SSRF_BLOCKED') {
-        const blocked = new Error(`Destino bloqueado pelo guard SSRF: ${cause.message}`);
+      // O undici embrulha o erro do conector em `TypeError: fetch failed` com `cause`
+      // (que pode estar aninhada ou em AggregateError): procura o SSRF_BLOCKED na cadeia.
+      const findSsrfError = (err) => {
+        let current = err;
+        for (let depth = 0; current && depth < 5; depth++) {
+          if (current.code === 'SSRF_BLOCKED') return current;
+          if (Array.isArray(current.errors)) {
+            const nested = current.errors.find((e) => e && e.code === 'SSRF_BLOCKED');
+            if (nested) return nested;
+          }
+          current = current.cause;
+        }
+        return null;
+      };
+      const ssrfCause = findSsrfError(fetchErr);
+      if (ssrfCause) {
+        const reason = ssrfCause.message || 'resolve para rede privada na conexão.';
+        const blocked = new Error(reason);
         blocked.code = 'SSRF_BLOCKED';
-        blocked.reason = cause.message;
+        blocked.reason = reason;
         throw blocked;
       }
       throw fetchErr;

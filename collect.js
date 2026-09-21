@@ -253,7 +253,11 @@ async function runCheckin(options = {}) {
                     'Não contabilizando como coletado nesta execução.'
                 );
               }
-              break;
+              // Só encerra a lista quando o clique foi CONFIRMADO: os demais seletores são
+              // fallback em cascata e precisam ser tentados se este não teve efeito.
+              if (confirmed) {
+                break;
+              }
             }
           } catch {
             // Próximo seletor

@@ -440,7 +440,11 @@ async function runTasks(options = {}) {
           // Caso 2: Ação executável (GO / IR)
           newPageOpened = null;
           await page.evaluate((el) => el.click(), actionBtn).catch(() => {});
-          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          // Timeout explícito: o default do Playwright (30s) ficava FORA do teto por
+          // tentativa (TASK_MAX_DURATION_MS) e podia estourar o orçamento global.
+          await page
+            .waitForLoadState('domcontentloaded', { timeout: config.NAV_TIMEOUT_SHORT })
+            .catch(() => {});
           await page.waitForTimeout(1500).catch(() => {});
 
           const activePage =
@@ -629,6 +633,9 @@ async function runTasks(options = {}) {
         // do check-in; nesse caso o relatório não deve descontar nada.
         coinsFromLedger: missionsCoinsFromLedger !== null,
         totalActions,
+        // Motivos de falha por tarefa (usado pelo CLI standalone para não reportar
+        // "sem ação" quando houve falhas reais).
+        failedTasks,
         startTime: tasksStartTime,
         endTime: tasksEndTime,
         duration: tasksDuration
@@ -694,10 +701,16 @@ if (require.main === module) {
       const result = await runTasks();
       if (releaseLock) await releaseLock();
       const report = { type: 'tasks', ...result };
-      const event = result && result.totalActions === 0 ? 'already_collected' : 'success';
+      const failedCount = Object.values(result?.failedTasks || {}).filter(
+        (reason) => reason !== APP_ONLY_DISABLED_STATUS
+      ).length;
+      const hadActions = Boolean(result && result.totalActions > 0);
+      // Sem ações pode significar "nada pendente" (exit 2) ou falhas reais (exit 1, para
+      // o run_all.sh retentar e o dead man's switch enxergar).
+      const event = !hadActions ? (failedCount > 0 ? 'failure' : 'already_collected') : 'success';
       await sendTelegram({ config: cfg, report, event }).catch(() => {});
-      if (result && result.totalActions === 0) {
-        await flushAndExit(2);
+      if (!hadActions) {
+        await flushAndExit(failedCount > 0 ? 1 : 2);
       }
       await flushAndExit(0);
     } catch (err) {

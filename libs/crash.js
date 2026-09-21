@@ -25,7 +25,7 @@ const { sendHeartbeat } = require('./heartbeat');
  * Em caso de falha global:
  * 1. Registra log com nível fatal via Pino.
  * 2. Tenta enviar notificação Telegram parcial e heartbeat de falha de forma best-effort (sem nunca lançar erro).
- * 3. Finaliza o processo imediatamente com o código de saída 6 (com teto máximo de 5s para nunca travar).
+ * 3. Finaliza o processo imediatamente com o código de saída 6 (com teto de 15s para nunca travar).
  *
  * @param {() => { config?: object, account?: object, chatId?: string|number, scriptName?: string }} [getContext]
  * @returns {() => void} Função de cleanup para remoção dos listeners

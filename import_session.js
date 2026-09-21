@@ -393,7 +393,7 @@ async function importSession(options = {}) {
 /**
  * Importa todas as contas encontradas a partir de tokens (session_token*.txt)
  * @param {object} [options={}]
- * @returns {Promise<Array<{ user: string, cookiesCount: number, encrypted: boolean, accountIndex: number, sessionPath: string, tokenFile: string }>>}
+ * @returns {Promise<{ imported: Array<{ user: string, cookiesCount: number, encrypted: boolean, accountIndex: number, sessionPath: string, tokenFile: string }>, failed: Array<{ file: string, error: string }> }>}
  */
 async function importAllSessions(options = {}) {
   const baseDir = options.baseDir || __dirname;
@@ -481,6 +481,9 @@ async function importAllSessions(options = {}) {
     logger.info(`   IMPORTAÇÃO CONCLUÍDA: ${imported.length} CONTA(S) IMPORTADA(S)`);
     logger.info('===================================================================');
     for (const imp of imported) {
+      // Com --migrate o resultado pode não ter sessionPath/accountIndex: pula o resumo
+      // detalhado em vez de lançar em path.basename(undefined).
+      if (!imp.sessionPath) continue;
       logger.info(
         ` • [Conta ${imp.accountIndex}] ${maskUser(imp.user)} <- ${imp.tokenFile} (salvo em ${path.basename(imp.sessionPath)})`
       );
@@ -488,6 +491,21 @@ async function importAllSessions(options = {}) {
     logger.info('===================================================================');
   }
 
+  return { imported, failed };
+}
+
+/**
+ * Normaliza o resultado do CLI de importação para `{ imported, failed }`.
+ * O caminho unitário devolve o resultado da importação direto; o lote devolve
+ * `{ imported, failed }`. Sem esta normalização, `imported.length` lançava TypeError no
+ * unitário e o CLI saía com exit 1 mesmo tendo importado a sessão.
+ * @param {object|undefined} result
+ * @returns {{ imported: Array<object>, failed: Array<object> }}
+ */
+function normalizeImportCliResult(result) {
+  if (!result || typeof result !== 'object') return { imported: [], failed: [] };
+  const imported = Array.isArray(result.imported) ? result.imported : [result];
+  const failed = Array.isArray(result.failed) ? result.failed : [];
   return { imported, failed };
 }
 
@@ -504,9 +522,8 @@ if (require.main === module) {
   const runPromise = allFlag ? importAllSessions() : importSession({ account: accountArg });
 
   runPromise
-    .then(({ imported, failed }) => {
-      // Falha total ou parcial em lote não pode terminar em sucesso: o run_all.sh só
-      // retenta no exit 1 e o dead man's switch precisa enxergar a falha.
+    .then((result) => {
+      const { imported, failed } = normalizeImportCliResult(result);
       if (imported.length === 0) {
         logger.error('Nenhuma sessão foi importada.');
         flushAndExit(1);
@@ -532,6 +549,7 @@ module.exports = {
   importSession,
   importAllSessions,
   migrateLegacySession,
+  normalizeImportCliResult,
   ImportSessionError,
   readTokenFromInput
 };

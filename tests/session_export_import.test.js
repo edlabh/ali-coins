@@ -422,6 +422,21 @@ test('export_session & import_session - auto-roteamento e isolamento de sessão 
   }
 });
 
+test('import_session - normalizeImportCliResult cobre resultado unitário e de lote', () => {
+  const { normalizeImportCliResult } = require('../import_session');
+  const unit = normalizeImportCliResult({ user: 'a@b.co', sessionPath: 'session.json.enc' });
+  assert.strictEqual(unit.imported.length, 1, 'unitário deve virar lista com 1 item');
+  assert.strictEqual(unit.failed.length, 0);
+
+  const batch = normalizeImportCliResult({ imported: [{}, {}], failed: [{ file: 'f' }] });
+  assert.strictEqual(batch.imported.length, 2);
+  assert.strictEqual(batch.failed.length, 1);
+
+  const empty = normalizeImportCliResult(undefined);
+  assert.strictEqual(empty.imported.length, 0);
+  assert.strictEqual(empty.failed.length, 0);
+});
+
 test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('export-import-all-');

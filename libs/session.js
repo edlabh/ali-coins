@@ -100,7 +100,11 @@ function getEncryptionConfig(options = {}) {
 
   let encryptLocal = true;
   if (options.encryptLocalSession !== undefined) {
-    encryptLocal = Boolean(options.encryptLocalSession);
+    // Mesmas formas aceitas no env/schema: off/no/0/false desligam.
+    encryptLocal =
+      typeof options.encryptLocalSession === 'string'
+        ? !/^(false|0|off|no)$/i.test(options.encryptLocalSession.trim())
+        : Boolean(options.encryptLocalSession);
   } else if (process.env.ENCRYPT_LOCAL_SESSION !== undefined) {
     const v = String(process.env.ENCRYPT_LOCAL_SESSION).trim().toLowerCase();
     // Mesmas formas aceitas pelo schema do config (off/no/0/false desligam).
@@ -938,9 +942,14 @@ async function migrateLegacySession(options = {}) {
     return { migrated: false };
   };
 
-  if (!shouldEncrypt) {
+  if (!secret || secret.length < 32) {
     return fail(
       'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para migração segura.'
+    );
+  }
+  if (!shouldEncrypt) {
+    return fail(
+      'ENCRYPT_LOCAL_SESSION está desligado; a migração para .enc requer criptografia ativa. Remova o opt-out ou use --plaintext no import.'
     );
   }
 

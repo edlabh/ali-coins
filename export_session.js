@@ -184,7 +184,7 @@ async function exportSession(options = {}) {
 /**
  * Exporta todas as contas configuradas com sessão ativa
  * @param {object} [options={}]
- * @returns {Promise<Array<{ index: number, user: string, maskedUser: string, token: string, fingerprint: string, tokenFile: string }>>}
+ * @returns {Promise<{ exported: Array<{ index: number, user: string, maskedUser: string, token: string, fingerprint: string, tokenFile: string }>, failed: Array<{ index: number, error: string }> }>}
  */
 async function exportAllSessions(options = {}) {
   const { loadAccounts } = require('./config');

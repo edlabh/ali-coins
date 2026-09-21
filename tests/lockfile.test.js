@@ -397,6 +397,52 @@ test('lockfile.js - stress concorrente: nenhuma sobreposição de posse por leit
   }
 });
 
+test('lockfile.js - não registra handler de sinal quando o app já trata', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-signal-');
+  const lockPath = path.join(tmpDir, 'sig.lock');
+  const appHandler = () => {};
+  process.on('SIGINT', appHandler);
+  try {
+    const before = process.listenerCount('SIGINT');
+    const release = await acquireLock(false, 30000, lockPath);
+    assert.strictEqual(
+      process.listenerCount('SIGINT'),
+      before,
+      'lockfile não deve adicionar handler quando o app já trata o sinal'
+    );
+    await release();
+  } finally {
+    process.removeListener('SIGINT', appHandler);
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('lockfile.js - registra e remove handler de sinal no uso standalone', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lockfile-signal-standalone-');
+  const lockPath = path.join(tmpDir, 'sig.lock');
+  try {
+    const before = process.listenerCount('SIGTERM');
+    const release = await acquireLock(false, 30000, lockPath);
+    assert.strictEqual(
+      process.listenerCount('SIGTERM'),
+      before + 1,
+      'standalone deve registrar handler próprio'
+    );
+    await release();
+    assert.strictEqual(
+      process.listenerCount('SIGTERM'),
+      before,
+      'handler deve ser removido no release'
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('lockfile.js - createdAt futuro ou inválido não causa bloqueio permanente (anti-DoS)', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('lockfile-timestamp-');

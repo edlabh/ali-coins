@@ -103,7 +103,10 @@ const configSchema = z
         return val !== undefined ? Boolean(val) : true;
       }, z.boolean())
       .default(true),
-    LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+    LOG_LEVEL: z.preprocess(
+      (val) => (typeof val === 'string' ? val.trim().toLowerCase() : val),
+      z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info')
+    ),
     NO_SANDBOX: z
       .preprocess((val) => {
         if (typeof val === 'string') {
@@ -271,9 +274,20 @@ const configSchema = z
         } catch {
           // Formato já garantido pelo regex acima
         }
-        const isLocalhostHb =
-          hbUrl && ['localhost', '127.0.0.1', '::1'].includes(hbUrl.hostname.toLowerCase());
-        if (hbUrl && hbUrl.protocol === 'http:' && !isLocalhostHb && !allowPrivateTargets()) {
+        const hbHost = hbUrl
+          ? hbUrl.hostname
+              .toLowerCase()
+              .replace(/^\[|\]$/g, '')
+              .replace(/\.$/, '')
+          : '';
+        // Loopback em qualquer forma: localhost, ::1 (o hostname do URL vem com
+        // colchetes), 127.0.0.0/8 e IPv4 mapeado ::ffff:127.x.
+        const isLoopbackHb =
+          hbHost === 'localhost' ||
+          hbHost === '::1' ||
+          /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hbHost) ||
+          /^::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hbHost);
+        if (hbUrl && hbUrl.protocol === 'http:' && !isLoopbackHb && !allowPrivateTargets()) {
           // O token do dead man's switch vai no path: em http ele trafega em claro e pode
           // ser forjado. Aceita http apenas para localhost ou com opt-in explícito.
           ctx.addIssue({
@@ -464,7 +478,8 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
   const rawHeartbeatEnabled =
     heartbeatOverride !== null
       ? heartbeatOverride
-      : process.env.HEARTBEAT_ENABLED !== undefined
+      : process.env.HEARTBEAT_ENABLED !== undefined &&
+          String(process.env.HEARTBEAT_ENABLED).trim() !== ''
         ? process.env.HEARTBEAT_ENABLED
         : Boolean(rawHeartbeatUrl.length > 0);
 

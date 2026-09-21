@@ -167,7 +167,7 @@ function getChromiumArgs() {
 // Segredos (SESSION_SECRET, ALI_PASSWORD, TELEGRAM_BOT_TOKEN, GITHUB_TOKEN, etc.)
 // NUNCA devem chegar ao navegador (zygote/network service/crashpad).
 const SENSITIVE_ENV_KEY_REGEX =
-  /(secret|password|passwd|_pw\b|pwd|token|cookie|credential|authorization|api[_-]?key|private[_-]?key)/i;
+  /(secret|password|passwd|\bpass\b|passphrase|_pw\b|pwd|\bsenha\b|token|\bbearer\b|cookie|credential|authorization|api[_-]?key|private[_-]?key)/i;
 const SENSITIVE_ENV_KEY_PREFIX_REGEX = /^(TELEGRAM_|NOTIFY_|ALI_|SESSION_|GITHUB_|HEARTBEAT_)/i;
 
 /**
@@ -375,7 +375,11 @@ async function resolveStorageState(storageState) {
         const { loadSessionFiles } = require('./libs/session');
         const loaded = await loadSessionFiles({ sessionPath: storageState });
         return loaded.sessionData || null;
-      } catch {
+      } catch (err) {
+        logger.warn(
+          { err: err.message },
+          'Falha ao carregar a sessão criptografada para o contexto; seguindo sem storageState.'
+        );
         return null;
       }
     }
@@ -388,7 +392,11 @@ async function resolveStorageState(storageState) {
         const { loadSessionFiles } = require('./libs/session');
         const loaded = await loadSessionFiles({ sessionPath: storageState });
         return loaded.sessionData || null;
-      } catch {
+      } catch (err) {
+        logger.warn(
+          { err: err.message },
+          'Falha ao carregar a sessão criptografada para o contexto; seguindo sem storageState.'
+        );
         return null;
       }
     }
@@ -485,10 +493,12 @@ async function retry(
     } catch (err) {
       lastError = err;
       if (attempt === retries) break;
-      let delay = Math.min(minTimeout * Math.pow(factor, attempt - 1), maxTimeout);
+      // Jitter aplicado ANTES do teto: o atraso final nunca excede maxTimeout.
+      let delay = minTimeout * Math.pow(factor, attempt - 1);
       if (jitter) {
         delay += Math.floor(Math.random() * 400);
       }
+      delay = Math.min(delay, maxTimeout);
       await new Promise((r) => setTimeout(r, delay));
     }
   }

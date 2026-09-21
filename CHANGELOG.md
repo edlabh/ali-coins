@@ -15,6 +15,19 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Corrigido
 
+**2ª rodada (varredura pós-release):**
+
+- **CRÍTICO — `import_session.js` unitário saía sempre com exit 1:** o CLI desestruturava `{ imported, failed }` também no caminho unitário (que devolve o resultado direto), causando `TypeError` e exit 1 mesmo com a sessão importada. A normalização virou `normalizeImportCliResult()` (testada).
+- **ALTA — shutdown por sinal voltou a funcionar:** a guarda `listenerCount > 1` era avaliada **dentro** de um handler `once` (o próprio listener já foi removido → sempre 0/1). Agora a decisão é tomada no **registro**: se o app (`all.js`) já trata o sinal, o lockfile não registra handler próprio e o shutdown completo (browser → lock → flush) roda.
+- **MÉDIA — restauração de claim sem sobrescrever (`lockfile.js`):** `restoreClaimSafely()` usa `link` (falha com `EEXIST` se outro processo publicou no intervalo) com fallback para FS sem hardlink; o `renewLockByRewrite` não reporta mais renovação bem-sucedida quando perdeu a posse.
+- **MÉDIA — `http://[::1]` e variantes de loopback aceitos no heartbeat (`config.js`):** `URL.hostname` de IPv6 vem com colchetes; a checagem agora normaliza e cobre `127.0.0.0/8` e `::ffff:127.x`.
+- **MÉDIA — `trySolveSlider` confirma no alvo correto (`libs/ui/navigation.js`):** o `waitForSelector(detached)` rodava no main frame mesmo quando o handle estava em iframe, retornando `true` sem o captcha sumir.
+- **MÉDIA — check-in tenta os próximos seletores (`collect.js`):** o `break` era incondicional; agora só encerra a lista quando o clique é confirmado (fallbacks em cascata voltam a funcionar).
+- **MÉDIA — `do_tasks.js` não reporta "sem ação" quando houve falhas:** o resultado inclui `failedTasks` e o CLI sai 1 (retentável) quando não houve ações mas existem falhas reais, em vez de exit 2.
+- **BAIXAS:** `encryptLocalSession: 'off/no'` respeitado nas opções e mensagem correta no `--migrate`; `LOG_LEVEL` normalizado (trim/case) e `silent` aceito pelo schema; crédito do ledger no **texto** e no **webhook** de check-in; resumo do lote tolera resultado de migração; propagação de `SSRF_BLOCKED` percorre a cadeia de `cause`/`AggregateError`; `HEARTBEAT_ENABLED=` vazio tratado como unset; regex de env do Chromium cobre `pass`/`senha`/`bearer`; `resolveStorageState` loga falha de decrypt; `pingFail` sanitiza erro; teto do webhook medido em bytes na primeira checagem; `surprise` não reabre card já tocado; `waitForLoadState` com timeout; jitter do retry não excede o teto; `recordTaskAttempt` valida o mapa; JSDoc das CLIs de lote atualizado.
+
+**1ª rodada:**
+
 - **`ALLOW_PRIVATE_WEBHOOKS=true` volta a funcionar com o pinning de DNS (`libs/url_guard.js`):** a validação lia o opt-in do ambiente, mas o dispatcher pinado usava o modo estrito (default) — o destino privado era permitido na checagem e bloqueado na conexão. O opt-in agora é resolvido **uma vez** e repassado à validação e ao dispatcher; o bloqueio vindo do conector (embrulhado pelo undici em `TypeError: fetch failed`) é propagado como `SSRF_BLOCKED`, preservando o tratamento dos chamadores.
 - **`ENCRYPT_LOCAL_SESSION=off/no` respeitado no runtime (`libs/session.js`):** o schema aceitava `off/no/0/false`, mas `getEncryptionConfig` só reconhecia `false`/`0` — com `off` o processo continuava exigindo `SESSION_SECRET` (e sem ele não persistia a sessão). Runtime e schema agora usam o mesmo conjunto de valores.
 - **`HEARTBEAT_URL` validada com parser de URL (`config.js`):** a regex aceitava `http://localhost:8080@evil.com` (hostname real `evil.com`) e rejeitava `http://localhost?k=v`. Agora usa `new URL()` e compara o `hostname`; `ALLOW_PRIVATE_WEBHOOKS` é lido pelo mesmo helper do runtime (`allowPrivateTargets`, aceitando `1/on/yes`).

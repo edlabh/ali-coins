@@ -514,7 +514,7 @@ async function tryOpenFirstProductDetail({
 
     // Escolhe um card NÃO tocado quando possível (evita reabrir o mesmo item da rodada)
     const signatures = await getCardSignatures(page, cards.length);
-    let targetCard = cards[0];
+    let targetCard = null;
     if (excludeSignatures instanceof Set && excludeSignatures.size > 0) {
       for (let i = 0; i < cards.length; i++) {
         let sig = signatures && signatures[i] !== undefined ? signatures[i] : null;
@@ -524,6 +524,10 @@ async function tryOpenFirstProductDetail({
           break;
         }
       }
+      // Todos os cards já foram tocados: NÃO reabre um deles.
+      if (!targetCard) return false;
+    } else {
+      targetCard = cards[0];
     }
 
     const pagesBefore = new Set(

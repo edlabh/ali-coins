@@ -540,10 +540,12 @@ async function performWebhookNotification(payload, customUrl = null) {
         .replace(/@(?=everyone|here|&)/g, '@\u200b');
 
     // Teto de payload: evita enviar corpos gigantes (multi-conta grande) e picos de memória.
+    // Medido em BYTES (não code units UTF-16).
     let bodyData = JSON.stringify(payload);
-    if (bodyData.length > WEBHOOK_MAX_PAYLOAD_BYTES) {
+    const bodyBytes = Buffer.byteLength(bodyData, 'utf8');
+    if (bodyBytes > WEBHOOK_MAX_PAYLOAD_BYTES) {
       logger.warn(
-        { size: bodyData.length, limit: WEBHOOK_MAX_PAYLOAD_BYTES },
+        { size: bodyBytes, limit: WEBHOOK_MAX_PAYLOAD_BYTES },
         'Payload do webhook excede o limite; enviando versão truncada.'
       );
       bodyData = JSON.stringify({
@@ -711,9 +713,11 @@ function renderCheckinReport(checkinResult, options = {}) {
   }
 
   const checkinGained = computeCheckinCoinsGained(checkinResult);
-  const reportLine1 = checkinResult.alreadyCollected
-    ? 'já estava coletado (+0 moedas)'
-    : `${checkinGained > 0 ? checkinGained : checkinResult.coinsGainedToday} moedas`;
+  const hasLedgerCredit = checkinResult.checkinCoinsFromLedger === true && checkinGained > 0;
+  const reportLine1 =
+    checkinResult.alreadyCollected && !hasLedgerCredit
+      ? 'já estava coletado (+0 moedas)'
+      : `${checkinGained > 0 ? checkinGained : checkinResult.coinsGainedToday} moedas`;
   const reportLine2 = `${checkinResult.totalBalance} moedas`;
   const reportLine3 =
     checkinResult.streakDays !== 'N/D'
@@ -735,6 +739,8 @@ function renderCheckinReport(checkinResult, options = {}) {
     {
       type: 'checkin',
       alreadyCollected: checkinResult.alreadyCollected,
+      coinsGainedToday: checkinResult.coinsGainedToday,
+      checkinCoinsFromLedger: checkinResult.checkinCoinsFromLedger === true,
       totalBalance: checkinResult.totalBalance,
       duration: checkinResult.duration
     },

@@ -10,7 +10,7 @@ const logger = require('../../logger');
  * @returns {Promise<import('playwright').Response|null>}
  */
 async function gotoWithRetry(page, url, options = {}) {
-  const timeout = options.timeout || 35000;
+  const timeout = options.timeout ?? 35000;
   const waitUntil = options.waitUntil || 'domcontentloaded';
 
   return await retry(
@@ -20,7 +20,7 @@ async function gotoWithRetry(page, url, options = {}) {
       }
       return await page.goto(url, { waitUntil, timeout });
     },
-    { retries: options.retries || 3, minTimeout: 2000, maxTimeout: 8000 }
+    { retries: options.retries ?? 3, minTimeout: 2000, maxTimeout: 8000 }
   );
 }
 
@@ -180,9 +180,10 @@ async function trySolveSlider(page) {
           }
           await page.waitForTimeout(50);
           await page.mouse.up();
-          // Só reporta sucesso se o captcha realmente sumiu (track detached). Antes,
-          // retornava true mesmo quando o slider continuava na tela.
-          const solved = await page
+          // Só reporta sucesso se o captcha realmente sumiu — no MESMO alvo onde o handle
+          // foi encontrado (waitForSelector no `page` só enxerga o main frame; com o
+          // slider em iframe o estado 'detached' retornava null e o código mentia true).
+          const solved = await target
             .waitForSelector(SELECTORS.login.sliderTrack, { state: 'detached', timeout: 2000 })
             .then(() => true)
             .catch(() => false);

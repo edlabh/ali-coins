@@ -96,6 +96,37 @@ async function acquireLock(
   const serializedLock = JSON.stringify(lockData, null, 2);
 
   /**
+   * Restaura um claim para o caminho do lock SEM sobrescrever outra geração: usa `link`
+   * (falha com EEXIST se outro processo publicou no intervalo) com fallback para
+   * filesystems sem hardlink. Devolve true se restaurou, false se o destino foi ocupado.
+   * @param {string} claimPath
+   * @returns {Promise<boolean>}
+   */
+  const restoreClaimSafely = async (claimPath) => {
+    try {
+      await fs.promises.link(claimPath, targetLockPath);
+      await fs.promises.unlink(claimPath).catch(() => {});
+      return true;
+    } catch (linkErr) {
+      if (linkErr.code === 'EEXIST') {
+        await fs.promises.unlink(claimPath).catch(() => {});
+        return false;
+      }
+      // FS sem hardlink (FAT/alguns mounts): fallback com janela mínima
+      const occupied = await fs.promises
+        .lstat(targetLockPath)
+        .then(() => true)
+        .catch(() => false);
+      if (occupied) {
+        await fs.promises.unlink(claimPath).catch(() => {});
+        return false;
+      }
+      await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+      return true;
+    }
+  };
+
+  /**
    * Remove o lockfile de forma CONDICIONAL (anti-TOCTOU). Entre a leitura que decidiu
    * "stale/órfão/inválido" e a remoção, outro processo pode ter removido o lock antigo
    * e publicado o dele — apagar por caminho destruiria o lock do novo dono e permitiria
@@ -143,8 +174,8 @@ async function acquireLock(
     if (matches) {
       await fs.promises.unlink(claimPath).catch(() => {});
     } else {
-      // Outra geração assumiu: devolve o lock alheio em vez de destruí-lo.
-      await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+      // Outra geração assumiu: devolve o lock alheio SEM sobrescrever (link).
+      await restoreClaimSafely(claimPath);
     }
   };
 
@@ -444,23 +475,16 @@ async function acquireLock(
         isOurs = false;
       }
       if (!isOurs || released) {
-        await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+        await restoreClaimSafely(claimPath);
         return false;
       }
       lockData.createdAt = new Date().toISOString();
       await fs.promises.writeFile(claimPath, JSON.stringify(lockData, null, 2), { mode: 0o600 });
-      const occupied = await fs.promises
-        .lstat(targetLockPath)
-        .then(() => true)
-        .catch(() => false);
-      if (occupied) {
-        await fs.promises.unlink(claimPath).catch(() => {});
-      } else {
-        await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
-      }
-      return true;
+      // Restaura sem sobrescrever: se outro publicou no intervalo, devolve false
+      // (posse perdida) em vez de reportar renovação bem-sucedida.
+      return await restoreClaimSafely(claimPath);
     } catch {
-      await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+      await restoreClaimSafely(claimPath);
       return false;
     }
   };
@@ -558,7 +582,7 @@ async function acquireLock(
       if (isOurs) {
         await fs.promises.unlink(claimPath).catch(() => {});
       } else {
-        await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+        await restoreClaimSafely(claimPath);
       }
     } catch {
       // Ignorar erros na remoção
@@ -570,7 +594,6 @@ async function acquireLock(
   // completo (fecha browser → libera lock → flush): o lockfile NÃO interfere — liberar o
   // lock aqui permitiria que outra instância iniciasse enquanto o browser ainda finaliza.
   const handleSignal = (signal) => {
-    if (process.listenerCount(signal) > 1) return;
     void release().finally(() => {
       removeSignalHandlers();
       try {
@@ -585,6 +608,11 @@ async function acquireLock(
   };
 
   for (const signal of ['SIGINT', 'SIGTERM']) {
+    // A checagem é feita no REGISTRO: dentro de um handler `once` o próprio listener já
+    // foi removido, então `listenerCount` no callback não distingue nada. Se o app (ex.:
+    // all.js) já trata o sinal, ele conduz o encerramento completo (fecha browser →
+    // libera lock → flush) e o lockfile não registra handler próprio.
+    if (process.listenerCount(signal) > 0) continue;
     const handler = () => handleSignal(signal);
     signalHandlers.set(signal, handler);
     process.once(signal, handler);
