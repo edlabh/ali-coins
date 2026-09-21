@@ -48,6 +48,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - `npm run lint` agora usa `--max-warnings=0` (warnings de teste ajustados); `.prettierignore` cobre `session_token*.txt`, `session_meta*.json` e `*.enc`.
 - Documentação corrigida: formato **v3** (era "v2" em `export_session.js`/README), tabela de flags do README completa (`--all`, `--account`, `--plaintext`, `--keep-tokens`, `--heartbeat`, `--rotate`, `--migrate`), `CLOUD_SESSIONS.md` com `SESSION_BACKUP_RETENTION_DAYS`/`DIAGNOSTICS_RETENTION_DAYS`, `RELEASING.md` atualizado para 1.x, tracing documentado conforme o modo low-memory.
 
+### Documentação
+
+- **Variáveis avançadas documentadas** (antes em nenhum doc): `REPORT_TIMEZONE` (com a nota de que o "dia" contábil do extrato/streak é sempre `America/Los_Angeles`), `LOCK_STALE_TIMEOUT_MS`, `ACCOUNT_BACKOFF_BASE_MS`, `SELECTOR_TIMEOUT`, `ELEMENT_TIMEOUT`, `NAV_TIMEOUT_SHORT`, `SCROLL_WAIT_SECONDS`, `SESSION_STRICT_STORAGE`, `SURPRISE_DETAIL_FALLBACK`, `PW_OUTPUT_DIR`/`PW_SCREENSHOT`/`PW_VIDEO`, `HEARTBEAT_ENABLED` e `NOTIFY_HOST_LABEL` — adicionadas ao `credentials.env.example` e ao bloco de configuração do README.
+- **`LOG_LEVEL`:** lista de valores corrigida (inclui `fatal` e `silent`) no README e no example.
+- **Segurança:** documentado o pinning de DNS (lookup via `undici`) aplicado a webhooks/heartbeat.
+- **`NOTIFY_HOST_LABEL` mapeada no `rawEnv`** (o schema validava uma variável que nunca chegava à validação/dry-run).
+- **`--help` completo:** `--migrate`, `--rotate` e `--new-secret-from-env` agora aparecem na ajuda embutida.
+- **Limpeza:** `.gitignore` usa `ali-coins*.lock` (nome real do lock por UID); `.dockerignore` não ignora mais arquivos de configuração inexistentes (`commitlint`/`lint-staged`).
+
 ## [1.4.6] - 2026-09-21
 
 ### Segurança

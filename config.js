@@ -356,6 +356,15 @@ function createCliProgram() {
       '--keep-tokens',
       'Mantém os arquivos session_token*.txt após a importação em lote (padrão: remover)'
     )
+    .option('--migrate', 'Migra session.json legado para session.json.enc (import_session)')
+    .option(
+      '--rotate',
+      'Re-criptografa as sessões com a nova chave SESSION_SECRET_NEW/SESSION_SECRET_OLD (export_session)'
+    )
+    .option(
+      '--new-secret-from-env <var>',
+      'Nome da variável de ambiente com a nova chave para --rotate (export_session)'
+    )
     .allowUnknownOption(true)
     .helpOption('-h, --help', 'Exibe esta ajuda com a lista de opções')
     .addHelpText(
@@ -518,6 +527,7 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TELEGRAM_SILENT: process.env.TELEGRAM_SILENT,
     TELEGRAM_PER_ACCOUNT: process.env.TELEGRAM_PER_ACCOUNT,
     TELEGRAM_TIMEOUT_MS: process.env.TELEGRAM_TIMEOUT_MS,
+    NOTIFY_HOST_LABEL: process.env.NOTIFY_HOST_LABEL,
     HEARTBEAT_ENABLED: rawHeartbeatEnabled,
     HEARTBEAT_URL: rawHeartbeatUrl,
     HEARTBEAT_TIMEOUT_MS: process.env.HEARTBEAT_TIMEOUT_MS

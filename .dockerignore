@@ -54,8 +54,6 @@ CHANGELOG.md
 eslint.config.js
 .prettierrc
 .prettierignore
-commitlint.config.js
-lint-staged.config.js
 
 # Git e metadados do repositório
 .git

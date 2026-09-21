@@ -21,7 +21,7 @@ tasks_drawer_failed.png
 post_signin_debug.png
 *.log
 *.lock
-ali-coins.lock
+ali-coins*.lock
 github_token.env
 *.swp
 

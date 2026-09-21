@@ -118,7 +118,7 @@ ALLOW_MEDIA=false
 # Modo headless (sem janela gráfica) (padrão: true)
 HEADLESS=true
 
-# Nível de log estruturado (trace, debug, info, warn, error) (padrão: info)
+# Nível de log estruturado (trace, debug, info, warn, error, fatal, silent) (padrão: info)
 LOG_LEVEL=info
 
 # Configurações opcionais de timeout e limites
@@ -143,6 +143,36 @@ LOG_LEVEL=info
 # Memória: reutilizar um único contexto desktop por conta eleva o pico de RAM no host.
 # Padrão: false (recomendado em hosts com 1 GB). Habilite só com folga de memória.
 # DESKTOP_REUSE_CONTEXT=false
+
+# --- Opções avançadas (todas opcionais; mesmas chaves do credentials.env.example) ---
+# Fuso dos relatórios (apenas exibição). O "dia" contábil do extrato/streak é sempre
+# America/Los_Angeles (fuso da AliExpress).
+# REPORT_TIMEZONE=America/Los_Angeles
+
+# Timeouts e ritmo
+# SELECTOR_TIMEOUT=8000        # timeout de seletores (padrão: 8000)
+# ELEMENT_TIMEOUT=4000         # timeout de elementos (padrão: 4000)
+# NAV_TIMEOUT_SHORT=15000      # navegações curtas (padrão: 15000)
+# SCROLL_WAIT_SECONDS=10       # permanência/scroll nas tarefas (padrão: 10)
+
+# Lock entre execuções e backoff multi-conta
+# LOCK_STALE_TIMEOUT_MS=1800000   # lock considerado obsoleto após 30 min (padrão)
+# ACCOUNT_BACKOFF_BASE_MS=2000    # base do backoff exponencial entre contas (teto 30s)
+
+# Storage e minigames
+# SESSION_STRICT_STORAGE=true     # allowlist estrita de localStorage (padrão: true)
+# SURPRISE_DETAIL_FALLBACK=true   # fallback de detalhe no minigame (padrão: true)
+
+# Diagnóstico (artefatos gravados em scratch/)
+# PW_OUTPUT_DIR=scratch
+# PW_SCREENSHOT=only-on-failure   # off | on | only-on-failure
+# PW_VIDEO=off                    # off | on | retain-on-failure | on-first-retry
+
+# Heartbeat: a URL já habilita por padrão; false desliga por env
+# HEARTBEAT_ENABLED=false
+
+# Rótulo do host exibido nas notificações (padrão: hostname da máquina)
+# NOTIFY_HOST_LABEL=servidor-producao-vps
 ```
 
 > **Dica Multi-Conta:** Além das variáveis `ALI_USER_2...20`, você pode criar um arquivo `accounts.json` (ignorado pelo git) contendo `[{"user": "...", "password": "..."}]`. As sessões são isoladas automaticamente por conta (`session_<hash>.json`) e executadas sequencialmente com reaproveitamento do Chromium.
@@ -282,6 +312,7 @@ Se a sua VPS cair, faltar energia no datacenter ou o `cron` travar, **nenhum log
    ```env
    HEARTBEAT_URL="https://hc-ping.com/seu-uuid-aqui"
    HEARTBEAT_TIMEOUT_MS=5000
+   # HEARTBEAT_ENABLED=false   # desliga por env (a URL já habilita por padrão)
    ```
 3. O script enviará automaticamente `/start` ao iniciar, `/` no sucesso com o relatório estruturado e `/fail` em caso de erro, sem nunca alterar o código de saída original.
 4. No CLI: use `--heartbeat` para forçar ou `--no-heartbeat` para desativar pontualmente.
@@ -346,6 +377,7 @@ docker run --rm \
 - **Política de Retenção de Backups (`scratch/`):** Limpeza automática (`pruneSessionBackups`) de backups com idade superior a `SESSION_BACKUP_RETENTION_DAYS` (padrão: 7 dias) acionada durante rotação, salvamento ou limpeza de sessões.
 - **Permissões 0o600 Estritas:** Todos os arquivos de segredos (`credentials.env`, `session.json`, `session.json.enc`, `session_meta.json`, `session_token.txt`, backups e dumps) são salvos e mantidos exclusivamente com permissão `0o600`.
 - **Criptografia AES-256-GCM v3:** Exportações e repouso usam derivação de chave via `scrypt` com salt aleatório dinâmico de 16 bytes, parâmetros explícitos e `SESSION_SECRET` (mínimo 32 caracteres). Compatível com tokens legados `v1` e `v2`.
+- **Pinning de DNS (anti-SSRF/rebinding):** webhooks e heartbeat revalidam **cada hop** de redirect e a conexão usa o **IP validado** (lookup pinado via `undici`) — um DNS com TTL 0 não consegue devolver IP público na checagem e privado/metadata na conexão. Sem `undici` instalado, mantém a validação de DNS tradicional (degradação graciosa).
 - **Isolamento do Navegador:** A flag `--no-sandbox` do Chromium é restrita exclusivamente para execução como root (UID 0) ou CI, mantendo a sandbox ativada para usuários comuns.
 - **Redação de Logs:** Logs estruturados via `pino` redigem senhas, tokens, cookies e parâmetros de URL sensíveis automaticamente.
 
