@@ -62,6 +62,28 @@ async function main() {
 
   // 2. Lockfile para conta única (evita concorrência global no cron)
   let releaseSingleLock = null;
+  let browser = null;
+  let gracefulExitRef = null;
+
+  // Encerramento por sinal: registrado ANTES do lockfile para rodar PRIMEIRO — fecha o
+  // browser (requisições em voo) e só então libera o lock, evitando que outra instância
+  // inicie a mesma conta enquanto o Chromium anterior ainda finaliza.
+  const handleShutdownSignal = (signal) => {
+    logger.warn({ signal }, 'Sinal de encerramento recebido; fechando browser e liberando lock...');
+    if (typeof gracefulExitRef === 'function') {
+      void gracefulExitRef(1);
+      return;
+    }
+    try {
+      process.kill(process.pid, signal);
+    } catch {
+      process.exit(1);
+    }
+  };
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, () => handleShutdownSignal(signal));
+  }
+
   if (!isMulti) {
     try {
       releaseSingleLock = await acquireLock(isForce(), null, accounts[0]?.lockPath);
@@ -108,8 +130,6 @@ async function main() {
   // Dead man's switch: sinal de início
   await sendHeartbeat('start', { config });
 
-  let browser = null;
-
   // Encerramento com limpeza real: process.exit() não executa o bloco finally,
   // então fechamos o browser e liberamos o lock antes de sair em QUALQUER caminho.
   // O close é limitado no tempo: um Chromium travado nunca pode impedir o encerramento.
@@ -140,6 +160,8 @@ async function main() {
     }
     await flushAndExit(code);
   };
+  // O handler de sinais usa esta referência para fechar browser + liberar lock antes de sair.
+  gracefulExitRef = gracefulExit;
 
   try {
     // 1 única instância compartilhada do Chromium para a execução

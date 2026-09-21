@@ -64,10 +64,22 @@ async function postToTelegramWithRetry(apiUrl, payload, timeoutMs) {
       }
     } catch (err) {
       lastErr = err;
+      // Timeout é AMBÍGUO: o POST pode ter chegado e apenas a resposta demorou.
+      // Reenviar duplicaria a mensagem no canal; registra e desiste deste envio.
+      const isAmbiguousTimeout =
+        Boolean(err) &&
+        (err.name === 'TimeoutError' || err.name === 'AbortError' || err.code === 'ABORT_ERR');
+      if (isAmbiguousTimeout) {
+        logger.warn(
+          { attempt, err: err.message },
+          'Timeout ao enviar notificação (resultado ambíguo); NÃO reenviando para evitar mensagem duplicada.'
+        );
+        throw err;
+      }
       if (attempt === TELEGRAM_MAX_ATTEMPTS) throw err;
       logger.warn(
         { attempt, err: err.message },
-        'Erro de rede/timeout ao enviar notificação; tentando novamente...'
+        'Erro de rede ao enviar notificação; tentando novamente...'
       );
     }
     // Backoff exponencial com jitter (800ms..1200ms, 1600..2400ms) e teto de tempo

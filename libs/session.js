@@ -148,6 +148,30 @@ async function loadSessionFiles(options = {}) {
         try {
           const decrypted = await decryptSessionAsync(encryptedContent, secret);
           sessionData = JSON.parse(decrypted);
+
+          // Migração transparente de tokens legados: v1 usa salt FIXO (compartilhado) e
+          // v2 parâmetros antigos. Após decifrar com sucesso, re-criptografa com v3
+          // (salt aleatório + parâmetros atuais) usando a mesma sessão em memória.
+          const tokenVersion = String(encryptedContent).trim().slice(0, 3);
+          if (shouldEncrypt && (tokenVersion === 'v1:' || tokenVersion === 'v2:')) {
+            try {
+              const upgraded = await encryptSessionAsync(
+                JSON.stringify(sessionData, null, 2),
+                secret
+              );
+              await safeWriteFile(encPath, upgraded, 'utf-8');
+              safeChmod600(encPath);
+              logger.info(
+                { from: tokenVersion.slice(0, 2) },
+                'Token de sessão legado migrado para v3 (salt aleatório).'
+              );
+            } catch (migErr) {
+              logger.warn(
+                { err: migErr.message },
+                'Falha ao migrar token de sessão legado para v3; mantendo o token atual.'
+              );
+            }
+          }
         } catch (decryptErr) {
           // Se falhou com a chave atual e há chave antiga (rotação), tenta SESSION_SECRET_OLD
           if (oldSecret && oldSecret.length >= 32) {

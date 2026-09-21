@@ -11,6 +11,23 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.6] - 2026-09-21
+
+### Segurança
+
+- **Tokens de sessão legados migrados para v3 (`libs/session.js`):** um `session.json.enc` em formato v1 (salt **fixo** compartilhado) ou v2 (parâmetros antigos) era decifrado indefinidamente. Após decifrar com sucesso, o token é re-criptografado com v3 (salt aleatório por token + parâmetros atuais) usando a sessão já em memória; falha na migração mantém o token atual sem interromper o fluxo.
+- **`HEARTBEAT_URL` exige `https://` (`config.js`):** o token do dead man's switch vai no path e em `http` trafegava em claro (podendo ser forjado). `http://` passa a ser aceito apenas para `localhost`/`127.0.0.1`/`[::1]` ou com `ALLOW_PRIVATE_WEBHOOKS=true`.
+- **Timeout do Telegram não duplica mensagens (`libs/notify.js`):** timeout/abort é ambíguo (o POST pode ter chegado e só a resposta demorou); reenviar duplicava a notificação no canal. Agora o timeout não é retentado (registra aviso); erros de rede que comprovadamente não chegaram continuam com retry.
+- **Encerramento por sinal fecha o browser antes de liberar o lock (`all.js`):** o handler é registrado **antes** do lockfile, então `SIGINT`/`SIGTERM` fecham o Chromium (requisições em voo) e só então liberam o lock, evitando que outra instância inicie a mesma conta enquanto o processo anterior ainda finaliza.
+
+### Corrigido
+
+- **Contrato runtime dos relatórios (`libs/report.js`):** os schemas Zod eram usados apenas em testes; os builders agora validam o payload e registram aviso quando algum campo divergir (sem bloquear o envio), tornando o contrato JSON verificável em produção.
+
+### Testes
+
+- +4 testes: `HEARTBEAT_URL` (http público bloqueado / https / localhost), contrato runtime dos payloads unificado e multi-conta, timeout ambíguo do Telegram sem retry e migração v2→v3 do token de sessão; total **379**.
+
 ## [1.4.5] - 2026-09-21
 
 ### Segurança

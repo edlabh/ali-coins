@@ -244,6 +244,30 @@ test('config.js - validações Zod e CLI de heartbeat', () => {
   }
 });
 
+test('config.js - HEARTBEAT_URL exige https (http só localhost/opt-in)', () => {
+  const base = {
+    ALI_USER: 'a@b.co',
+    ALI_PASSWORD: 'p',
+    SESSION_SECRET: '12345678901234567890123456789012',
+    HEARTBEAT_ENABLED: 'true'
+  };
+  const httpPublic = configSchema.safeParse({
+    ...base,
+    HEARTBEAT_URL: 'http://hc-ping.com/token-abc'
+  });
+  assert.strictEqual(httpPublic.success, false, 'http público deve ser bloqueado');
+  assert.strictEqual(
+    configSchema.safeParse({ ...base, HEARTBEAT_URL: 'https://hc-ping.com/abc' }).success,
+    true,
+    'https deve passar'
+  );
+  assert.strictEqual(
+    configSchema.safeParse({ ...base, HEARTBEAT_URL: 'http://localhost:8080/ping' }).success,
+    true,
+    'http localhost deve passar'
+  );
+});
+
 test('libs/heartbeat.js - maskHeartbeatUrl mascara tokens em query string', () => {
   const { maskHeartbeatUrl } = require('../libs/heartbeat');
 

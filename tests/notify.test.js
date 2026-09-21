@@ -1182,6 +1182,32 @@ test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () =
   }
 });
 
+test('libs/notify.js - timeout ambíguo não retenta (evita mensagem duplicada)', async () => {
+  const { postToTelegramWithRetry } = require('../libs/notify');
+  const originalFetch = global.fetch;
+  let calls = 0;
+  try {
+    global.fetch = async () => {
+      calls++;
+      const err = new Error('timed out');
+      err.name = 'TimeoutError';
+      throw err;
+    };
+    await assert.rejects(
+      () =>
+        postToTelegramWithRetry(
+          'https://api.telegram.org/bot123:ABC/sendMessage',
+          { text: 'x' },
+          50
+        ),
+      /timed out/
+    );
+    assert.strictEqual(calls, 1, 'timeout ambíguo não pode retentar');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('libs/notify.js - truncamento respeita UTF-16 e não deixa entidade parcial', () => {
   const { truncateMessageIfNeeded } = require('../libs/notify');
   // Emojis astrais ocupam 2 unidades UTF-16: o corte não pode exceder o teto do Telegram.

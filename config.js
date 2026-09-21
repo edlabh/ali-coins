@@ -261,6 +261,19 @@ const configSchema = z
             'HEARTBEAT_URL é obrigatória e deve ser uma URL válida (http/https) quando HEARTBEAT_ENABLED=true.',
           path: ['HEARTBEAT_URL']
         });
+      } else if (
+        /^http:\/\//i.test(data.HEARTBEAT_URL) &&
+        !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/i.test(data.HEARTBEAT_URL) &&
+        String(process.env.ALLOW_PRIVATE_WEBHOOKS || '').toLowerCase() !== 'true'
+      ) {
+        // O token do dead man's switch vai no path: em http ele trafega em claro e pode
+        // ser forjado. Aceita http apenas para localhost ou com opt-in explícito.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "HEARTBEAT_URL deve usar https:// (o token do dead man's switch não deve trafegar em claro). http:// é aceito apenas para localhost ou com ALLOW_PRIVATE_WEBHOOKS=true.",
+          path: ['HEARTBEAT_URL']
+        });
       }
     }
     // Segurança at-rest: com a criptografia ligada (padrão), a ausência de SESSION_SECRET

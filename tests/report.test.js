@@ -1556,6 +1556,50 @@ test('libs/report.js - renderCheckinReport --json não vaza sessionData no stdou
   }
 });
 
+test('libs/report.js - payloads reais passam no contrato runtime dos schemas', () => {
+  const {
+    buildUnifiedReportPayload,
+    unifiedReportSchema,
+    buildMultiAccountReportPayload,
+    multiAccountReportSchema
+  } = require('../libs/report');
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const unified = buildUnifiedReportPayload(
+      {
+        userEmail: 'a@b.co',
+        totalBalance: '100',
+        coinsGainedToday: '40',
+        streakDays: 5,
+        duration: '1s',
+        alreadyCollected: false
+      },
+      { results: [], finalCoins: '100', duration: '1s' },
+      { totalDuration: '2s' }
+    );
+    assert.strictEqual(unifiedReportSchema.safeParse(unified).success, true);
+
+    const multi = buildMultiAccountReportPayload(
+      [
+        {
+          account: { maskedUser: 'a***' },
+          user: 'a***',
+          checkinResult: null,
+          tasksResult: null,
+          error: null,
+          startTime: new Date(),
+          endTime: new Date(),
+          duration: '1s'
+        }
+      ],
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '2s' }
+    );
+    assert.strictEqual(multiAccountReportSchema.safeParse(multi).success, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/report.js - A1: computeCheckinCoinsGained não credita quando coinsGainedToday=0', () => {
   const { computeCheckinCoinsGained } = require('../libs/report');
   const realFilesSnapshot = snapshotRealFiles();

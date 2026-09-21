@@ -198,6 +198,40 @@ test('libs/session.js - rotação de chaves criptográficas com SESSION_SECRET_O
   }
 });
 
+test('libs/session.js - token legado v2 é migrado para v3 no load', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-v2-migrate-');
+  try {
+    const payload = JSON.stringify({
+      cookies: [
+        {
+          name: 'xman_us_t',
+          value: 'token_v2',
+          domain: '.aliexpress.com',
+          path: '/',
+          expires: Math.floor(Date.now() / 1000) + 3600
+        }
+      ],
+      origins: []
+    });
+    const tokenV2 = encryptSession(payload, TEST_SECRET_1, { version: 'v2' });
+    assert.ok(tokenV2.startsWith('v2:'), 'token gerado deve ser v2');
+    const encFile = path.join(tmpDir, 'session.json.enc');
+    await fs.promises.writeFile(encFile, tokenV2, 'utf-8');
+
+    const loaded = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+    assert.ok(loaded.sessionData, 'sessão deve ser decifrada');
+
+    const after = await fs.promises.readFile(encFile, 'utf-8');
+    assert.ok(after.startsWith('v3:'), 'token deve ser re-criptografado como v3');
+    const again = await loadSessionFiles({ baseDir: tmpDir, secret: TEST_SECRET_1 });
+    assert.ok(again.sessionData, 'token migrado continua decifrável com a mesma chave');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/session.js - clearSession gera backup versionado em scratch/ antes de remover', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('session-backup-test-');

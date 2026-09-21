@@ -338,6 +338,23 @@ function computeFinalBalance(checkin, tasks) {
  * @param {object} meta
  * @returns {object}
  */
+/**
+ * Valida o payload contra o schema (contrato runtime) sem bloquear o envio: os schemas
+ * existiam apenas para testes e divergências passavam silenciosamente para consumidores.
+ * @param {object} schema
+ * @param {object} payload
+ * @param {string} label
+ */
+function validateReportContract(schema, payload, label) {
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    logger.warn(
+      { report: label, issues: result.error.issues.map((i) => i.path.join('.')) },
+      'Payload do relatório diverge do schema (campo ausente ou tipo inesperado).'
+    );
+  }
+}
+
 function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
   const finalBalance = computeFinalBalance(checkinResult, tasksResult);
   const checkinCoinsGained = computeCheckinCoinsGained(checkinResult);
@@ -387,7 +404,7 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
     }
   }
 
-  return {
+  const payload = {
     type: 'unified_report',
     user:
       meta.user ||
@@ -425,6 +442,9 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
       tasksError: meta.tasksError
     }
   };
+
+  validateReportContract(unifiedReportSchema, payload, 'unified_report');
+  return payload;
 }
 
 /**
@@ -926,7 +946,7 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
     }
   }
 
-  return {
+  const payload = {
     type: 'multi_account_report',
     accounts,
     meta: {
@@ -937,6 +957,9 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
       successfulAccounts
     }
   };
+
+  validateReportContract(multiAccountReportSchema, payload, 'multi_account_report');
+  return payload;
 }
 
 /**
