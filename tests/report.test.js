@@ -84,7 +84,7 @@ test('libs/report.js - sendWebhookNotification com mock de fetch', async () => {
 
     // 2. Com URL válida e resposta 200 OK
     global.fetch = async (url, options) => {
-      assert.strictEqual(url, 'https://webhook.example.com/notify');
+      assert.strictEqual(url, 'https://example.com/notify');
       assert.strictEqual(options.method, 'POST');
       assert.ok(options.body.includes('user@test.com'));
       return { ok: true, status: 200 };
@@ -92,16 +92,13 @@ test('libs/report.js - sendWebhookNotification com mock de fetch', async () => {
 
     const resOk = await sendWebhookNotification(
       { type: 'unified_report', user: 'user@test.com' },
-      'https://webhook.example.com/notify'
+      'https://example.com/notify'
     );
     assert.strictEqual(resOk, true);
 
     // 3. Com resposta de erro HTTP (ex: 500) -> nunca lança exceção, retorna false
     global.fetch = async () => ({ ok: false, status: 500, statusText: 'Internal Server Error' });
-    const resFail = await sendWebhookNotification(
-      { type: 'test' },
-      'https://webhook.example.com/notify'
-    );
+    const resFail = await sendWebhookNotification({ type: 'test' }, 'https://example.com/notify');
     assert.strictEqual(resFail, false);
 
     // 4. Com falha de rede/timeout -> nunca quebra o job, retorna false
@@ -110,7 +107,7 @@ test('libs/report.js - sendWebhookNotification com mock de fetch', async () => {
     };
     const resNetError = await sendWebhookNotification(
       { type: 'test' },
-      'https://webhook.example.com/notify'
+      'https://example.com/notify'
     );
     assert.strictEqual(resNetError, false);
   } finally {
@@ -1031,7 +1028,7 @@ test('libs/report.js - renderCheckinReport no modo --json mascara e-mail enviado
   let webhookPayloadCaptured = null;
 
   try {
-    process.env.NOTIFY_WEBHOOK_URL = 'https://webhook.example.com/test';
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/test';
 
     process.stdout.write = (chunk, encoding, callback) => {
       stdoutCaptured += chunk;
@@ -1093,7 +1090,7 @@ test('libs/report.js - renderTasksReport no modo --json mascara e-mail enviado a
   let webhookPayloadCaptured = null;
 
   try {
-    process.env.NOTIFY_WEBHOOK_URL = 'https://webhook.example.com/test';
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/test';
 
     process.stdout.write = (chunk, encoding, callback) => {
       stdoutCaptured += chunk;
@@ -1254,7 +1251,7 @@ test('libs/report.js - flushWebhooks aguarda webhooks em voo antes do encerramen
   let resolved = false;
 
   try {
-    process.env.NOTIFY_WEBHOOK_URL = 'https://webhook.example.com/flush';
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/flush';
     global.fetch = () =>
       new Promise((resolve) => {
         setTimeout(() => {
@@ -1397,6 +1394,73 @@ test('libs/report.js - check-in não vaza para o extrato das tarefas com saldo d
     assert.strictEqual(payload.meta.tasksCoinsGained, 50);
     assert.strictEqual(payload.meta.totalCoinsGained, 100);
   } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - webhook com payload gigante é truncado (teto de segurança)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { sendWebhookNotification, flushWebhooks } = require('../libs/report');
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.NOTIFY_WEBHOOK_URL;
+  let capturedBody = null;
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/hook';
+    global.fetch = async (_url, options) => {
+      capturedBody = options.body;
+      return { ok: true, status: 200 };
+    };
+
+    // Payload com ~200 KB de resultados
+    const huge = {
+      type: 'tasks',
+      userEmail: 'a@b.co',
+      results: Array.from({ length: 5000 }, (_, i) => ({
+        title: `Tarefa ${i}`,
+        status: 'Concluída',
+        coins: '+5 moedas'
+      })),
+      meta: { finalBalance: '100 moedas' }
+    };
+
+    sendWebhookNotification(huge).catch(() => {});
+    await flushWebhooks(3000);
+
+    assert.ok(capturedBody, 'webhook deve ter sido chamado');
+    assert.ok(capturedBody.length <= 32 * 1024, `body deve ser truncado (${capturedBody.length})`);
+    const parsed = JSON.parse(capturedBody);
+    assert.strictEqual(parsed.truncated, true);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - webhook para destino loopback é bloqueado (SSRF) sem chamar fetch', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { sendWebhookNotification, flushWebhooks } = require('../libs/report');
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.NOTIFY_WEBHOOK_URL;
+  let fetchCalled = false;
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'http://127.0.0.1:8080/hook';
+    global.fetch = async () => {
+      fetchCalled = true;
+      return { ok: true, status: 200 };
+    };
+
+    sendWebhookNotification({ type: 'tasks', userEmail: 'a@b.co' }).catch(() => {});
+    await flushWebhooks(1500);
+
+    assert.strictEqual(fetchCalled, false, 'não deve chamar fetch para destino privado');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });

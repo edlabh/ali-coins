@@ -261,3 +261,24 @@ test('libs/heartbeat.js - maskHeartbeatUrl mascara token no meio do path e crede
   assert.ok(withAction.endsWith('/start'));
   assert.strictEqual(withAction.includes('e5f6-7890-abcd'), false);
 });
+
+test('libs/heartbeat.js - sendHeartbeat bloqueia destino loopback/privado (SSRF)', async () => {
+  const originalFetch = global.fetch;
+  let fetchCalled = false;
+  try {
+    global.fetch = async () => {
+      fetchCalled = true;
+      return { ok: true, status: 200 };
+    };
+
+    const res = await sendHeartbeat('start', {
+      config: { HEARTBEAT_ENABLED: true, HEARTBEAT_URL: 'http://127.0.0.1:9000/ping' }
+    });
+
+    assert.strictEqual(res.ok, false);
+    assert.match(res.error, /bloqueado|SSRF|loopback|privad/i);
+    assert.strictEqual(fetchCalled, false, 'não deve chamar fetch para destino privado');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

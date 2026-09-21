@@ -1,4 +1,5 @@
 const logger = require('../logger');
+const { validateExternalUrl } = require('./url_guard');
 
 const { version: APP_VERSION } = require('../package.json');
 const USER_AGENT = `ali-coins/${APP_VERSION}`;
@@ -317,6 +318,18 @@ async function sendHeartbeat(stage, params = {}) {
   if (!isEnabled || !targetUrl) {
     logger.debug({ heartbeat: 'skipped' }, `Heartbeat (${stage}) desativado ou sem URL.`);
     return { ok: true, skipped: true };
+  }
+
+  // Proteção contra SSRF: bloqueia destinos loopback/privados por IP literal (opt-in
+  // ALLOW_PRIVATE_WEBHOOKS). Não resolve DNS aqui para não depender de resolução em runtime
+  // (a URL é definida pelo operador no credentials.env).
+  const guard = await validateExternalUrl(targetUrl, { resolveDns: false });
+  if (!guard.ok) {
+    logger.warn(
+      { heartbeat: 'blocked', reason: guard.reason, url: maskHeartbeatUrl(targetUrl) },
+      'Heartbeat não enviado: destino bloqueado pela validação de segurança (SSRF).'
+    );
+    return { ok: false, error: guard.reason };
   }
 
   if (stage === 'start') {

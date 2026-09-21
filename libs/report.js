@@ -2,7 +2,11 @@ const { z } = require('zod');
 const { formatDate, formatTime, formatDuration } = require('../time_utils');
 const { maskUser } = require('../config');
 const { getCheckinCoinsFromStreak } = require('./ui/balance');
+const { validateExternalUrl } = require('./url_guard');
 const logger = require('../logger');
+
+// Teto de payload enviado a webhooks externos (32 KB): protege memória e destinos.
+const WEBHOOK_MAX_PAYLOAD_BYTES = 32 * 1024;
 
 /**
  * Esquema Zod de validação do contrato JSON do relatório unificado
@@ -433,10 +437,34 @@ async function performWebhookNotification(payload, customUrl = null) {
   if (!webhookUrl) return false;
 
   try {
+    // Proteção contra SSRF: só envia para http(s) público (bloqueia loopback/privado),
+    // salvo opt-in explícito em ALLOW_PRIVATE_WEBHOOKS=true.
+    const guard = await validateExternalUrl(webhookUrl);
+    if (!guard.ok) {
+      logger.warn(
+        { reason: guard.reason },
+        'Webhook não enviado: destino bloqueado pela validação de segurança (SSRF).'
+      );
+      return false;
+    }
+
     const isDiscord = webhookUrl.includes('discord.com/api/webhooks');
     const isTelegram = webhookUrl.includes('api.telegram.org/bot');
 
+    // Teto de payload: evita enviar corpos gigantes (multi-conta grande) e picos de memória.
     let bodyData = JSON.stringify(payload);
+    if (bodyData.length > WEBHOOK_MAX_PAYLOAD_BYTES) {
+      logger.warn(
+        { size: bodyData.length, limit: WEBHOOK_MAX_PAYLOAD_BYTES },
+        'Payload do webhook excede o limite; enviando versão truncada.'
+      );
+      bodyData = JSON.stringify({
+        truncated: true,
+        originalSize: bodyData.length,
+        note: `Payload original excedeu ${WEBHOOK_MAX_PAYLOAD_BYTES} bytes`,
+        summary: payload.meta || null
+      });
+    }
     const headers = { 'Content-Type': 'application/json' };
 
     const targetUser =

@@ -556,3 +556,40 @@ test('config.js - loadAccounts restringe accounts.json com credenciais para 0o60
     cleanupIsolatedTestDir(tmpDir);
   }
 });
+
+test('config.js - accounts.json suporta passwordEnv e passwordFile sem expor a senha inline', () => {
+  const tmpDir = createIsolatedTestDir('ali-accounts-secret-');
+  try {
+    // passwordFile (0600)
+    const pf = path.join(tmpDir, 'conta1.pw');
+    fs.writeFileSync(pf, 'senha-por-arquivo\n', { mode: 0o600 });
+
+    // passwordEnv
+    const envName = 'ALI_PW_CONTA2';
+    const env = { [envName]: 'senha-por-env' };
+
+    const accountsFile = path.join(tmpDir, 'accounts.json');
+    fs.writeFileSync(
+      accountsFile,
+      JSON.stringify([
+        { user: 'file@example.com', passwordFile: 'conta1.pw' },
+        { user: 'env@example.com', passwordEnv: envName },
+        { user: 'missing@example.com', passwordEnv: 'NAO_EXISTE' }
+      ]),
+      'utf-8'
+    );
+
+    const accounts = loadAccounts(env, tmpDir);
+    const byUser = Object.fromEntries(accounts.map((a) => [a.user, a.password]));
+
+    assert.strictEqual(byUser['file@example.com'], 'senha-por-arquivo', 'lê do passwordFile');
+    assert.strictEqual(byUser['env@example.com'], 'senha-por-env', 'lê do passwordEnv');
+    assert.strictEqual(
+      accounts.some((a) => a.user === 'missing@example.com'),
+      false,
+      'conta com passwordEnv ausente é ignorada'
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+  }
+});

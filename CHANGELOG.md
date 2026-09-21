@@ -11,6 +11,18 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.0] - 2026-09-21
+
+### Segurança
+
+- **Bloqueio de SSRF em destinos externos (`libs/url_guard.js`):** webhooks (`NOTIFY_WEBHOOK_URL`) e heartbeat (`HEARTBEAT_URL`) passam a validar o destino e **bloquear loopback/redes privadas/link-local/metadata** (`127.0.0.1`, `10.x`, `172.16-31.x`, `192.168.x`, `169.254.169.254`, `::1`, `fc00::/7` etc.). Hostnames são resolvidos para impedir que um domínio público aponte para IP privado (DNS rebinding). Opt-in para testes locais: `ALLOW_PRIVATE_WEBHOOKS=true`.
+- **Teto de payload do webhook:** corpos acima de 32 KB são substituídos por um resumo truncado (`{ truncated: true, originalSize, summary }`), protegendo memória e destinos em execuções multi-conta grandes.
+- **Senhas fora do `accounts.json` (`config.js`):** cada conta pode usar `passwordEnv` (nome de variável de ambiente) ou `passwordFile` (arquivo `0600`, relativo ao `accounts.json`) em vez de `password` em texto puro, reduzindo a exposição de credenciais em backups/sincronizações. O campo `password` inline continua suportado (retrocompatível).
+
+### Testes
+
+- Novos testes para `libs/url_guard.js` (IP privado/público, opt-in, protocolos e hostnames), bloqueio SSRF de webhook/heartbeat, truncamento de payload e `passwordEnv`/`passwordFile` — **326/326**.
+
 ## [1.3.4] - 2026-09-21
 
 ### Corrigido

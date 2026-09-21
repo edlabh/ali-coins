@@ -569,27 +569,57 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
       const raw = JSON.parse(fs.readFileSync(accountsFile, 'utf-8'));
       if (Array.isArray(raw)) {
         for (const acc of raw) {
-          if (acc && acc.user && acc.password) {
-            const trimmedUser = String(acc.user).trim();
-            const chatId =
-              acc.telegramChatId || acc.telegram_chat_id
-                ? String(acc.telegramChatId || acc.telegram_chat_id).trim()
-                : null;
-            // Dedup case-insensitive: preserva o primeiro cadastro do accounts.json e herda telegramChatId
-            const existing = accounts.find(
-              (a) => a.user.toLowerCase() === trimmedUser.toLowerCase()
-            );
-            if (existing) {
-              if (!existing.telegramChatId && chatId) {
-                existing.telegramChatId = chatId;
-              }
-            } else {
-              accounts.push({
-                user: trimmedUser,
-                password: String(acc.password),
-                telegramChatId: chatId
-              });
+          if (!acc || !acc.user) continue;
+          const trimmedUser = String(acc.user).trim();
+          const chatId =
+            acc.telegramChatId || acc.telegram_chat_id
+              ? String(acc.telegramChatId || acc.telegram_chat_id).trim()
+              : null;
+
+          // Resolução da senha com prioridade para fontes externas ao arquivo:
+          // passwordEnv (nome da variável) > passwordFile (arquivo 0600) > password inline.
+          // Recomendado não manter a senha em texto puro no accounts.json.
+          let password = null;
+          if (acc.passwordEnv && typeof acc.passwordEnv === 'string') {
+            const envName = acc.passwordEnv.trim();
+            password = env[envName] || null;
+            if (!password) {
+              logger.warn(
+                { account: maskUser(trimmedUser), passwordEnv: envName },
+                'accounts.json: passwordEnv definido, mas a variável não está no ambiente; conta ignorada.'
+              );
+              continue;
             }
+          } else if (acc.passwordFile && typeof acc.passwordFile === 'string') {
+            try {
+              const pwPath = path.resolve(path.dirname(accountsFile), acc.passwordFile);
+              password = fs.readFileSync(pwPath, 'utf-8').trim();
+              safeChmod600(pwPath);
+            } catch (pwErr) {
+              logger.warn(
+                { account: maskUser(trimmedUser), err: pwErr.message },
+                'accounts.json: falha ao ler passwordFile; conta ignorada.'
+              );
+              continue;
+            }
+          } else if (acc.password) {
+            password = String(acc.password);
+          }
+
+          if (!password) continue;
+
+          // Dedup case-insensitive: preserva o primeiro cadastro do accounts.json e herda telegramChatId
+          const existing = accounts.find((a) => a.user.toLowerCase() === trimmedUser.toLowerCase());
+          if (existing) {
+            if (!existing.telegramChatId && chatId) {
+              existing.telegramChatId = chatId;
+            }
+          } else {
+            accounts.push({
+              user: trimmedUser,
+              password,
+              telegramChatId: chatId
+            });
           }
         }
       }

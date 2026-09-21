@@ -119,6 +119,8 @@ LOG_LEVEL=info
 ```
 
 > **Dica Multi-Conta:** Além das variáveis `ALI_USER_2...20`, você pode criar um arquivo `accounts.json` (ignorado pelo git) contendo `[{"user": "...", "password": "..."}]`. As sessões são isoladas automaticamente por conta (`session_<hash>.json`) e executadas sequencialmente com reaproveitamento do Chromium.
+>
+> **Segurança (recomendado):** evite deixar a senha em texto puro no `accounts.json`. Use `passwordEnv` (nome de uma variável de ambiente) ou `passwordFile` (arquivo `0600`), por exemplo: `[{"user": "a@b.com", "passwordEnv": "ALI_PW_1"}]` ou `[{"user": "a@b.com", "passwordFile": "conta1.pw"}]`.
 
 Valide sua configuração sem abrir o navegador:
 
