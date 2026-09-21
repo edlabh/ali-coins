@@ -181,6 +181,11 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
    # Dead Man's Switch / Uptime Heartbeat (opcional, ex: Healthchecks.io):
    # HEARTBEAT_URL="https://hc-ping.com/seu-uuid-aqui"
 
+   # Segurança de destinos externos (SSRF): webhook e heartbeat bloqueiam por padrão
+   # endereços loopback/privados (127.0.0.1, 10.x, 192.168.x, 169.254.169.254, ::1 etc.).
+   # Em testes locais, libere destinos privados explicitamente:
+   # ALLOW_PRIVATE_WEBHOOKS=true
+
    # Desempenho e Navegador:
    ALLOW_MEDIA=false
    HEADLESS=true

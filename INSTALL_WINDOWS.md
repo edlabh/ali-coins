@@ -214,6 +214,11 @@ Se a saída exibir `Chromium OK!`, seu ambiente está pronto.
 
    # Dead Man's Switch / Uptime Heartbeat (opcional, ex: Healthchecks.io)
    # HEARTBEAT_URL="https://hc-ping.com/seu-uuid"
+
+   # Segurança de destinos externos (SSRF): webhook e heartbeat bloqueiam por padrão
+   # endereços loopback/privados (127.0.0.1, 10.x, 192.168.x, 169.254.169.254, ::1 etc.)
+   # Em testes locais, libere destinos privados explicitamente:
+   # ALLOW_PRIVATE_WEBHOOKS=true
    ```
 
    _Salve o arquivo (`Ctrl + S`) e feche o Bloco de Notas._
