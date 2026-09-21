@@ -30,6 +30,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Sessão em texto puro exige opt-out explícito (`libs/session.js`):** com `ENCRYPT_LOCAL_SESSION` ativo (padrão) e `SESSION_SECRET` ausente/curto, a gravação passa a ser **recusada** com `logger.error` (antes gravava em claro com apenas um `warn`). Para permitir texto puro, use `ENCRYPT_LOCAL_SESSION=false`.
 - **Ambiente do Chromium sem segredos e sem credenciais de proxy (`browser.js`):** a lista de chaves sensíveis cobre `PASS`/`PWD`/`PRIVATE_KEY` e o userinfo embutido em `HTTP(S)_PROXY`/`ALL_PROXY` é removido antes de repassar ao navegador.
 - **URL de ação do heartbeat preserva a query string (`libs/heartbeat.js`):** `buildActionUrl` insere o segmento `start`/`fail` antes da query (ex.: `.../uuid?k=v` → `.../uuid/start?k=v`), em vez de anexar após ela.
+- **Migração de sessão legada unificada (`libs/session.js`, `import_session.js`):** as duas implementações de `migrateLegacySession` foram unificadas em uma única função canônica em `libs/session.js`. A CLI delega em modo estrito (lança `SessionMigrationError`→`ImportSessionError`, valida o schema e retorna `cookiesCount`/`encrypted`), enquanto a biblioteca mantém o contrato tolerante (`{ migrated: false }` sem lançar). Elimina a divergência de comportamento entre os dois fluxos.
 
 ### Segurança
 
@@ -38,7 +39,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Testes
 
-- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup, cgroup, `buildActionUrl`/`normalizeBaseUrl`, separador de milhar no extrato, reconhecimento de "Bônus diário" no histórico, truncamento seguro de mensagem e saneamento do ambiente do Chromium — **336/336**.
+- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup, cgroup, `buildActionUrl`/`normalizeBaseUrl`, separador de milhar no extrato, reconhecimento de "Bônus diário" no histórico, truncamento seguro de mensagem, saneamento do ambiente do Chromium e paridade dos contratos de migração (CLI estrita vs. biblioteca tolerante) — **341/341**.
 
 ## [1.4.1] - 2026-09-21
 

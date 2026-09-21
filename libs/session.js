@@ -8,6 +8,7 @@ const {
 } = require('../config');
 const {
   validateSession,
+  validateSessionPayload,
   safeWriteFile,
   cleanOrphanTmpFiles,
   safeChmod600,
@@ -16,6 +17,16 @@ const {
 } = require('../security');
 const { filterStorageState, shouldFilterStorage } = require('./storage_filter');
 const logger = require('../logger');
+
+/**
+ * Erro de migração de sessão legada (modo estrito, usado pela CLI de importação).
+ */
+class SessionMigrationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'SessionMigrationError';
+  }
+}
 
 /**
  * Resolve os caminhos dos arquivos de sessão com suporte a injeção via options/baseDir
@@ -775,42 +786,80 @@ async function rotateSessionSecret(options = {}) {
 }
 
 /**
- * Migra um arquivo de sessão legado em texto claro (session.json) para formato criptografado (.enc)
+ * Migra um arquivo de sessão legado em texto claro (session.json) para formato criptografado (.enc).
+ *
+ * Implementação canônica única, usada tanto pela biblioteca (`libs/session.js`) quanto pela
+ * CLI de importação (`import_session.js`). O modo de falha é controlado por `strict`:
+ * - `strict: false` (biblioteca): retorna `{ migrated: false }` quando não há o que migrar
+ *   ou quando o JSON é inválido (não lança).
+ * - `strict: true` (CLI): lança `SessionMigrationError` com mensagem acionável.
+ *
  * @param {object} [options={}]
- * @returns {Promise<{ migrated: boolean, user?: string }>}
+ * @param {string} [options.baseDir] Diretório base dos arquivos de sessão
+ * @param {string} [options.secret] SESSION_SECRET (>= 32 chars)
+ * @param {boolean} [options.strict=false] Lança erro em vez de retornar `migrated: false`
+ * @param {boolean} [options.validate=false] Valida o payload antes de gravar (modo CLI)
+ * @returns {Promise<{ migrated: boolean, user?: string, cookiesCount?: number, encrypted?: boolean }>}
  */
 async function migrateLegacySession(options = {}) {
   const { sPath, encPath, mPath } = resolveSessionPaths(options);
   const { secret, shouldEncrypt } = getEncryptionConfig(options);
+  const strict = Boolean(options.strict);
 
-  if (!shouldEncrypt || !fs.existsSync(sPath)) {
+  const fail = (message, cause) => {
+    if (strict) throw new SessionMigrationError(message);
+    if (cause) logger.warn({ err: cause.message }, message);
     return { migrated: false };
+  };
+
+  if (!shouldEncrypt) {
+    return fail(
+      'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para migração segura.'
+    );
+  }
+
+  if (!fs.existsSync(sPath)) {
+    return fail(`Arquivo legado session.json não encontrado em: "${sPath}"`);
   }
 
   let sessionData;
   try {
     const content = await fs.promises.readFile(sPath, 'utf-8');
-    sessionData = JSON.parse(content);
+    const parsed = JSON.parse(content);
+    // A CLI aceita tanto `{ cookies, origins }` quanto `{ session: {...} }` e valida o schema.
+    if (options.validate) {
+      const validated = validateSessionPayload(parsed.cookies ? { session: parsed } : parsed);
+      sessionData = validated.session;
+    } else {
+      sessionData = parsed;
+    }
   } catch (err) {
-    logger.warn({ err: err.message }, 'Falha ao analisar JSON da sessão legada.');
-    return { migrated: false };
+    return fail(
+      options.validate
+        ? `Conteúdo do session.json legado é inválido: ${err.message}`
+        : 'Falha ao analisar JSON da sessão legada.',
+      err
+    );
   }
+
+  let metaData = { user: 'legado' };
+  if (fs.existsSync(mPath)) {
+    try {
+      const existing = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
+      metaData = { ...metaData, ...existing };
+    } catch {}
+  }
+  metaData.encrypted = true;
+  metaData.migratedAt = new Date().toISOString();
+  if (options.validate) metaData.savedAt = new Date().toISOString();
 
   const encrypted = await encryptSessionAsync(JSON.stringify(sessionData, null, 2), secret);
   await safeWriteFile(encPath, encrypted, 'utf-8');
   safeChmod600(encPath);
 
-  // Remover o arquivo em texto claro após migração segura
+  // Remover o arquivo em texto claro SOMENTE após gravar e proteger o .enc
   await fs.promises.unlink(sPath).catch(() => {});
 
-  let metaData = { user: 'legado' };
-  if (fs.existsSync(mPath)) {
-    try {
-      metaData = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
-    } catch {}
-  }
-  metaData.encrypted = true;
-  metaData.migratedAt = new Date().toISOString();
   await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8');
   safeChmod600(mPath);
 
@@ -818,7 +867,13 @@ async function migrateLegacySession(options = {}) {
     { user: maskUser(metaData.user) },
     'Sessão legada migrada com sucesso para formato criptografado at-rest.'
   );
-  return { migrated: true, user: metaData.user };
+
+  const result = { migrated: true, user: metaData.user };
+  if (options.validate) {
+    result.cookiesCount = Array.isArray(sessionData.cookies) ? sessionData.cookies.length : 0;
+    result.encrypted = true;
+  }
+  return result;
 }
 
 module.exports = {
@@ -833,5 +888,6 @@ module.exports = {
   pruneSessionBackups,
   rotateSessionSecret,
   updateSessionStreak,
-  migrateLegacySession
+  migrateLegacySession,
+  SessionMigrationError
 };

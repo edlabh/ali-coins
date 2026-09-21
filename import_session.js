@@ -9,7 +9,11 @@ const {
   safeWriteFile,
   safeChmod600
 } = require('./security');
-const { resolveSessionPaths, getEncryptionConfig } = require('./libs/session');
+const {
+  resolveSessionPaths,
+  getEncryptionConfig,
+  migrateLegacySession: migrateLegacySessionCanonical
+} = require('./libs/session');
 const { flushAndExit } = require('./libs/exit');
 const logger = require('./logger');
 
@@ -123,63 +127,19 @@ async function readTokenFromInput(customFilePath = null) {
 }
 
 /**
- * Migra um arquivo session.json legado em texto puro para session.json.enc (AES-256-GCM)
+ * Migra um arquivo session.json legado em texto puro para session.json.enc (AES-256-GCM).
+ * Delega para a implementação canônica em `libs/session.js` (modo estrito + validação de schema)
+ * e converte o erro para `ImportSessionError` (contrato da CLI).
  * @param {object} [options={}]
  * @returns {Promise<{ user: string, cookiesCount: number, migrated: boolean, encrypted: boolean }>}
  */
 async function migrateLegacySession(options = {}) {
-  const { sPath, encPath, mPath } = resolveSessionPaths(options);
-  const secret = options.secret !== undefined ? options.secret : process.env.SESSION_SECRET;
-  if (!secret || typeof secret !== 'string' || secret.length < 32) {
-    throw new ImportSessionError(
-      'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para migração segura.'
-    );
-  }
-
-  if (!fs.existsSync(sPath)) {
-    throw new ImportSessionError(`Arquivo legado session.json não encontrado em: "${sPath}"`);
-  }
-
-  let sessionData;
   try {
-    const rawContent = await fs.promises.readFile(sPath, 'utf-8');
-    const parsed = JSON.parse(rawContent);
-    const validated = validateSessionPayload(parsed.cookies ? { session: parsed } : parsed);
-    sessionData = validated.session;
+    return await migrateLegacySessionCanonical({ ...options, strict: true, validate: true });
   } catch (err) {
-    throw new ImportSessionError(`Conteúdo do session.json legado é inválido: ${err.message}`);
+    if (err instanceof ImportSessionError) throw err;
+    throw new ImportSessionError(err.message);
   }
-
-  let metaData = { user: 'legado' };
-  if (fs.existsSync(mPath)) {
-    try {
-      const existing = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
-      metaData = { ...metaData, ...existing };
-    } catch {}
-  }
-  metaData.migratedAt = new Date().toISOString();
-  metaData.encrypted = true;
-  metaData.savedAt = new Date().toISOString();
-
-  const encrypted = encryptSession(JSON.stringify(sessionData, null, 2), secret);
-  await safeWriteFile(encPath, encrypted, 'utf-8');
-  safeChmod600(encPath);
-
-  // Remover o arquivo em texto claro SOMENTE após gravar e proteger o .enc
-  await fs.promises.unlink(sPath).catch(() => {});
-
-  await safeWriteFile(mPath, JSON.stringify(metaData, null, 2), 'utf-8', { durable: false });
-  safeChmod600(mPath);
-
-  logger.info(
-    `[SUCESSO] Sessão legada "${sPath}" migrada com sucesso para "${encPath}" (AES-256-GCM, 0o600).`
-  );
-  return {
-    user: metaData.user,
-    cookiesCount: sessionData.cookies.length,
-    migrated: true,
-    encrypted: true
-  };
 }
 
 /**

@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { lockFilePath: defaultLockFilePath } = require('./config');
-const { safeChmod600, safeWriteFile } = require('./security');
+const { safeChmod600 } = require('./security');
 const logger = require('./logger');
 
 const DEFAULT_STALE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos

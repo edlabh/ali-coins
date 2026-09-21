@@ -808,3 +808,93 @@ test('export_session.js - expectedUser aceita divergência apenas de caixa no me
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('M4: import_session.js e libs/session.js compartilham a mesma implementação de migração', () => {
+  const cli = require('../import_session').migrateLegacySession;
+  const lib = require('../libs/session').migrateLegacySession;
+  assert.notStrictEqual(cli, lib, 'CLI é um wrapper que delega, não a mesma referência direta');
+});
+
+test('M4: CLI lança ImportSessionError quando não há session.json legado (modo estrito)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('import-migrate-missing-');
+
+  try {
+    await assert.rejects(
+      () => migrateLegacySession({ baseDir: tmpDir, secret: TEST_SECRET }),
+      (err) => err instanceof ImportSessionError && /não encontrado/i.test(err.message),
+      'deve lançar ImportSessionError acionável'
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('M4: biblioteca retorna migrated:false (sem lançar) quando não há session.json legado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('lib-migrate-missing-');
+
+  try {
+    const result = await require('../libs/session').migrateLegacySession({
+      baseDir: tmpDir,
+      secret: TEST_SECRET
+    });
+    assert.deepStrictEqual(result, { migrated: false });
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('M4: CLI preserva campos extras do meta (savedAt) e informa cookiesCount', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('import-migrate-meta-');
+
+  try {
+    const sPath = path.join(tmpDir, 'session.json');
+    const mPath = path.join(tmpDir, 'session_meta.json');
+    await safeWriteFile(
+      sPath,
+      JSON.stringify({
+        cookies: [
+          { name: 'xman_us_t', value: 'a' },
+          { name: 'login_aliyunid_ticket', value: 'b' }
+        ],
+        origins: []
+      })
+    );
+    await safeWriteFile(mPath, JSON.stringify({ user: 'meta_user@example.com', extra: 42 }));
+
+    const res = await migrateLegacySession({ baseDir: tmpDir, secret: TEST_SECRET });
+    assert.strictEqual(res.migrated, true);
+    assert.strictEqual(res.user, 'meta_user@example.com');
+    assert.strictEqual(res.cookiesCount, 2);
+    assert.strictEqual(res.encrypted, true);
+
+    const meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
+    assert.strictEqual(meta.extra, 42, 'campos extras do meta preservados');
+    assert.ok(meta.migratedAt);
+    assert.ok(meta.savedAt, 'savedAt deve ser gravado no modo CLI');
+    assert.strictEqual(meta.encrypted, true);
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('M4: CLI rejeita session.json legado com conteúdo inválido (schema)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('import-migrate-invalid-');
+
+  try {
+    await safeWriteFile(path.join(tmpDir, 'session.json'), JSON.stringify({ foo: 'bar' }));
+    await assert.rejects(
+      () => migrateLegacySession({ baseDir: tmpDir, secret: TEST_SECRET }),
+      (err) => err instanceof ImportSessionError && /inválido/i.test(err.message)
+    );
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
