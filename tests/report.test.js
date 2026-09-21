@@ -86,7 +86,9 @@ test('libs/report.js - sendWebhookNotification com mock de fetch', async () => {
     global.fetch = async (url, options) => {
       assert.strictEqual(url, 'https://example.com/notify');
       assert.strictEqual(options.method, 'POST');
-      assert.ok(options.body.includes('user@test.com'));
+      // PII de usuário deve ser mascarada antes de sair para webhooks externos
+      assert.strictEqual(options.body.includes('user@test.com'), false);
+      assert.ok(options.body.includes('us***@test.com'));
       return { ok: true, status: 200 };
     };
 
@@ -1458,6 +1460,91 @@ test('libs/report.js - webhook para destino loopback é bloqueado (SSRF) sem cha
 
     assert.strictEqual(fetchCalled, false, 'não deve chamar fetch para destino privado');
   } finally {
+    global.fetch = originalFetch;
+    if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - webhook NUNCA envia sessionData/cookies (segredos de sessão)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { sendWebhookNotification, flushWebhooks } = require('../libs/report');
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.NOTIFY_WEBHOOK_URL;
+  let captured = null;
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/hook';
+    global.fetch = async (_url, options) => {
+      captured = options.body;
+      return { ok: true, status: 200 };
+    };
+
+    const payload = {
+      type: 'checkin',
+      userEmail: 'victim@example.com',
+      sessionData: {
+        cookies: [{ name: 'xman_us_t', value: 'SECRET_TOKEN_ABC', domain: '.aliexpress.com' }]
+      },
+      nested: { storageState: { cookies: [{ name: 'x', value: 'Y' }] } }
+    };
+
+    sendWebhookNotification(payload).catch(() => {});
+    await flushWebhooks(2000);
+
+    assert.ok(captured, 'webhook deve ter sido chamado');
+    assert.strictEqual(captured.includes('SECRET_TOKEN_ABC'), false, 'cookie não pode vazar');
+    assert.strictEqual(captured.includes('sessionData'), false);
+    assert.strictEqual(captured.includes('storageState'), false);
+    assert.strictEqual(captured.includes('victim@example.com'), false, 'e-mail deve ser mascarado');
+    assert.ok(captured.includes('vi***@example.com'));
+  } finally {
+    global.fetch = originalFetch;
+    if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - renderCheckinReport --json não vaza sessionData no webhook (mantém no stdout)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const { renderCheckinReport, flushWebhooks } = require('../libs/report');
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.NOTIFY_WEBHOOK_URL;
+  const originalWrite = process.stdout.write;
+  let captured = null;
+  let stdout = '';
+
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/hook';
+    global.fetch = async (_url, options) => {
+      captured = options.body;
+      return { ok: true, status: 200 };
+    };
+    process.stdout.write = (chunk) => {
+      stdout += chunk;
+      return true;
+    };
+
+    renderCheckinReport(
+      {
+        userEmail: 'victim@example.com',
+        alreadyCollected: false,
+        coinsGainedToday: '40',
+        totalBalance: '1000',
+        streakDays: 10,
+        sessionData: { cookies: [{ name: 'xman_us_t', value: 'TOKEN_XYZ' }] }
+      },
+      { json: true }
+    );
+    await flushWebhooks(2000);
+    process.stdout.write = originalWrite;
+
+    assert.ok(stdout.includes('TOKEN_XYZ'), 'stdout local mantém a sessão (compatibilidade)');
+    assert.strictEqual(captured.includes('TOKEN_XYZ'), false, 'webhook não pode conter a sessão');
+  } finally {
+    process.stdout.write = originalWrite;
     global.fetch = originalFetch;
     if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
     else delete process.env.NOTIFY_WEBHOOK_URL;

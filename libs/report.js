@@ -439,9 +439,44 @@ function sendWebhookNotification(payload, customUrl = null) {
   return trackWebhook(performWebhookNotification(payload, customUrl));
 }
 
+// Chaves que NUNCA devem sair para webhooks externos (contêm segredos de sessão).
+const WEBHOOK_FORBIDDEN_KEYS = new Set(['sessionData', 'session', 'cookies', 'storageState']);
+// Chaves de identificação de conta que devem ser mascaradas antes do envio externo.
+const WEBHOOK_USER_KEYS = new Set(['user', 'userEmail', 'email', 'maskedUser', 'account']);
+
+/**
+ * Sanitiza o payload antes do envio a webhooks externos (defesa em profundidade):
+ * - remove campos com segredos de sessão (cookies/storageState);
+ * - mascara e-mails em campos de usuário conhecidos (não toca em outras strings).
+ * @param {*} value
+ * @param {number} [depth=0]
+ * @param {boolean} [userContext=false] Indica que o valor está sob uma chave de usuário
+ * @returns {*}
+ */
+function sanitizeWebhookPayload(value, depth = 0, userContext = false) {
+  if (depth > 6 || value === null || typeof value !== 'object') {
+    if (userContext && typeof value === 'string' && value.includes('@')) return maskUser(value);
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeWebhookPayload(item, depth + 1, userContext));
+  }
+  const out = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (WEBHOOK_FORBIDDEN_KEYS.has(key)) continue;
+    // `account` pode ser um objeto { user, maskedUser } — entra em contexto de usuário.
+    const childUserContext = userContext || WEBHOOK_USER_KEYS.has(key);
+    out[key] = sanitizeWebhookPayload(val, depth + 1, childUserContext);
+  }
+  return out;
+}
+
 async function performWebhookNotification(payload, customUrl = null) {
   const webhookUrl = customUrl || process.env.NOTIFY_WEBHOOK_URL;
   if (!webhookUrl) return false;
+
+  // Remove segredos de sessão e mascara PII antes de qualquer envio externo.
+  payload = sanitizeWebhookPayload(payload);
 
   try {
     // Proteção contra SSRF: só envia para http(s) público (bloqueia loopback/privado),

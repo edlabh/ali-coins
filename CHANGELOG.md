@@ -11,6 +11,19 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.2] - 2026-09-21
+
+### Corrigido
+
+- **Webhook não vaza mais a sessão nem PII (`libs/report.js`):** o envio a webhooks externos passa por sanitização (defesa em profundidade) que **remove `sessionData`/`cookies`/`storageState`** e mascara e-mails em campos de usuário. Antes, o relatório de check-in em `--json` enviava os cookies de autenticação do AliExpress ao webhook. O `stdout` local continua com o valor cru (compatibilidade).
+- **E-mail cru no webhook unificado (`libs/report.js`):** o relatório unificado passa a mascarar o usuário antes do envio externo.
+- **Escrita direta em bind mount não corrompe mais a sessão (`security.js`):** o fallback (quando o `rename` falha com `EBUSY`) cria backup `.bak-<ts>`, faz escrita completa (loop sobre `bytesWritten`) e restaura o backup em caso de falha, evitando sessão vazia/parcial se o processo for morto (OOM) durante a gravação.
+- **Scrypt considera o limite do cgroup (`security.js`):** `getEffectiveDefaultScryptN` usa `min(os.totalmem(), limit)` com leitura de `/sys/fs/cgroup/memory.max` (v2) e `memory.limit_in_bytes` (v1), evitando pico de ~128 MB em container com `--memory` reduzido.
+
+### Testes
+
+- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup e cgroup — **331/331**.
+
 ## [1.4.1] - 2026-09-21
 
 ### Corrigido

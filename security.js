@@ -52,6 +52,30 @@ function warnScryptFloorOnce(n) {
 let scryptAutoLowMemoryWarned = false;
 
 /**
+ * Lê o limite de memória efetivo do cgroup (v2 `memory.max` ou v1 `memory.limit_in_bytes`).
+ * Retorna null quando não há limite legível (host comum/sem permissão).
+ * @returns {number|null}
+ */
+function getCgroupMemoryLimitBytes() {
+  const candidates = [
+    '/sys/fs/cgroup/memory.max', // cgroup v2
+    '/sys/fs/cgroup/memory/memory.limit_in_bytes' // cgroup v1
+  ];
+  for (const file of candidates) {
+    try {
+      const raw = fs.readFileSync(file, 'utf-8').trim();
+      if (!raw || raw === 'max') continue;
+      const value = parseInt(raw, 10);
+      // v1 usa um valor gigante (ex.: 9223372036854771712) para "sem limite"
+      if (Number.isFinite(value) && value > 0 && value < 1e15) return value;
+    } catch {
+      // Arquivo inexistente/sem permissão: tenta o próximo
+    }
+  }
+  return null;
+}
+
+/**
  * Default de N para NOVAS criptografias quando options.N/SCRYPT_N não são informados.
  * Reduz automaticamente para 2^15 em hosts com pouca RAM total (≤1.5 GB), evitando OOM.
  * Não afeta a leitura de tokens existentes (o N vem embutido no token v3).
@@ -60,7 +84,12 @@ let scryptAutoLowMemoryWarned = false;
  */
 function getEffectiveDefaultScryptN(totalMemBytes) {
   if (process.env.SCRYPT_N) return SCRYPT_PARAMS_V3.N;
-  const total = typeof totalMemBytes === 'number' ? totalMemBytes : os.totalmem();
+  // Considera o menor entre a RAM total do host e o limite do cgroup (container Docker
+  // pode ter --memory bem menor que o host; os.totalmem() reporta o host).
+  const total =
+    typeof totalMemBytes === 'number'
+      ? totalMemBytes
+      : Math.min(os.totalmem(), getCgroupMemoryLimitBytes() ?? Infinity);
   if (Number.isFinite(total) && total > 0 && total <= SCRYPT_LOW_MEMORY_TOTAL_BYTES) {
     if (!scryptAutoLowMemoryWarned) {
       scryptAutoLowMemoryWarned = true;
@@ -211,17 +240,44 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
 
       if (!canFallback) throw renameErr;
 
+      // Backup do conteúdo atual antes de truncar o destino: se o processo for morto
+      // (ex.: OOM killer em VPS de 1 GB) no meio da escrita direta, o backup preserva
+      // a versão anterior íntegra em vez de deixar o arquivo vazio/parcial.
+      const backupPath = `${filePath}.bak-${Date.now()}`;
+      let hasBackup = false;
+      try {
+        await fs.promises.copyFile(filePath, backupPath);
+        hasBackup = true;
+      } catch {
+        // Sem backup: prossegue (melhor escrever do que falhar)
+      }
+
       let direct = null;
       try {
         direct = await fs.promises.open(filePath, 'w', 0o600);
         if (Buffer.isBuffer(data)) {
-          await direct.write(data);
+          // Escrita completa: loop sobre bytesWritten (write pode ser parcial)
+          let offset = 0;
+          while (offset < data.length) {
+            const { bytesWritten } = await direct.write(data, offset, data.length - offset, offset);
+            if (!bytesWritten) break;
+            offset += bytesWritten;
+          }
+          if (offset !== data.length) {
+            throw new Error('safeWriteFile: escrita direta incompleta (fallback bind mount).');
+          }
         } else {
           await direct.writeFile(data, encoding);
         }
         if (durable) {
           await direct.sync();
         }
+      } catch (writeErr) {
+        // Restaura o backup para não deixar o destino corrompido
+        if (hasBackup) {
+          await fs.promises.copyFile(backupPath, filePath).catch(() => {});
+        }
+        throw writeErr;
       } finally {
         if (direct) {
           try {
@@ -231,6 +287,10 @@ async function safeWriteFile(filePath, data, encoding = 'utf-8', options = {}) {
           }
         }
         await fs.promises.unlink(tmpPath).catch(() => {});
+      }
+
+      if (hasBackup) {
+        await fs.promises.unlink(backupPath).catch(() => {});
       }
       safeChmod600(filePath);
       return;

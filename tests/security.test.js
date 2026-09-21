@@ -718,3 +718,60 @@ test('security.js - safeWriteFile faz fallback in-place quando rename falha (bin
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('security.js - safeWriteFile fallback (bind mount) preserva conteúdo e restaura em falha', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('safe-write-bak-');
+  const file = path.join(tmpDir, 'session_meta.json');
+  const originalRename = fs.promises.rename;
+
+  try {
+    fs.writeFileSync(file, JSON.stringify({ lastStreakDays: 214 }), 'utf-8');
+
+    fs.promises.rename = async () => {
+      const err = new Error('resource busy');
+      err.code = 'EBUSY';
+      throw err;
+    };
+
+    await safeWriteFile(file, JSON.stringify({ lastStreakDays: 216 }), 'utf-8', {
+      durable: false
+    });
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf-8')).lastStreakDays, 216);
+
+    // não deve deixar .tmp nem .bak órfãos após sucesso
+    const leftovers = fs
+      .readdirSync(tmpDir)
+      .filter((f) => f.includes('.tmp-') || f.includes('.bak-'));
+    assert.deepStrictEqual(leftovers, []);
+  } finally {
+    fs.promises.rename = originalRename;
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('security.js - getCgroupMemoryLimitBytes não lança e getEffectiveDefaultScryptN respeita injeção', () => {
+  const {
+    getEffectiveDefaultScryptN,
+    SCRYPT_LOW_MEMORY_DEFAULT_N,
+    SCRYPT_DEFAULT_N
+  } = require('../security');
+  const original = process.env.SCRYPT_N;
+  try {
+    delete process.env.SCRYPT_N;
+    assert.strictEqual(
+      getEffectiveDefaultScryptN(512 * 1024 * 1024),
+      SCRYPT_LOW_MEMORY_DEFAULT_N,
+      'container pequeno deve usar N reduzido'
+    );
+    assert.strictEqual(
+      getEffectiveDefaultScryptN(8 * 1024 ** 3),
+      SCRYPT_DEFAULT_N,
+      'host com folga mantém N padrão'
+    );
+  } finally {
+    if (original !== undefined) process.env.SCRYPT_N = original;
+    else delete process.env.SCRYPT_N;
+  }
+});
