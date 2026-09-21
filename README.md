@@ -116,6 +116,24 @@ LOG_LEVEL=info
 # NAV_TIMEOUT=35000
 # TASK_MAX_ACTIONS=25
 # TASK_MAX_ATTEMPTS=4
+
+# Segurança de destinos externos (SSRF): webhook e heartbeat bloqueiam por padrão
+# loopback/privados (127.0.0.1, 10.x, 192.168.x, 169.254.169.254, IPv6 ::1/fd00::/etc.).
+# Em testes locais, libere explicitamente:
+# ALLOW_PRIVATE_WEBHOOKS=true
+
+# Rotina de tarefas (opcional)
+# SKIP_APP_ONLY_TASKS=true      # ignora Prize Land/minigames/quizzes/avaliações (padrão: true)
+# TASK_RETRY_UNFINISHED=false   # 2ª passada só nas tarefas incompletas (padrão: false)
+# TASK_RETRY_PASSES=1
+# TASK_RETRY_DELAY_MS=5000
+
+# Telegram por conta (opcional): enviar também o resultado individual de cada conta (padrão: false)
+# TELEGRAM_PER_ACCOUNT=false
+
+# Memória: reutilizar um único contexto desktop por conta eleva o pico de RAM no host.
+# Padrão: false (recomendado em hosts com 1 GB). Habilite só com folga de memória.
+# DESKTOP_REUSE_CONTEXT=false
 ```
 
 > **Dica Multi-Conta:** Além das variáveis `ALI_USER_2...20`, você pode criar um arquivo `accounts.json` (ignorado pelo git) contendo `[{"user": "...", "password": "..."}]`. As sessões são isoladas automaticamente por conta (`session_<hash>.json`) e executadas sequencialmente com reaproveitamento do Chromium.
@@ -139,7 +157,7 @@ Execute o modo unificado:
 
 ## Testes e Qualidade de Código
 
-O projeto utiliza a suíte de testes nativa do Node.js (`node:test`), Prettier e ESLint 9:
+O projeto utiliza a suíte de testes nativa do Node.js (`node:test`), Prettier e ESLint 10:
 
 ```bash
 # Executar suíte de testes unitários e de integração
