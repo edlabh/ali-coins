@@ -1208,10 +1208,10 @@ test('libs/notify.js - buildMessage redige token/code do erro e escapa valores d
   // 1. Erro com segredo em query string não deve vazar para o canal externo
   const msgFail = buildMessage({
     event: 'failure',
-    error: new Error('navigation failed at https://x.com/p?token=SECRET123&code=456'),
+    error: new Error('navigation failed at https://x.com/p?token=TOKEN_FALSO_TESTE&code=456'), //gitleaks:allow
     report: { userEmail: 'a@b.com' }
   });
-  assert.strictEqual(msgFail.includes('SECRET123'), false, 'token deve ser redigido');
+  assert.strictEqual(msgFail.includes('TOKEN_FALSO_TESTE'), false, 'token deve ser redigido');
   assert.strictEqual(msgFail.includes('456'), false, 'code deve ser redigido');
 
   // 2. streak_break: valor com HTML não pode injetar tag

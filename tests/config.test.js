@@ -336,7 +336,7 @@ test('config.js - passwordFile não permite path traversal fora do diretório do
     assert.strictEqual(accounts.length, 0, 'path traversal deve ser recusado');
 
     // Sem traversal: aceita normalmente
-    fs.writeFileSync(path.join(baseDir, 'conta.pw'), 'senha-valida-123', 'utf-8');
+    fs.writeFileSync(path.join(baseDir, 'conta.pw'), 'senha-local-de-teste', 'utf-8');
     fs.writeFileSync(
       path.join(baseDir, 'accounts.json'),
       JSON.stringify([{ user: 'ok@example.com', passwordFile: 'conta.pw' }]),
@@ -344,7 +344,7 @@ test('config.js - passwordFile não permite path traversal fora do diretório do
     );
     const ok = loadAccounts({}, baseDir);
     assert.strictEqual(ok.length, 1, 'arquivo dentro do diretório é aceito');
-    assert.strictEqual(ok[0].password, 'senha-valida-123');
+    assert.strictEqual(ok[0].password, 'senha-local-de-teste'); //gitleaks:allow valor fictício de teste
   } finally {
     if (originalUser !== undefined) process.env.ALI_USER = originalUser;
     if (originalPass !== undefined) process.env.ALI_PASSWORD = originalPass;
