@@ -28,6 +28,26 @@ test('libs/url_guard.js - isPrivateIp classifica IPv4/IPv6 privados e públicos'
   }
 });
 
+test('libs/url_guard.js - isPrivateIp cobre 6to4 hextets 2-3, multicast e canonicalização', () => {
+  // 6to4: o IPv4 embutido está nos HEXTETS 2-3 (2002:VVVV:VVVV::/48), não nos finais.
+  for (const ip of [
+    '2002:a9fe:a9fe:0:0:0:808:808',
+    '2002:a9fe:a9fe::',
+    'ff02::1',
+    'ff05::1:3',
+    '0:0:0:0:0:0:0:1',
+    '198.18.0.1',
+    '192.0.2.5',
+    '198.51.100.7',
+    '203.0.113.9',
+    '192.88.99.1'
+  ]) {
+    assert.strictEqual(isPrivateIp(ip), true, `${ip} deve ser bloqueado`);
+  }
+  // 6to4 cujo IPv4 embutido é público continua público
+  assert.strictEqual(isPrivateIp('2002:808:808::'), false, '6to4 de 8.8.8.8 é público');
+});
+
 test('libs/url_guard.js - allowPrivateTargets lê ALLOW_PRIVATE_WEBHOOKS', () => {
   assert.strictEqual(allowPrivateTargets({}), false);
   assert.strictEqual(allowPrivateTargets({ ALLOW_PRIVATE_WEBHOOKS: 'false' }), false);

@@ -49,6 +49,42 @@ test('libs/selectors.js - integridade e estrutura dos seletores', () => {
   }
 });
 
+test('libs/selectors.js - A3/A4: seletores de login/2FA são específicos (sem falsos positivos)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    // A3: usernameInput não pode ser genérico (input[type=text]/[type=email]/cosmos-input
+    // sozinhos casam busca/widgets da página autenticada e disparam re-login falso).
+    assert.ok(
+      SELECTORS.login.usernameInput.includes('#fm-login-id'),
+      'usernameInput deve priorizar o id real do formulário'
+    );
+    assert.ok(
+      !/(^|,\s*)input\[type="text"\](\s*,|$)/.test(SELECTORS.login.usernameInput),
+      'usernameInput não pode ter input[type="text"] genérico'
+    );
+    assert.ok(
+      !/(^|,\s*)input\[type="email"\](\s*,|$)/.test(SELECTORS.login.usernameInput),
+      'usernameInput não pode ter input[type="email"] genérico'
+    );
+
+    // A4: twoFactorInput não pode casar por substring genérica de "code"
+    assert.ok(
+      !/\[name\*="code"/i.test(SELECTORS.login.twoFactorInput),
+      'twoFactorInput não pode usar [name*="code"] genérico'
+    );
+    assert.ok(
+      !/\[class\*="code"/i.test(SELECTORS.login.twoFactorInput),
+      'twoFactorInput não pode usar [class*="code"] genérico'
+    );
+    assert.ok(
+      /checkCode|one-time-code|verification code/.test(SELECTORS.login.twoFactorInput),
+      'twoFactorInput deve usar marcadores específicos de verificação'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/ui/diagnostics.js - captureDomHashAndArtifacts gera hash SHA-256 e screenshot', async () => {
   const fs = require('node:fs');
   const { captureDomHashAndArtifacts } = require('../libs/ui');

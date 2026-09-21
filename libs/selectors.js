@@ -6,14 +6,20 @@
 const SELECTORS = {
   // Autenticação e Desafios de Segurança
   login: {
-    usernameInput: 'input.cosmos-input, input[type="text"], input[type="email"], #fm-login-id',
+    // Seletores ESPECÍFICOS de login. `input[type="text"]`/`input[type="email"]` genéricos
+    // casam campos de busca/widgets e causavam re-login desnecessário com sessão válida.
+    usernameInput:
+      '#fm-login-id, input[name="loginId"], input.cosmos-input[type="email"], input.cosmos-input[type="text"], input[type="email"][name*="login" i]',
     passwordInput: 'input[type="password"], #fm-login-password',
     continueBtn:
       'button.cosmos-btn-primary, button:has-text("Continue"), button:has-text("Continuar")',
     signInBtn:
       'button.cosmos-btn-primary, button[type="submit"], button:has-text("Sign in"), button:has-text("Entrar")',
+    // 2FA: seletores específicos do fluxo de verificação. `input[name*="code" i]`/
+    // `input[class*="code" i]` casavam campos auxiliares/ocultos e disparavam falso 2FA
+    // (abortando login válido em cron/CI).
     twoFactorInput:
-      'input[placeholder*="code" i], input[name*="code" i], input[class*="code" i], input[type="tel"][maxlength="6"]',
+      '#fm-login-code, input[name="checkCode"], input[autocomplete="one-time-code"], input[placeholder*="verification code" i], input[placeholder*="código" i][maxlength="6"], input.check-code-input[type="tel"][maxlength="6"]',
     twoFactorSubmitBtn:
       'button[type="submit"], button.cosmos-btn-primary, button:has-text("Confirm"), button:has-text("Verify"), button:has-text("Confirmar")',
     loginPendingContainer: '.login-pending-container',
@@ -57,7 +63,7 @@ const SELECTORS = {
     taskStatus: '.statusText',
     taskRight: '.e2e_normal_task_right',
     openDrawerBtn:
-      '#signButton, button.aecoin-taskButton-3V41b, [class*="taskButton"], button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, [class*="signButtonWrapper"] button, div[class*="aecoin-signButton"], button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas")',
+      'button.aecoin-taskButton-3V41b, [class*="taskButton"], button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, [class*="signButtonWrapper"] button, div[class*="aecoin-signButton"], button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas")',
     productCard: '.feeds-discount-card',
     waterBtn:
       '.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"], button:has-text("regar"), button:has-text("Water")'

@@ -463,6 +463,7 @@ async function main() {
         let accImportedExpired = false;
         let accIs2FARequired = false;
         let accStreakBroken = false;
+        let pendingBackoffMs = 0;
 
         try {
           // Etapa 1: Check-in
@@ -564,17 +565,18 @@ async function main() {
             `Falha na execução da conta ${account.maskedUser}. Continuando com as próximas.`
           );
           if (i < accounts.length - 1) {
-            const backoffMs = calculateAccountBackoff(consecutiveFailures - 1);
+            // A espera acontece DEPOIS do finally (que libera o lock da conta): dormir
+            // segurando o lock fazia outra instância receber LockActiveError (exit 3).
+            pendingBackoffMs = calculateAccountBackoff(consecutiveFailures - 1);
             logger.info(
               {
                 account: account.maskedUser,
                 consecutiveFailures,
-                backoffMs,
+                backoffMs: pendingBackoffMs,
                 nextAccount: accounts[i + 1]?.maskedUser
               },
-              `Aguardando backoff exponencial com jitter de ${backoffMs}ms antes de tentar próxima conta...`
+              `Aguardando backoff exponencial com jitter de ${pendingBackoffMs}ms antes de tentar próxima conta...`
             );
-            await new Promise((resolve) => setTimeout(resolve, backoffMs));
           }
         } finally {
           if (releaseAccountLock) {
@@ -583,6 +585,12 @@ async function main() {
           // Fecha o contexto desktop reaproveitado ao terminar a conta (evita reter
           // RAM/cookies entre contas e não vaza a sessão de uma conta para a próxima).
           await closeCachedDesktopContext().catch(() => {});
+        }
+
+        // Backoff FORA do finally: o lock da conta já foi liberado antes de dormir.
+        if (pendingBackoffMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, pendingBackoffMs));
+          pendingBackoffMs = 0;
         }
 
         const accTiming = accTimer.end();
@@ -676,11 +684,17 @@ async function main() {
       const allAccountsLocked =
         !anyAccountSuccess && lockActiveCount > 0 && nonLockFailureCount === 0;
 
+      // Falha parcial (qualquer conta com erro não-lock ou 2FA) deve ser tratada como
+      // falha do processo: antes, com >= 1 conta OK, saía 0 e enviava heartbeat "success",
+      // mascarando contas quebradas para o dead man's switch (e o run_all.sh, que só
+      // retenta no exit 1, não reprocessava as contas que falharam).
+      const anyAccountFailed = nonLockFailureCount > 0 || anyAccount2FARequired;
+
       let multiEvent = 'success';
       if (allAccountsLocked) multiEvent = 'lock_active';
       else if (anyAccountStreakBroken) multiEvent = 'streak_break';
       else if (anyAccount2FARequired && !anyAccountSuccess) multiEvent = '2fa_required';
-      else if (!anyAccountSuccess) multiEvent = 'failure';
+      else if (!anyAccountSuccess || anyAccountFailed) multiEvent = 'failure';
       else if (!anyAccountHadNewAction) multiEvent = 'already_collected';
 
       // Espaça do último envio por-conta (quando houver) para não competir pelo mesmo
@@ -726,6 +740,15 @@ async function main() {
         await sendHeartbeat('fail', {
           config,
           error: new Error('Todas as contas falharam na execução'),
+          report: multiPayload
+        });
+        await gracefulExit(1);
+      }
+
+      if (anyAccountFailed) {
+        await sendHeartbeat('fail', {
+          config,
+          error: new Error('Uma ou mais contas falharam na execução'),
           report: multiPayload
         });
         await gracefulExit(1);

@@ -136,7 +136,13 @@ function sanitizeSensitiveQueryParams(str) {
       .replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]')
       // Cabeçalhos textualizados (Bearer/authorization/cookie) vazam segredo em logs
       .replace(/(Bearer\s+)[\w\-._~+/=]+/gi, '$1[REDACTED]')
-      .replace(/((?:authorization|cookie|x-api-key)\s*[:=]\s*)[^\s,;"']+/gi, '$1[REDACTED]')
+      // Cabeçalhos textualizados (Bearer/authorization/cookie) vazam segredo em logs.
+      // `[^\r\n]+` redige a LINHA inteira: cookies são multivalorados (`a=1; b=2; c=3`)
+      // e parar no `;`/`,` deixava os pares seguintes expostos.
+      .replace(
+        /((?:authorization|cookie|set-cookie|x-api-key)\s*[:=]\s*)[^\r\n]+/gi,
+        '$1[REDACTED]'
+      )
   );
 }
 

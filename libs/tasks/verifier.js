@@ -293,7 +293,9 @@ async function findTaskElement(page, targetTitle, fallbackIndex = 0) {
         .catch(() => '');
       if (t === targetTitle) return el;
     }
-    return currentTaskEls[fallbackIndex] || null;
+    // Nenhum título casou: NÃO devolver um elemento de outra tarefa (a ação seria
+    // executada na tarefa errada, enquanto o progresso era contado para a pretendida).
+    return null;
   }
 
   const currentTaskEls = await page.$$(SELECTORS.tasks.taskItem);
@@ -311,6 +313,8 @@ async function findTaskElement(page, targetTitle, fallbackIndex = 0) {
         return el;
       }
     }
+    // Sem correspondência de título: não devolver elemento de outra tarefa.
+    return null;
   }
   return currentTaskEl || null;
 }

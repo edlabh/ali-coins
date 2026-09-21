@@ -11,6 +11,50 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.4] - 2026-09-21
+
+### Corrigido
+
+- **Check-in fantasma no relatório (`libs/report.js`):** `computeCheckinCoinsGained` caía no fallback por streak quando `coinsGainedToday` era `'0'` (nenhuma coleta), anunciando “+40 moedas” sem check-in. Agora valor presente e não-positivo retorna 0; o fallback só vale para ausente/`N/D`. Afetava relatório unificado, multi-conta, Telegram, webhook e `--json`.
+- **Check-in contado sem confirmação (`collect.js`):** `justCollected` era marcado após o clique sem verificar o efeito (timeout do `waitForSelector` engolido; `.e2e_normal_task_right_btn` sempre presente como falso positivo). Agora o check-in só é contabilizado quando o marcador de “hoje” aparece; caso contrário registra aviso e não incrementa streak/moedas.
+- **Saldo truncado com separador de milhar (`libs/ui/balance.js`):** `"Minhas moedas\n2.917"` virava `"2"` e `"My coins\n12,345"` virava `"12"`, contaminando saldo, `initialBalance`/`finalBalance` e o ganho das tarefas.
+- **Histórico de check-in cruzava datas (`libs/ui/balance.js`):** o gap `[\s\S]{0,120}?` associava o valor do dia seguinte à data anterior (check-in falso e quebra de streak mascarada). O histórico agora é processado por blocos de data.
+- **Seção “hoje” usava a primeira data do extrato (`libs/ui/balance.js`):** quando a grafia de hoje não casava, a primeira data do documento era tratada como hoje. Agora só é aceita se corresponder à data atual (PT), tolerando zero à esquerda.
+- **Rótulo de check-in na mesma linha da data virava “missão” (`libs/ui/balance.js`):** o teste ancorado (`^...$`) não reconhecia `"21/09/2026 PT App daily check-in"`, zerando o bônus do dia.
+- **Valor do check-in pego de qualquer elemento `aecoin-` (`collect.js`):** o scan agora filtra elementos visíveis, evitando usar o primeiro `+N` do calendário como crédito do check-in.
+- **Tarefa errada clicada (`libs/tasks/verifier.js`):** `findTaskElement` devolvia o elemento do índice antigo quando o título não era encontrado, executando a ação em outra tarefa. Agora retorna `null` (a tentativa é contabilizada e a tarefa é excluída após o limite).
+- **Ação contada sem execução (`do_tasks.js`):** `totalActions` era incrementado antes de localizar elemento/botão, consumindo o teto global de 25 sem executar nada. Agora só conta com elemento e botão localizados (a tentativa continua sendo contabilizada antes, garantindo a terminação do loop).
+- **Reabertura de tarefas concluídas (`do_tasks.js`):** `selectReopenableTasks` era chamado sem `tasks`, reabrindo títulos `isDone`. Agora recebe a última extração do painel.
+- **Backoff segurava o lock da conta (`all.js`):** a espera de até 30s acontecia antes do `finally` que libera o lock, fazendo outra instância receber `LockActiveError`. O sleep agora ocorre após a liberação.
+- **`openDrawerBtn` clicava no check-in (`libs/selectors.js`):** `#signButton` (botão de check-in) estava na lista de abertura do painel “Ganhe mais moedas”; removido (os candidatos específicos e o fallback semântico permanecem).
+- **`closeModals` clicava fora de contexto (`libs/ui/navigation.js`):** `[class*="close"]` podia fechar gaveta/banner legítimo ou acionar “Confirm” genérico. Agora só clica em elementos visíveis dentro de diálogo/modal/overlay.
+- **Slider reportava sucesso sempre (`libs/ui/navigation.js`):** `trySolveSlider` retornava `true` mesmo com o captcha na tela; agora retorna `true` apenas se o track desapareceu.
+- **Cache desktop morto/desatualizado (`libs/ui/balance.js`, `collect.js`):** a página cacheada agora é validada (`isClosed`) e o cache é invalidado após login novo, evitando leituras `N/D` silenciosas e cookies antigos.
+- **`+70 moedas/dia` inventado (`libs/report.js`):** quando o tier era desconhecido, o relatório exibia 70 fixo; agora exibe `N/D`.
+
+### Segurança
+
+- **`sessionData` (cookies) fora do stdout do `--json` (`libs/report.js`):** o storageState era impresso em claro (vai para `cron.log`/Docker logs) e permitia sequestrar a sessão. O valor continua no retorno interno, mas não é impresso.
+- **Redação de `Cookie` multivalorado (`logger.js`):** `cookie: a=1; xman_us_t=SEGREDO; ...` só mascarava o primeiro par; agora a linha inteira é redigida (inclui `set-cookie`).
+- **Migração legada não destrói `.enc` válido (`libs/session.js`):** `migrateLegacySession` sobrescrevia um `session.json.enc` existente sem backup; agora preserva como `.bak-<ts>` e aborta se não conseguir. O erro de JSON não interpola mais o conteúdo do arquivo.
+- **`session_meta.json` corrompido não apaga a sessão (`libs/session.js`):** meta ilegível era tratado como conta divergente e disparava `clearSession`; agora a sessão é preservada.
+- **Permissões reforçadas na sessão (`libs/session.js`, `export_session.js`):** `.enc`/plaintext/meta existentes recebem `0600` no load, e a exportação chmoda o `.enc` realmente lido (antes chmodava o plaintext, que normalmente não existe).
+- **Backups de sessão ignorados no git/imagem (`.gitignore`, `.dockerignore`):** adicionados `*.bak-*` e `*.tmp-*` (os padrões `*.bak` não casavam com `session.json.enc.bak-<ts>`).
+- **`isPrivateIp` mais rígido (`libs/url_guard.js`):** 6to4 agora extrai o IPv4 dos hextets 2-3 (antes usava os 32 bits finais e deixava passar `2002:a9fe:a9fe::` → `169.254.169.254`), multicast `ff00::/8` e faixas reservadas IPv4 (benchmark/TEST-NET) bloqueados, e IPv6 é canonicalizado (`0:0:0:0:0:0:0:1` → loopback).
+- **Erro multi-conta sanitizado (`libs/notify.js`):** a mensagem individual de falha passava só por `escapeHtml`; agora passa pelo redator de query/headers, evitando `?token=`/`code=` no Telegram.
+- **Lockfile anti-TOCTOU (`lockfile.js`):** a remoção de lock stale/órfão/inválido agora move para um caminho privado e só apaga se a geração (`lockId`/`pid+createdAt`) ainda bater — antes um `unlink` incondicional podia destruir o lock recém-publicado por outro processo e permitir duas execuções na mesma conta. `LOCK_STALE_TIMEOUT_MS` inválido (`0`/negativo/`NaN`) passa a cair no default seguro.
+- **Multi-conta: falha parcial não é mais “sucesso” (`all.js`):** com pelo menos uma conta OK e outra falhando (erro ou 2FA), o processo saía 0 e enviava heartbeat `success`, mascarando a falha no dead man's switch. Agora encerra com exit 1 e heartbeat de falha.
+
+### Testes
+
+- **Seletores de login/2FA específicos (`libs/selectors.js`, `libs/ui/login.js`, `collect.js`, `do_tasks.js`):** `input[type="text"]`/`input[type="email"]`/`input.cosmos-input` genéricos disparavam re-login falso com sessão válida (e alerta falso de sessão expirada); o 2FA exigia apenas um input com “code” no nome/classe, causando falso 2FA e aborto em cron/CI. Agora os seletores são específicos e a detecção exige input **visível**; a checagem de login é condicionada à URL de login/passport.
+- **`skipWebhook` implementado (`libs/report.js`):** a opção passada pelos testes era ignorada e relatórios sintéticos podiam ser POSTados para o webhook de produção; agora é respeitada.
+- **`cleanupIsolatedTestDir` com allowlist (`tests/test_helper.js`):** a remoção recursiva agora exige caminho sob o `os.tmpdir()`, evitando apagar arquivos do projeto por engano.
+- **`docker-run.example.sh` valida `credentials.env`:** montagem de arquivo inexistente criava diretório `root` no host; agora falha com mensagem clara e cria `scratch/` antes.
+- **Dependabot não auto-mergeia workflows (`.github/workflows/dependabot-automerge.yml`):** PRs que alteram `.github/workflows/**` exigem revisão humana (supply chain).
+- **Heartbeat não fatia JSON (`libs/heartbeat.js`):** payload acima do teto agora vira resumo em texto puro, em vez de JSON truncado inválido.
+- **Testes de regressão:** +8 testes (contabilização `'0'`, confirmação de check-in, datas relativas, saldo com separador, seletores específicos, cookie multivalorado, 6to4/multicast/canonicalização, `skipWebhook`), total **372**.
+
 ## [1.4.3] - 2026-09-21
 
 ### Segurança

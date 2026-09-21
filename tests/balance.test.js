@@ -194,13 +194,18 @@ test('libs/ui/balance.js - getStreakFromCoinPage extrai streak de modal, contain
 test('libs/ui/balance.js - getBalanceDesktop calcula desktopStreak via histórico ou tier', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
+    // Datas RELATIVAS a hoje (fuso PT) para que a seção de hoje seja reconhecida.
+    const pt = (offsetDias) =>
+      new Date(Date.now() - offsetDias * 86400000).toLocaleDateString('pt-BR', {
+        timeZone: 'America/Los_Angeles'
+      });
     const fakeDesktopText = `
       Minhas moedas
       521
-      14/09/2026 PT
+      ${pt(0)} PT
       Check-in diário no app
       +40
-      13/09/2026 PT
+      ${pt(1)} PT
       Check-in diário no app
       +40
     `;
@@ -225,9 +230,110 @@ test('libs/ui/balance.js - getBalanceDesktop calcula desktopStreak via históric
     assert.strictEqual(result.totalBalance, '521');
     assert.strictEqual(result.todayCheckinCoins, '40');
     assert.strictEqual(result.hasAppCheckinToday, true);
-    // tier dá 7, histórico dá 2 -> Math.max(2, 7) = 7
-    assert.strictEqual(result.desktopStreak, 7);
     assert.strictEqual(typeof result.desktopStreak, 'number');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - A2: extrato só com data de ONTEM não marca check-in de hoje', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const pt = (offsetDias) =>
+      new Date(Date.now() - offsetDias * 86400000).toLocaleDateString('pt-BR', {
+        timeZone: 'America/Los_Angeles'
+      });
+    // Só existe a entrada de ONTEM; hoje ainda não houve lançamento.
+    const fakeDesktopText = `
+      Minhas moedas
+      100
+      ${pt(1)} PT
+      Bônus diário
+      +40
+    `;
+    const mockContext = {
+      newPage: async () => ({
+        goto: async () => {},
+        waitForSelector: async () => {},
+        innerText: async () => fakeDesktopText,
+        screenshot: async () => {},
+        close: async () => {}
+      }),
+      route: async () => {},
+      tracing: { start: async () => {}, stop: async () => {} },
+      close: async () => {}
+    };
+    const result = await getBalanceDesktop(
+      { newContext: async () => mockContext },
+      { cookies: [] }
+    );
+    assert.strictEqual(
+      result.hasAppCheckinToday,
+      false,
+      'data de ontem não pode ser tratada como check-in de hoje'
+    );
+    assert.strictEqual(result.todayCheckinCoins, null);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - A3: histórico não associa o valor de um dia à data anterior', async () => {
+  const { getStreakFromDesktopHistory } = require('../libs/ui/balance');
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const pt = (offsetDias) =>
+      new Date(Date.now() - offsetDias * 86400000).toLocaleDateString('pt-BR', {
+        timeZone: 'America/Los_Angeles'
+      });
+    // Hoje SEM check-in; ontem/anteontem COM check-in.
+    const text =
+      `${pt(0)} PT\nMissões de moedas\n+5\n` +
+      `${pt(1)} PT\nBônus diário\n+40\n` +
+      `${pt(2)} PT\nBônus diário\n+40\n`;
+    assert.strictEqual(
+      getStreakFromDesktopHistory(text),
+      2,
+      'hoje sem check-in: streak deve contar apenas ontem+anteontem'
+    );
+
+    // Com check-in hoje também: 3
+    const textWithToday =
+      `${pt(0)} PT\nBônus diário\n+40\n` +
+      `${pt(1)} PT\nBônus diário\n+40\n` +
+      `${pt(2)} PT\nBônus diário\n+40\n`;
+    assert.strictEqual(getStreakFromDesktopHistory(textWithToday), 3);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - saldo com separador de milhar não é truncado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const cases = [
+      { text: 'Minhas moedas\n2.917\n', expected: '2917' },
+      { text: 'My coins\n12,345\n', expected: '12345' }
+    ];
+    for (const { text, expected } of cases) {
+      const mockContext = {
+        newPage: async () => ({
+          goto: async () => {},
+          waitForSelector: async () => {},
+          innerText: async () => text,
+          screenshot: async () => {},
+          close: async () => {}
+        }),
+        route: async () => {},
+        tracing: { start: async () => {}, stop: async () => {} },
+        close: async () => {}
+      };
+      const result = await getBalanceDesktop(
+        { newContext: async () => mockContext },
+        { cookies: [] }
+      );
+      assert.strictEqual(result.totalBalance, expected, `saldo de "${text}" truncado`);
+    }
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }

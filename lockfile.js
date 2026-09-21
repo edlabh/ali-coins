@@ -71,11 +71,17 @@ async function acquireLock(
   customRefreshIntervalMs = null
 ) {
   const targetLockPath = customLockFilePath || defaultLockFilePath;
-  const staleTimeoutMs =
+  const rawStaleTimeout =
     customStaleTimeoutMs ||
     (process.env.LOCK_STALE_TIMEOUT_MS
       ? parseInt(process.env.LOCK_STALE_TIMEOUT_MS, 10)
       : DEFAULT_STALE_TIMEOUT_MS);
+  // Valida o valor: `0`/negativo removeria lock vivo (dupla execução) e `NaN`
+  // desativaria o stale-timeout e tornaria o intervalo de refresh inválido.
+  const staleTimeoutMs =
+    Number.isFinite(rawStaleTimeout) && rawStaleTimeout > 0
+      ? rawStaleTimeout
+      : DEFAULT_STALE_TIMEOUT_MS;
 
   const lockData = {
     pid: process.pid,
@@ -89,8 +95,57 @@ async function acquireLock(
   };
   const serializedLock = JSON.stringify(lockData, null, 2);
 
-  const removeLockFile = async () => {
-    await fs.promises.unlink(targetLockPath).catch(() => {});
+  /**
+   * Remove o lockfile de forma CONDICIONAL (anti-TOCTOU). Entre a leitura que decidiu
+   * "stale/órfão/inválido" e a remoção, outro processo pode ter removido o lock antigo
+   * e publicado o dele — apagar por caminho destruiria o lock do novo dono e permitiria
+   * duas execuções concorrentes na mesma conta.
+   *
+   * @param {object|null|undefined} expected
+   *   - `undefined`: remoção simples (symlinks, que não têm geração JSON);
+   *   - `null`: espera-se conteúdo inválido (só remove se continuar inválido);
+   *   - objeto do lock lido: só remove se a geração (lockId/pid+createdAt) ainda bater.
+   */
+  const removeLockFile = async (expected = undefined) => {
+    if (expected === undefined) {
+      await fs.promises.unlink(targetLockPath).catch(() => {});
+      return;
+    }
+    const claimPath = `${targetLockPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+    try {
+      await fs.promises.rename(targetLockPath, claimPath);
+    } catch {
+      return; // já removido/substituído por outro processo
+    }
+
+    let matches = false;
+    try {
+      const current = JSON.parse(await fs.promises.readFile(claimPath, 'utf-8'));
+      if (expected === null) {
+        matches = false; // esperávamos inválido, mas agora é JSON válido: outro dono assumiu
+      } else {
+        matches = current.lockId
+          ? current.lockId === expected.lockId
+          : current.pid === expected.pid &&
+            (expected.createdAt === undefined || current.createdAt === expected.createdAt);
+      }
+    } catch {
+      // Conteúdo inválido/ilegível: corresponde à expectativa de "inválido" (null) —
+      // exceto quando o caminho é um DIRETÓRIO (lock ocupado por algo não removível):
+      // devolvemos ao lugar para o chamador falhar rápido com mensagem clara.
+      const isDir = await fs.promises
+        .lstat(claimPath)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+      matches = expected === null && !isDir;
+    }
+
+    if (matches) {
+      await fs.promises.unlink(claimPath).catch(() => {});
+    } else {
+      // Outra geração assumiu: devolve o lock alheio em vez de destruí-lo.
+      await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+    }
   };
 
   // Lê o lock existente. Com allowGrace, tolera arquivos em escrita (vazio/parcial)
@@ -233,7 +288,7 @@ async function acquireLock(
         { lockPath: targetLockPath },
         'Lockfile ilegível ou inválido detectado após carência de leitura. Removendo para recriar com segurança.'
       );
-      await removeLockFile();
+      await removeLockFile(null);
       // Falha rápida e clara se o caminho está ocupado por algo não removível
       // (ex: diretório deixado por outro usuário), em vez de repetir 5 rodadas
       const stillOccupied = await fs.promises
@@ -266,7 +321,7 @@ async function acquireLock(
         { pid: existingLock.pid, host: existingLock.host, lockAgeMs: lockAge, staleTimeoutMs },
         'Lockfile expirado (staleTimeout atingido). Removendo lock antigo.'
       );
-      await removeLockFile();
+      await removeLockFile(existingLock);
       continue;
     }
 
@@ -301,7 +356,7 @@ async function acquireLock(
           { pid: existingLock.pid },
           'Removendo lockfile órfão de processo anterior finalizado.'
         );
-        await removeLockFile();
+        await removeLockFile(existingLock);
         continue;
       }
 
@@ -309,7 +364,7 @@ async function acquireLock(
         { pid: existingLock.pid },
         'Flag --force detectada: sobrescrevendo lockfile ativo.'
       );
-      await removeLockFile();
+      await removeLockFile(existingLock);
       continue;
     }
 
@@ -321,7 +376,7 @@ async function acquireLock(
     }
 
     logger.warn({ existingLock }, 'Flag --force detectada: sobrescrevendo lockfile de outro host.');
-    await removeLockFile();
+    await removeLockFile(existingLock);
   }
 
   if (!acquired) {

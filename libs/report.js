@@ -246,9 +246,18 @@ function computeCheckinCoinsGained(checkin) {
   if (checkin.alreadyCollected !== false) {
     return 0;
   }
-  if (checkin.coinsGainedToday && checkin.coinsGainedToday !== 'N/D') {
-    const parsed = parseInt(String(checkin.coinsGainedToday).replace(/[^0-9]/g, ''), 10);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
+  // Valor PRESENTE e não-positivo (ex.: '0') significa que NADA foi coletado nesta
+  // execução: NÃO cair no fallback por streak, senão o relatório anuncia moedas de um
+  // check-in que não ocorreu. O fallback só vale quando o valor é ausente/null/'N/D'.
+  const rawGained = checkin.coinsGainedToday;
+  const hasExplicitGained =
+    rawGained !== undefined &&
+    rawGained !== null &&
+    String(rawGained).trim() !== '' &&
+    rawGained !== 'N/D';
+  if (hasExplicitGained) {
+    const parsed = parseInt(String(rawGained).replace(/[^0-9]/g, ''), 10);
+    return !isNaN(parsed) && parsed > 0 ? parsed : 0;
   }
   // Fallback se coinsGainedToday for ausente/N/D mas streakDays estiver presente
   if (checkin.streakDays && checkin.streakDays !== 'N/D') {
@@ -636,6 +645,17 @@ async function performWebhookNotification(payload, customUrl = null) {
 }
 
 /**
+ * Envia o payload ao webhook, respeitando `options.skipWebhook` (usado pelos testes
+ * para não disparar notificações reais de relatórios sintéticos).
+ * @param {object} payload
+ * @param {object} [options={}]
+ */
+function maybeSendWebhook(payload, options = {}) {
+  if (options.skipWebhook === true) return;
+  sendWebhookNotification(payload).catch(() => {});
+}
+
+/**
  * Renderiza o relatório do check-in diário
  * @param {object} checkinResult
  * @param {object} [options={}]
@@ -643,7 +663,11 @@ async function performWebhookNotification(payload, customUrl = null) {
  */
 function renderCheckinReport(checkinResult, options = {}) {
   if (options.json) {
-    const payload = { type: 'checkin', ...checkinResult };
+    // Remove o storageState (cookies de autenticação) do payload impresso no stdout:
+    // o --json costuma ir para cron.log/Docker logs, e uma sessão vazada permite
+    // sequestrar a conta. O valor continua no RETORNO de runCheckin (uso interno).
+    const { sessionData: _sessionData, ...safeCheckinResult } = checkinResult;
+    const payload = { type: 'checkin', ...safeCheckinResult };
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
     // Mascara o e-mail antes de enviar a webhooks de terceiros (Discord/Telegram) — o stdout
     // local mantém o valor cru, que é o comportamento já esperado por quem consome --json.
@@ -653,7 +677,7 @@ function renderCheckinReport(checkinResult, options = {}) {
         ? maskUser(checkinResult.userEmail)
         : checkinResult.userEmail
     };
-    sendWebhookNotification(webhookPayload).catch(() => {});
+    maybeSendWebhook(webhookPayload, options);
     return;
   }
 
@@ -678,12 +702,15 @@ function renderCheckinReport(checkinResult, options = {}) {
   logger.info(`Duração Total:       ${checkinResult.duration}`);
   logger.info('===============================================================\n');
 
-  sendWebhookNotification({
-    type: 'checkin',
-    alreadyCollected: checkinResult.alreadyCollected,
-    totalBalance: checkinResult.totalBalance,
-    duration: checkinResult.duration
-  }).catch(() => {});
+  maybeSendWebhook(
+    {
+      type: 'checkin',
+      alreadyCollected: checkinResult.alreadyCollected,
+      totalBalance: checkinResult.totalBalance,
+      duration: checkinResult.duration
+    },
+    options
+  );
 }
 
 /**
@@ -702,7 +729,7 @@ function renderTasksReport(tasksResult, options = {}) {
       ...payload,
       userEmail: payload.userEmail ? maskUser(payload.userEmail) : payload.userEmail
     };
-    sendWebhookNotification(webhookPayload).catch(() => {});
+    maybeSendWebhook(webhookPayload, options);
     return;
   }
 
@@ -720,11 +747,14 @@ function renderTasksReport(tasksResult, options = {}) {
   logger.info(`Duração Total:       ${tasksResult.duration}`);
   logger.info('====================================================\n');
 
-  sendWebhookNotification({
-    type: 'tasks',
-    finalCoins: tasksResult.finalCoins,
-    duration: tasksResult.duration
-  }).catch(() => {});
+  maybeSendWebhook(
+    {
+      type: 'tasks',
+      finalCoins: tasksResult.finalCoins,
+      duration: tasksResult.duration
+    },
+    options
+  );
 }
 
 /**
@@ -740,7 +770,7 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
 
   if (options.json) {
     process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');
-    sendWebhookNotification(jsonOutput).catch(() => {});
+    maybeSendWebhook(jsonOutput, options);
     return;
   }
 
@@ -755,7 +785,7 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
         : null) ||
       (checkinResult.coinsGainedToday && checkinResult.coinsGainedToday !== '0'
         ? checkinResult.coinsGainedToday
-        : 70);
+        : 'N/D');
 
     logger.info(`Conta: ${maskUser(checkinResult.userEmail)}`);
     logger.info(
@@ -794,7 +824,7 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   if (meta.totalDuration) logger.info(`Duração Total:       ${meta.totalDuration}`);
   logger.info('===============================================================\n');
 
-  sendWebhookNotification(jsonOutput).catch(() => {});
+  maybeSendWebhook(jsonOutput, options);
 }
 
 /**
@@ -912,7 +942,7 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
 
   if (options.json) {
     process.stdout.write(JSON.stringify(jsonOutput, null, 2) + '\n');
-    sendWebhookNotification(jsonOutput).catch(() => {});
+    maybeSendWebhook(jsonOutput, options);
     return;
   }
 
@@ -937,7 +967,7 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
           : null) ||
         (res.checkinResult.coinsGainedToday && res.checkinResult.coinsGainedToday !== '0'
           ? res.checkinResult.coinsGainedToday
-          : 70);
+          : 'N/D');
 
       logger.info(
         `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${dailyTier} moedas/dia)`
@@ -982,7 +1012,7 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
   if (meta.totalDuration) logger.info(`Duração Total:       ${meta.totalDuration}`);
   logger.info('===============================================================\n');
 
-  sendWebhookNotification(jsonOutput).catch(() => {});
+  maybeSendWebhook(jsonOutput, options);
 }
 
 module.exports = {

@@ -139,7 +139,11 @@ async function exportSession(options = {}) {
 
   // Salvar token criptografado com permissões restritas 0o600
   await safeWriteFile(tPath, encryptedBlob, 'utf-8');
-  safeChmod600(sPath);
+  // O arquivo realmente LIDO é o .enc (o plaintext sPath normalmente não existe):
+  // reforça a permissão dele, que pode ter vindo de backup/tar com modo amplo.
+  const encPath = `${sPath}.enc`;
+  if (fs.existsSync(encPath)) safeChmod600(encPath);
+  if (fs.existsSync(sPath)) safeChmod600(sPath);
   if (fs.existsSync(mPath)) safeChmod600(mPath);
   safeChmod600(tPath);
 

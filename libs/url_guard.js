@@ -37,6 +37,23 @@ function extractTrailingIpv4FromV6(lower) {
 }
 
 /**
+ * Extrai o IPv4 embutido em um endereço 6to4 (2002:VVVV:VVVV::/48), onde o IPv4
+ * fica nos HEXTETS 2-3 — não nos 32 bits finais.
+ * Ex.: "2002:a9fe:a9fe:0:0:0:808:808" -> "169.254.169.254".
+ * @param {string} lower IPv6 em minúsculas
+ * @returns {string|null}
+ */
+function extract6to4Ipv4(lower) {
+  const head = lower.split('::')[0] || '';
+  const parts = head.split(':').filter(Boolean);
+  if (parts.length < 3) return null;
+  const h1 = parseInt(parts[1], 16);
+  const h2 = parseInt(parts[2], 16);
+  if (!Number.isFinite(h1) || !Number.isFinite(h2)) return null;
+  return `${h1 >> 8}.${h1 & 255}.${h2 >> 8}.${h2 & 255}`;
+}
+
+/**
  * Verifica se um IP (v4/v6) é privado/loopback/link-local/reservado.
  * @param {string} ip
  * @returns {boolean}
@@ -54,12 +71,25 @@ function isPrivateIp(ip) {
     if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
     if (a === 192 && b === 168) return true; // 192.168.0.0/16
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64.0.0/10
+    if (a === 192 && b === 0 && (parts[2] === 0 || parts[2] === 2)) return true; // 192.0.0.0/24, 192.0.2.0/24
+    if (a === 192 && b === 88 && parts[2] === 99) return true; // 192.88.99.0/24
+    if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 (benchmark)
+    if (a === 198 && b === 51 && parts[2] === 100) return true; // 198.51.100.0/24
+    if (a === 203 && b === 0 && parts[2] === 113) return true; // 203.0.113.0/24
     if (a >= 224) return true; // multicast/reservado
     return false;
   }
 
   if (net.isIPv6(ip)) {
-    const lower = ip.toLowerCase();
+    // Canonicaliza (ex.: "0:0:0:0:0:0:0:1" -> "::1") para que as comparações por
+    // string/prefixo valham também quando a função é usada fora do URL parser.
+    let lower = ip.toLowerCase();
+    try {
+      const canonical = new URL(`http://[${lower}]/`).hostname;
+      if (canonical) lower = canonical.replace(/^\[|\]$/g, '');
+    } catch {
+      // Mantém a forma original
+    }
     if (lower === '::1' || lower === '::') return true; // loopback/unspecified
     // Link-local fe80::/10 e site-local (depreciado) fec0::/10: testa a faixa
     // numericamente no primeiro hexteto (fe80..febf e fec0..feff), não só o prefixo "fe80".
@@ -67,6 +97,7 @@ function isPrivateIp(ip) {
     if (Number.isFinite(firstHextet) && (firstHextet & 0xffc0) === 0xfe80) return true;
     if (Number.isFinite(firstHextet) && (firstHextet & 0xffc0) === 0xfec0) return true;
     if ((firstHextet & 0xfe00) === 0xfc00) return true; // unique local fc00::/7
+    if ((firstHextet & 0xff00) === 0xff00) return true; // multicast ff00::/8
     // Prefixos que EMBUTEM um IPv4 e traduzem para ele em redes NAT64/6to4/Teredo:
     // 64:ff9b::/96 e 64:ff9b:1::/48 (NAT64), 2002::/16 (6to4), 2001::/32 (Teredo).
     // Em rede com DNS64, [64:ff9b::a9fe:a9fe] alcança 169.254.169.254 (metadata).
@@ -78,8 +109,10 @@ function isPrivateIp(ip) {
       }
     }
     if (firstHextet === 0x2002) {
-      const embedded = extractTrailingIpv4FromV6(lower);
-      return embedded ? isPrivateIp(embedded) : true; // 6to4
+      // 6to4: o IPv4 embutido está nos hextets 2-3 (2002:VVVV:VVVV::/48), não nos
+      // 32 bits finais — usar os finais deixava passar o gateway 6to4 de 169.254.169.254.
+      const embedded = extract6to4Ipv4(lower);
+      return embedded ? isPrivateIp(embedded) : true;
     }
     // Teredo 2001::/32: o segundo hexteto é 0x0000 (precisa normalizar a expansão de "::")
     if (firstHextet === 0x2001) {

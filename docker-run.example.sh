@@ -43,6 +43,12 @@ if [ -f "$LOG" ]; then
   fi
 fi
 
+if [ ! -f "$DIR/credentials.env" ]; then
+  echo "ERRO: $DIR/credentials.env não encontrado. Copie credentials.env.example, preencha e rode de novo." >&2
+  exit 1
+fi
+mkdir -p "$DIR/scratch"
+
 MOUNTS=(-v "$DIR/credentials.env:/app/credentials.env:ro" -v "$DIR/scratch:/app/scratch")
 for f in "$DIR"/session*; do
   [ -f "$f" ] && MOUNTS+=(-v "$f:/app/$(basename "$f")")

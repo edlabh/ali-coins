@@ -1507,7 +1507,7 @@ test('libs/report.js - webhook NUNCA envia sessionData/cookies (segredos de sess
   }
 });
 
-test('libs/report.js - renderCheckinReport --json não vaza sessionData no webhook (mantém no stdout)', async () => {
+test('libs/report.js - renderCheckinReport --json não vaza sessionData no stdout nem no webhook', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const { renderCheckinReport, flushWebhooks } = require('../libs/report');
   const originalFetch = global.fetch;
@@ -1541,10 +1541,78 @@ test('libs/report.js - renderCheckinReport --json não vaza sessionData no webho
     await flushWebhooks(2000);
     process.stdout.write = originalWrite;
 
-    assert.ok(stdout.includes('TOKEN_XYZ'), 'stdout local mantém a sessão (compatibilidade)');
+    assert.strictEqual(
+      stdout.includes('TOKEN_XYZ'),
+      false,
+      'stdout não pode conter o storageState (cookies) — vai para cron.log/Docker logs'
+    );
     assert.strictEqual(captured.includes('TOKEN_XYZ'), false, 'webhook não pode conter a sessão');
   } finally {
     process.stdout.write = originalWrite;
+    global.fetch = originalFetch;
+    if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
+    else delete process.env.NOTIFY_WEBHOOK_URL;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - A1: computeCheckinCoinsGained não credita quando coinsGainedToday=0', () => {
+  const { computeCheckinCoinsGained } = require('../libs/report');
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    // '0' significa que NADA foi coletado: o fallback por streak não pode creditar.
+    assert.strictEqual(
+      computeCheckinCoinsGained({ coinsGainedToday: '0', alreadyCollected: false, streakDays: 15 }),
+      0,
+      'coinsGainedToday=0 não pode gerar crédito por streak'
+    );
+    // Ausente/N/D continuam usando o fallback (compatibilidade).
+    assert.strictEqual(
+      computeCheckinCoinsGained({
+        coinsGainedToday: 'N/D',
+        alreadyCollected: false,
+        streakDays: 15
+      }),
+      40
+    );
+    // Já coletado sem flag de ledger: 0.
+    assert.strictEqual(
+      computeCheckinCoinsGained({ coinsGainedToday: '40', alreadyCollected: true, streakDays: 15 }),
+      0
+    );
+    // Crédito vindo do extrato é contabilizado mesmo com alreadyCollected=true.
+    assert.strictEqual(
+      computeCheckinCoinsGained({
+        coinsGainedToday: '40',
+        alreadyCollected: true,
+        checkinCoinsFromLedger: true
+      }),
+      40
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/report.js - skipWebhook evita POST de relatórios sintéticos', async () => {
+  const { renderCheckinReport } = require('../libs/report');
+  const realFilesSnapshot = snapshotRealFiles();
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.NOTIFY_WEBHOOK_URL;
+  let fetchCalls = 0;
+  try {
+    process.env.NOTIFY_WEBHOOK_URL = 'https://example.com/hook';
+    global.fetch = async () => {
+      fetchCalls++;
+      return { ok: true, status: 200 };
+    };
+    renderCheckinReport(
+      { alreadyCollected: true, coinsGainedToday: '0', totalBalance: '100', streakDays: 5 },
+      { json: true, skipWebhook: true }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.strictEqual(fetchCalls, 0, 'skipWebhook deve impedir qualquer POST');
+  } finally {
     global.fetch = originalFetch;
     if (originalUrl !== undefined) process.env.NOTIFY_WEBHOOK_URL = originalUrl;
     else delete process.env.NOTIFY_WEBHOOK_URL;

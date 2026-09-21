@@ -195,13 +195,14 @@ async function runTasks(options = {}) {
         )
         .catch(() => {});
 
-      const loginInput = await page.$(SELECTORS.login.usernameInput);
+      const loginInput = await page.$(SELECTORS.login.usernameInput).catch(() => null);
       const bodyText = await page.innerText('body').catch(() => '');
       const loginUrl = /login|sign-?in|passport/i.test(page.url());
-      // Indícios textuais só contam em página de login/passport: "Sign in" em rodapé/menu
-      // com sessão válida não deve derrubar a etapa de tarefas.
+      // Tanto o campo de login quanto os indícios textuais só contam em página de
+      // login/passport: um input da própria página de moedas com sessão válida não
+      // deve derrubar a etapa de tarefas.
       if (
-        loginInput !== null ||
+        (loginUrl && loginInput !== null) ||
         (loginUrl &&
           (bodyText.includes('Email or phone number') ||
             bodyText.includes('Sign in') ||
@@ -317,6 +318,10 @@ async function runTasks(options = {}) {
           }
         }
 
+        // Mantém a última extração de tarefas no escopo externo ao `while` para a
+        // reabertura de passada (o destructuring declara `currentTasks` dentro do laço).
+        let lastExtractedTasks = [];
+
         while (totalActions < MAX_TOTAL_ACTIONS) {
           const {
             page: refreshedPage,
@@ -327,6 +332,7 @@ async function runTasks(options = {}) {
             label: pass > 0 ? `segunda passada ${pass}` : 'loop de tarefas'
           });
           page = refreshedPage;
+          lastExtractedTasks = currentTasks || [];
 
           if (extractErr) {
             logger.error(
@@ -396,9 +402,10 @@ async function runTasks(options = {}) {
           }
 
           const roundKey = getRoundKey(pendingTask);
+          // Tentativa/rodada são contadas AQUI (garantem a terminação do loop: a tarefa
+          // é excluída após maxAttempts mesmo se o elemento nunca for encontrado).
           recordTaskAttempt(taskAttempts, pendingTask.title);
           recordRoundAttempt(roundAttemptsMap, roundKey);
-          totalActions++;
 
           const taskStartTime = new Date();
           const roundInfo = pendingTask.totalRounds
@@ -413,6 +420,10 @@ async function runTasks(options = {}) {
 
           const actionBtn = await currentTaskEl.$(SELECTORS.tasks.taskBtn);
           if (!actionBtn) continue;
+
+          // Só conta "ação executada" com elemento E botão localizados: antes, itens sem
+          // elemento consumiam o teto global de 25 e inflavam a métrica de tarefas.
+          totalActions++;
 
           // Caso 1: Botão é de Resgate / Coleta (Claim / Collect / +moedas)
           if (pendingTask.isClaimable) {
@@ -507,7 +518,7 @@ async function runTasks(options = {}) {
         // Fim do loop interno. Registra as tarefas esgotadas nesta passada para eventual
         // reabertura na passada extra (apenas incompletas/falhas, nunca concluídas/app-only).
         if (retryUnfinished && pass < maxRetryPasses) {
-          for (const title of selectReopenableTasks({ failedTasks })) {
+          for (const title of selectReopenableTasks({ failedTasks, tasks: lastExtractedTasks })) {
             exhaustedTitles.add(title);
           }
         }

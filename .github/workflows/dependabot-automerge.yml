@@ -66,8 +66,24 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Supply-chain: NUNCA auto-mergear mudanças em .github/workflows/**. O ecossistema
+      # `github-actions` do Dependabot altera SHAs de actions nos workflows; uma action
+      # maliciosa só executaria após o merge (com contents: write), fora do gate de CI.
+      - name: Bloquear auto-merge de mudanças em workflows
+        id: workflows
+        run: |
+          FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+          if echo "$FILES" | grep -q '^\.github/workflows/'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "PR altera .github/workflows/** — auto-merge desabilitado (revisão humana obrigatória)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Enable auto-merge for Dependabot PRs (patch and minor)
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        if: steps.workflows.outputs.skip != 'true' && (steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

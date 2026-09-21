@@ -433,7 +433,7 @@ function buildMessage({
         const userMasked = escapeHtml(acc.user);
         if (acc.error) {
           lines.push(
-            `[${idx + 1}] <code>${userMasked}</code>: ❌ Falha (${escapeHtml(acc.error)})`
+            `[${idx + 1}] <code>${userMasked}</code>: ❌ Falha (${escapeHtml(sanitizeSensitiveQueryParams(String(acc.error)))})`
           );
           return;
         }

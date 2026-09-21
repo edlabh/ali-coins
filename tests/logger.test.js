@@ -216,3 +216,14 @@ test('logger.js - sanitizeSensitiveQueryParams cobre fragmento/Bearer/authorizat
   assert.ok(!sanitizeSensitiveQueryParams('authorization: segredo123').includes('segredo123'));
   assert.ok(!sanitizeSensitiveQueryParams('cookie=xyz789').includes('xyz789'));
 });
+
+test('logger.js - cookie multivalorado é redigido por inteiro (A8)', () => {
+  const { sanitizeSensitiveQueryParams } = require('../logger');
+  const out = sanitizeSensitiveQueryParams(
+    'cookie: a=1; xman_us_t=SEGREDO_TOKEN_123; login_aliyunid_ticket=SEGREDO2'
+  );
+  assert.ok(!out.includes('SEGREDO_TOKEN_123'), 'primeiro par deve ser redigido');
+  assert.ok(!out.includes('SEGREDO2'), 'pares seguintes também devem ser redigidos');
+  const out2 = sanitizeSensitiveQueryParams('set-cookie: session=ABC; Path=/; HttpOnly');
+  assert.ok(!out2.includes('ABC'), 'set-cookie também deve ser redigido');
+});

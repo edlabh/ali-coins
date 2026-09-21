@@ -263,6 +263,7 @@ async function loadSessionFiles(options = {}) {
   }
 
   // 3. Ler metadados (mesma política não-destrutiva para erros de I/O)
+  let metaCorrupted = false;
   if (fs.existsSync(mPath)) {
     let metaContent = null;
     try {
@@ -278,6 +279,7 @@ async function loadSessionFiles(options = {}) {
       try {
         metaData = JSON.parse(metaContent);
       } catch {
+        metaCorrupted = true;
         logger.warn(
           'Arquivo session_meta.json inválido (JSON malformado). Arquivo preservado sem exclusão automática.'
         );
@@ -285,7 +287,13 @@ async function loadSessionFiles(options = {}) {
     }
   }
 
-  return { sessionData, metaData };
+  // Reforça permissões dos arquivos de sessão existentes: um .enc restaurado de
+  // backup/tar pode estar 0644 e legível por outros usuários.
+  if (fs.existsSync(encPath)) safeChmod600(encPath);
+  if (fs.existsSync(sPath)) safeChmod600(sPath);
+  if (fs.existsSync(mPath)) safeChmod600(mPath);
+
+  return { sessionData, metaData, metaCorrupted };
 }
 
 /**
@@ -387,7 +395,14 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
     }
     const prevMeta = metaData;
     let shouldClear = true;
-    if (
+    if (loaded.metaCorrupted) {
+      // Meta ilegível NÃO é motivo para apagar a sessão: sem isto, uma corrupção do
+      // session_meta.json (ou um JSON truncado) destruía um .enc válido.
+      shouldClear = false;
+      logger.warn(
+        'session_meta.json ilegível (JSON malformado): sessão preservada sem exclusão automática para não perder credencial válida.'
+      );
+    } else if (
       metaData &&
       metaData.user &&
       String(metaData.user).trim().toLowerCase() !== String(userEmail).trim().toLowerCase()
@@ -907,9 +922,11 @@ async function migrateLegacySession(options = {}) {
       sessionData = parsed;
     }
   } catch (err) {
+    // Não interpolar err.message: o JSON.parse do V8 inclui um trecho do input
+    // (poderia expor cookies do session.json legado em logs/notificações).
     return fail(
       options.validate
-        ? `Conteúdo do session.json legado é inválido: ${err.message}`
+        ? 'Conteúdo do session.json legado é inválido (JSON malformado).'
         : 'Falha ao analisar JSON da sessão legada.',
       err
     );
@@ -925,6 +942,26 @@ async function migrateLegacySession(options = {}) {
   metaData.encrypted = true;
   metaData.migratedAt = new Date().toISOString();
   if (options.validate) metaData.savedAt = new Date().toISOString();
+
+  // Nunca sobrescrever um .enc existente sem backup: se session.json legado e
+  // session.json.enc coexistirem (migração interrompida/cópia manual), o .enc válido
+  // seria destruído e o plaintext apagado em seguida (perda de sessão).
+  if (fs.existsSync(encPath)) {
+    const bakPath = `${encPath}.bak-${Date.now()}`;
+    try {
+      await fs.promises.rename(encPath, bakPath);
+      safeChmod600(bakPath);
+      logger.warn(
+        { backup: bakPath },
+        'session.json.enc existente preservado como backup antes da migração do texto claro.'
+      );
+    } catch (bakErr) {
+      return fail(
+        `Falha ao preservar backup do .enc existente antes da migração: ${bakErr.message}`,
+        bakErr
+      );
+    }
+  }
 
   const encrypted = await encryptSessionAsync(JSON.stringify(sessionData, null, 2), secret);
   await safeWriteFile(encPath, encrypted, 'utf-8');

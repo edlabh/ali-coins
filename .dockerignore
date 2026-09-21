@@ -59,3 +59,7 @@ lint-staged.config.js
 .gitignore
 .gitattributes
 .gitleaks.toml
+
+# Backups/temporários de escrita atômica (podem conter sessão)
+*.bak-*
+*.tmp-*

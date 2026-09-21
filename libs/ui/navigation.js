@@ -77,20 +77,35 @@ async function closeModals(page, customSelectors = null) {
   if (cssSelectors.length > 0) {
     try {
       const clicked = await page.evaluate((sels) => {
+        const isVisible = (el) => {
+          const rect = el.getBoundingClientRect();
+          return (
+            rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden'
+          );
+        };
+        // Só clica em botões de fechar DENTRO de um container de diálogo/modal/overlay:
+        // `[class*="close"]` casava itens da própria gaveta/banners e podia fechar algo
+        // legítimo (ou clicar em "Confirm" genérico) fora de contexto.
+        const inDialog = (el) =>
+          el.closest(
+            '[role="dialog"], [class*="modal"], [class*="dialog"], [class*="popup"], [class*="toast"], [class*="overlay"], [class*="mask"]'
+          ) !== null;
         let closed = false;
         for (const sel of sels) {
-          let el = null;
+          let els = [];
           try {
-            el = document.querySelector(sel);
+            els = Array.from(document.querySelectorAll(sel));
           } catch {
             continue;
           }
-          if (!el) continue;
-          try {
-            el.click();
-            closed = true;
-          } catch {
-            // Elemento removido/desanexado entre a consulta e o clique
+          for (const el of els) {
+            if (!isVisible(el) || !inDialog(el)) continue;
+            try {
+              el.click();
+              closed = true;
+            } catch {
+              // Elemento removido/desanexado entre a consulta e o clique
+            }
           }
         }
         return closed;
@@ -165,11 +180,14 @@ async function trySolveSlider(page) {
           }
           await page.waitForTimeout(50);
           await page.mouse.up();
-          await page
+          // Só reporta sucesso se o captcha realmente sumiu (track detached). Antes,
+          // retornava true mesmo quando o slider continuava na tela.
+          const solved = await page
             .waitForSelector(SELECTORS.login.sliderTrack, { state: 'detached', timeout: 2000 })
-            .catch(() => {});
+            .then(() => true)
+            .catch(() => false);
           await page.waitForTimeout(1000);
-          return true;
+          return solved;
         }
       }
     } catch {

@@ -19,3 +19,7 @@ post_signin_debug.png
 ali-coins.lock
 github_token.env
 *.swp
+
+# Backups/temporários de escrita atômica (podem conter sessão)
+*.bak-*
+*.tmp-*

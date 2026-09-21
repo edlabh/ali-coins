@@ -103,8 +103,25 @@ function createIsolatedTestDir(prefix = 'ali-coins-test-') {
  * @param {string} tmpDir
  */
 function cleanupIsolatedTestDir(tmpDir) {
-  if (tmpDir && fs.existsSync(tmpDir)) {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+  if (!tmpDir) return;
+  // Allowlist: só remove diretórios sob o tmpdir do sistema (evita que um caminho
+  // errado do projeto — session/, scratch/, raiz — seja apagado recursivamente).
+  let resolved;
+  try {
+    resolved = fs.realpathSync(path.resolve(tmpDir));
+  } catch {
+    return; // já não existe
+  }
+  const tmpRoot = fs.realpathSync(os.tmpdir());
+  const rel = path.relative(tmpRoot, resolved);
+  const isUnderTmp = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  if (!isUnderTmp) {
+    throw new Error(
+      `cleanupIsolatedTestDir recusou remover "${resolved}": fora do diretório temporário (${tmpRoot}).`
+    );
+  }
+  if (fs.existsSync(resolved)) {
+    fs.rmSync(resolved, { recursive: true, force: true });
   }
 }
 

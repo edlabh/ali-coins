@@ -148,14 +148,15 @@ async function runCheckin(options = {}) {
       }
 
       // Verificar se precisa autenticar.
-      // Com sessão válida, indícios textuais ("Sign in"/"Entrar" em rodapé/menu) só contam
-      // quando a URL confirma uma página de login/passport — evita re-login desnecessário.
-      let loginInput = await page.$(SELECTORS.login.usernameInput);
+      // Com sessão válida, indícios textuais ("Sign in"/"Entrar" em rodapé/menu) E a
+      // presença do campo de login só contam quando a URL confirma login/passport —
+      // evita re-login desnecessário (e risco de ban) por inputs da própria página.
+      const loginInput = await page.$(SELECTORS.login.usernameInput).catch(() => null);
       const bodyText = await page.innerText('body').catch(() => '');
       const loginUrl = /login|sign-?in|passport/i.test(page.url());
       const needsLogin =
         !hasValidSession ||
-        loginInput !== null ||
+        (loginUrl && loginInput !== null) ||
         (loginUrl &&
           (bodyText.includes('Email or phone number') ||
             bodyText.includes('Sign in') ||
@@ -196,6 +197,11 @@ async function runCheckin(options = {}) {
           }).catch(() => {});
           await page.waitForTimeout(1000).catch(() => {});
         }
+
+        // Sessão NOVA: o contexto desktop cacheado ainda tem os cookies antigos
+        // (a leitura prévia pode tê-lo cacheado antes do login). Invalida para que as
+        // leituras seguintes usem o storageState atualizado.
+        await closeCachedDesktopContext().catch(() => {});
       }
 
       await page
@@ -227,14 +233,24 @@ async function runCheckin(options = {}) {
             if (el) {
               logger.info('Realizando check-in diário...');
               await page.evaluate((target) => target.click(), el);
-              await page
-                .waitForSelector(
-                  '[class*="today-checked"], [class*="aecoin-today-checked"], .e2e_normal_task_right_btn',
-                  { timeout: 2000 }
-                )
-                .catch(() => {});
+              // Confirma o EFEITO do clique: sem isto, um clique que não registrou
+              // (overlay/anti-bot/botão errado) era contado como check-in feito —
+              // incrementava streak, creditava moedas e mascarava quebra de sequência.
+              // `.e2e_normal_task_right_btn` NÃO entra: é botão genérico sempre presente.
+              const confirmed = await page
+                .waitForSelector('[class*="today-checked"], [class*="aecoin-today-checked"]', {
+                  timeout: 2000
+                })
+                .then(() => true)
+                .catch(() => false);
               await page.waitForTimeout(800);
-              justCollected = true;
+              justCollected = confirmed;
+              if (!confirmed) {
+                logger.warn(
+                  'Clique de check-in não confirmado pela UI (marcador de "hoje" ausente). ' +
+                    'Não contabilizando como coletado nesta execução.'
+                );
+              }
               break;
             }
           } catch {
@@ -247,9 +263,22 @@ async function runCheckin(options = {}) {
       if (justCollected) {
         try {
           mobileCheckinCoins = await page.evaluate(() => {
-            const modalEls = document.querySelectorAll(
-              '[class*="modal"], [class*="dialog"], [class*="popup"], [class*="toast"], [role="dialog"], [class*="aecoin-"]'
-            );
+            // Filtra elementos VISÍVEIS: o scan anterior varria qualquer [class*="aecoin-"]
+            // (inclusive o calendário da semana) e pegava o primeiro "+N" em ordem de
+            // documento como se fosse o crédito do check-in.
+            const isVisible = (el) => {
+              const rect = el.getBoundingClientRect();
+              return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                window.getComputedStyle(el).visibility !== 'hidden'
+              );
+            };
+            const modalEls = Array.from(
+              document.querySelectorAll(
+                '[class*="modal"], [class*="dialog"], [class*="popup"], [class*="toast"], [role="dialog"], [class*="aecoin-"]'
+              )
+            ).filter(isVisible);
             for (const el of modalEls) {
               const text = el.innerText || '';
               const m = text.match(/\+([0-9]+)\s*(?:moedas?|coins?)?/i);

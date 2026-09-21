@@ -143,7 +143,10 @@ function extractTodayLedger(todaySection) {
     const value = parseInt(String(m[2]).replace(/[.,]/g, ''), 10);
     if (!label || isNaN(value)) continue;
 
-    if (new RegExp(`^${CHECKIN_LABEL_PATTERN}$`, 'i').test(label)) {
+    // Aceita o rótulo em qualquer posição da linha: o innerText pode renderizar
+    // "21/09/2026 PT App daily check-in" (data + rótulo juntos), que o teste ancorado
+    // classificava como missão — zerando o bônus do dia.
+    if (new RegExp(CHECKIN_LABEL_PATTERN, 'i').test(label)) {
       bonusCount++;
       bonusCoins = (bonusCoins || 0) + value;
     } else {
@@ -166,12 +169,25 @@ function getStreakFromDesktopHistory(desktopText) {
 
   // Reconhece todos os rótulos de check-in (inclui "Bônus diário"/"Daily bonus"),
   // alinhado ao CHECKIN_LABEL_PATTERN usado no extrato do dia.
-  const dateRegex = new RegExp(
-    `([0-9]{1,2})\\/([0-9]{1,2})\\/([0-9]{4})\\s*PT[\\s\\S]{0,120}?${CHECKIN_LABEL_PATTERN}\\s*\\n\\s*\\+([0-9]+)`,
-    'gi'
-  );
+  // IMPORTANTE: processa por BLOCO de data (split), para que o segmento entre a data e o
+  // rótulo NUNCA cruze outra data — antes, `[\s\S]{0,120}?` associava o valor do dia
+  // seguinte à data atual, criando check-in falso e mascarando quebra de streak.
+  const blockRe = /([0-9]{1,2})\/([0-9]{1,2})\/([0-9]{4})\s*PT/g;
+  const blocks = [];
+  let m;
+  while ((m = blockRe.exec(desktopText)) !== null) {
+    blocks.push({ day: m[1], month: m[2], year: m[3], start: blockRe.lastIndex });
+  }
+  const rawMatches = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    const end = i + 1 < blocks.length ? blocks[i + 1].start : desktopText.length;
+    const section = desktopText.slice(b.start, end);
+    const labelRe = new RegExp(`${CHECKIN_LABEL_PATTERN}\\s*\\n\\s*\\+([0-9]+)`, 'i');
+    const lm = section.match(labelRe);
+    if (lm) rawMatches.push([null, b.day, b.month, b.year, lm[1]]);
+  }
 
-  const rawMatches = [...desktopText.matchAll(dateRegex)];
   if (rawMatches.length === 0) return null;
 
   let hasP1GreaterThan12 = false;
@@ -378,11 +394,21 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
   let desktopPage = null;
 
   if (!desktopCtx && reuseRequested && cachedDesktopContext) {
-    const closed =
+    const ctxClosed =
       typeof cachedDesktopContext.isClosed === 'function' && cachedDesktopContext.isClosed();
-    if (!closed) {
+    if (!ctxClosed) {
       desktopCtx = cachedDesktopContext;
-      desktopPage = cachedDesktopPage;
+      // Valida também a PÁGINA: se ela caiu (crash/fechada) enquanto o contexto segue
+      // aberto, reutilizá-la fazia todas as leituras retornarem 'N/D' silenciosamente.
+      const pageClosed =
+        cachedDesktopPage &&
+        typeof cachedDesktopPage.isClosed === 'function' &&
+        cachedDesktopPage.isClosed();
+      if (cachedDesktopPage && !pageClosed) {
+        desktopPage = cachedDesktopPage;
+      } else {
+        cachedDesktopPage = null;
+      }
       cachedForReuse = true;
     } else {
       cachedDesktopContext = null;
@@ -413,11 +439,12 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
 
     const desktopText = await desktopPage.innerText('body').catch(() => '');
 
-    // Saldo total bilíngue ("My coins" ou "Minhas moedas")
+    // Saldo total bilíngue ("My coins" ou "Minhas moedas"), com separador de milhar
+    // (ex.: "1,234" / "2.917"). Capturar só [0-9]+ truncava para "1"/"2".
     const balMatch =
-      desktopText.match(/(?:My coins|Minhas moedas)\s*\n\s*([0-9]+)/i) ||
-      desktopText.match(/([0-9]+)\s*\n\s*saves/i);
-    const totalBalance = balMatch ? balMatch[1] : 'N/D';
+      desktopText.match(/(?:My coins|Minhas moedas)\s*\n\s*([0-9][0-9.,]*)/i) ||
+      desktopText.match(/([0-9][0-9.,]*)\s*\n\s*saves/i);
+    const totalBalance = balMatch ? String(balMatch[1]).replace(/[.,]/g, '') : 'N/D';
 
     // Histórico de check-in do dia em Pacific Time (suporta pt-BR "DD/MM/AAAA" e en-US "M/D/YYYY")
     const ptDateBr =
@@ -431,9 +458,21 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
     } else if (desktopText.includes(ptDateUs)) {
       todaySec = desktopText.split(ptDateUs)[1]?.split(/[0-9]+\/[0-9]+\/[0-9]+ PT/)[0] || '';
     } else {
-      const matchDate = desktopText.match(/([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}\s*PT)/i);
-      if (matchDate) {
-        todaySec = desktopText.split(matchDate[1])[1]?.split(/[0-9]+\/[0-9]+\/[0-9]+ PT/)[0] || '';
+      // Fallback: só aceita a data se ela corresponder a HOJE (nas duas grafias,
+      // tolerando zero à esquerda). Antes, a PRIMEIRA data do documento era tratada
+      // como hoje — usando a seção de outro dia e creditando moedas erradas.
+      const allDates = [...desktopText.matchAll(/([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})\s*PT/gi)];
+      const normalizeDate = (raw) => {
+        const [d, mo, y] = String(raw)
+          .replace(/\s*PT$/i, '')
+          .trim()
+          .split('/');
+        return `${String(parseInt(d, 10)).padStart(2, '0')}/${String(parseInt(mo, 10)).padStart(2, '0')}/${y}`;
+      };
+      const todayNormalized = normalizeDate(ptDateBr);
+      const todayEntry = allDates.find((entry) => normalizeDate(entry[1]) === todayNormalized);
+      if (todayEntry) {
+        todaySec = desktopText.split(todayEntry[0])[1]?.split(/[0-9]+\/[0-9]+\/[0-9]+ PT/)[0] || '';
       }
     }
 

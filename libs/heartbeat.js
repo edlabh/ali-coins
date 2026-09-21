@@ -193,11 +193,9 @@ async function pingSuccess(url, report = null, options = {}) {
   }
 
   // Teto de tamanho: evita POSTar um relatório grande/inesperado a um endpoint de terceiros.
+  // Nunca FATIAR o body (JSON cortado no meio vira inválido): usa o resumo em texto puro.
   if (Buffer.byteLength(body, 'utf8') > HEARTBEAT_MAX_BODY_BYTES) {
-    body =
-      typeof body === 'string' && body.length > HEARTBEAT_MAX_BODY_BYTES
-        ? `${body.slice(0, HEARTBEAT_MAX_BODY_BYTES)}\n...[truncado]`
-        : 'AliExpress Coins job finished successfully (payload excedeu o limite)';
+    body = 'AliExpress Coins job finished successfully (payload excedeu o limite)';
     contentType = 'text/plain';
   }
 

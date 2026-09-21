@@ -80,9 +80,13 @@ async function performMobileLogin(page, context, config, options = {}) {
     await trySolveSlider(page);
   }
 
-  // Desafio de código 2FA
+  // Desafio de código 2FA. Exige que o input esteja VISÍVEL: seletores por nome/classe
+  // "code" casavam campos auxiliares/ocultos e disparavam falso 2FA (abortando login
+  // válido em cron/CI). Sem visibilidade, não é o desafio de verificação.
   const codeInput = await page.$(SELECTORS.login.twoFactorInput).catch(() => null);
-  if (codeInput) {
+  const hasVisibleCodeInput =
+    codeInput !== null && (await codeInput.isVisible().catch(() => false));
+  if (hasVisibleCodeInput) {
     logger.warn('[Segurança AliExpress] Código de verificação 2FA solicitado pelo AliExpress.');
     if (!process.stdin.isTTY) {
       throw new TwoFactorRequiredNonInteractive();

@@ -48,7 +48,10 @@ test('libs/ui/login.js - performMobileLogin falha imediatamente em ambiente não
     const mockElement = {
       fill: async () => {},
       press: async () => {},
-      click: async () => {}
+      click: async () => {},
+      // O 2FA só é considerado com input VISÍVEL (evita falso positivo por inputs
+      // ocultos/auxiliares); o mock representa o desafio real.
+      isVisible: async () => true
     };
 
     const mockPage = {
