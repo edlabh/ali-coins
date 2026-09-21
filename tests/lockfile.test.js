@@ -90,6 +90,9 @@ test('lockfile.js - lock órfão (stale timeout) é removido automaticamente iso
       JSON.stringify({ pid: process.pid, createdAt: oldDate, host: os.hostname() }),
       'utf-8'
     );
+    // O stale considera createdAt E mtime (renovação por mtime): envelhece os dois.
+    const oldMtime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.promises.utimes(tmpLockPath, oldMtime, oldMtime);
 
     // Stale timeout de 1 segundo
     const release = await acquireLock(false, 1000, tmpLockPath);
@@ -114,32 +117,25 @@ test('lockfile.js - refresh periódico mantém o lock ativo em execuções longa
     // Stale curto (900ms) + refresh a cada 150ms: sem o refresh o lock já estaria expirado
     const release = await acquireLock(false, 900, tmpLockPath, 150);
     const first = JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
+    const firstStat = await fs.promises.stat(tmpLockPath);
 
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    // Leitura tolerante à janela de renovação: o refresh move o lock para um claim
-    // por poucos ms (o acquire cobre isso com a carência de leitura).
-    const readLockWithRetry = async () => {
-      for (let i = 0; i < 40; i++) {
-        try {
-          return JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
-        } catch (err) {
-          if (err.code !== 'ENOENT') throw err;
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-      }
-      throw new Error('lock não reapareceu após a renovação');
-    };
-    const refreshed = await readLockWithRetry();
+    const refreshed = JSON.parse(await fs.promises.readFile(tmpLockPath, 'utf-8'));
+    const refreshedStat = await fs.promises.stat(tmpLockPath);
     assert.strictEqual(
       refreshed.lockId,
       first.lockId,
       'O refresh deve preservar a geração do lock'
     );
-    assert.notStrictEqual(
+    assert.ok(
+      refreshedStat.mtimeMs > firstStat.mtimeMs,
+      'mtime deve ser renovado antes do stale timeout (sem janela de ausência)'
+    );
+    assert.strictEqual(
       refreshed.createdAt,
       first.createdAt,
-      'createdAt deve ser renovado antes do stale timeout'
+      'o refresh por mtime não reescreve o conteúdo (createdAt preservado)'
     );
 
     // Mesmo após a janela do stale timeout, o lock continua ativo para terceiros

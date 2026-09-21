@@ -160,17 +160,19 @@ async function acquireLock(
         if (content.trim()) {
           try {
             const parsed = JSON.parse(content);
-            if (parsed && parsed.pid) return { lock: parsed, status: 'ok' };
+            if (parsed && parsed.pid) {
+              // mtime = última renovação (o refresh periódico atualiza só o mtime).
+              const stat = await fs.promises.stat(targetLockPath).catch(() => null);
+              return { lock: parsed, status: 'ok', mtimeMs: stat ? stat.mtimeMs : null };
+            }
           } catch {
             // JSON inválido: aguarda a carência antes de decidir
           }
         }
       } catch (err) {
         if (err.code === 'ENOENT') {
-          // Ausência momentânea: pode ser a janela de renovação (o refresh move o lock
-          // para um claim por poucos ms). Com allowGrace, espera antes de considerar
-          // definitivamente ausente — sem isto, um segundo processo assumiria o lock
-          // no meio da renovação do primeiro.
+          // Ausência momentânea: pode ser uma remoção/renovação em andamento. Com
+          // allowGrace, espera antes de considerar definitivamente ausente.
           if (Date.now() < deadline) {
             await new Promise((resolve) => setTimeout(resolve, LOCK_READ_RETRY_MS));
             continue;
@@ -321,8 +323,11 @@ async function acquireLock(
     const rawCreatedAt = existingLock.createdAt ? new Date(existingLock.createdAt).getTime() : NaN;
     const isFutureTimestamp = rawCreatedAt > Date.now() + CLOCK_SKEW_TOLERANCE_MS;
     const isInvalidTimestamp = Number.isNaN(rawCreatedAt) || isFutureTimestamp;
-    const lockCreatedAt = isInvalidTimestamp ? 0 : rawCreatedAt;
-    const lockAge = Math.max(0, Date.now() - lockCreatedAt);
+    // A renovação periódica atualiza o MTIME (sem reescrever o conteúdo): o lock é
+    // fresco se createdAt OU mtime for recente. Timestamp inválido/futuro continua
+    // sendo stale imediato (anti-DoS), ignorando o mtime.
+    const lastRenewed = isInvalidTimestamp ? 0 : Math.max(rawCreatedAt, readResult.mtimeMs || 0);
+    const lockAge = Math.max(0, Date.now() - lastRenewed);
     const isStale = isInvalidTimestamp || lockAge > staleTimeoutMs;
     const isSameHost = existingLock.host === os.hostname();
 
@@ -418,82 +423,38 @@ async function acquireLock(
   const refreshLock = () => {
     if (released || refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
-      let claimPath = null;
       try {
         if (!fs.existsSync(targetLockPath)) return;
 
-        // Renovação atômica CONDICIONAL: move o lock para um caminho privado, confere
-        // a geração e só então reescreve e devolve. Antes, o `rename` incondicional
-        // sobrescrevia o lock de outra geração assumida entre a leitura e a escrita.
-        // A janela em que o caminho fica ausente é de poucos ms e coberta pela carência
-        // de leitura (LOCK_READ_GRACE_MS) do acquire.
-        claimPath = `${targetLockPath}.refresh-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
-        try {
-          await fs.promises.rename(targetLockPath, claimPath);
-        } catch {
-          return; // lock já removido/substituído por outro processo
-        }
-
-        const devolveClaim = async () => {
-          // Devolve apenas se o caminho ainda estiver livre: se outro processo publicou
-          // no intervalo, NÃO sobrescreve (perderíamos a exclusão mútua).
-          const occupied = await fs.promises
-            .lstat(targetLockPath)
-            .then(() => true)
-            .catch(() => false);
-          if (occupied) {
-            await fs.promises.unlink(claimPath).catch(() => {});
-          } else {
-            await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
-          }
-          claimPath = null;
-        };
-
+        // Renova somente se o lock ainda for nosso (confere a geração antes).
         let isOurs = false;
         try {
-          const current = JSON.parse(await fs.promises.readFile(claimPath, 'utf-8'));
+          const current = JSON.parse(await fs.promises.readFile(targetLockPath, 'utf-8'));
           isOurs = current.lockId
             ? current.lockId === lockData.lockId
             : current.pid === process.pid;
         } catch {
           isOurs = false;
         }
+        if (!isOurs || released) return;
 
-        if (!isOurs || released) {
-          // Outra geração assumiu: devolve o lock alheio intacto (sem sobrescrever).
-          await devolveClaim();
-          return;
-        }
-
-        lockData.createdAt = new Date().toISOString();
-        await fs.promises.writeFile(claimPath, JSON.stringify(lockData, null, 2), {
-          mode: 0o600
-        });
-        await devolveClaim();
+        // Renovação por MTIME: atômica, sem reescrever o conteúdo e SEM janela de
+        // ausência. O claim anterior deixava o lock invisível por alguns ms e, em
+        // runner lento, além da carência — um segundo processo podia assumir.
+        // Atualizar o mtime de um lock alheio (corrida de µs) apenas o rejuvenesce:
+        // não cria dupla posse nem sobrescreve geração.
+        const now = new Date();
+        await fs.promises.utimes(targetLockPath, now, now);
         refreshFailures = 0;
       } catch (err) {
-        // Erro transitório (lock substituído, permissão, AV): avisa sem travar o run.
-        // Falhas persistentes são perigosas: o lock pode ser considerado stale por outra
-        // instância após staleTimeoutMs, permitindo execução concorrente.
+        // Erro transitório (permissão, AV): avisa sem travar o run. Falhas persistentes
+        // são perigosas: o lock pode ser considerado stale por outra instância.
         refreshFailures++;
         if (refreshFailures === 1 || refreshFailures % 10 === 0) {
           logger.warn(
             { err: err.message, refreshFailures, lockPath: targetLockPath },
             'Falha ao renovar o lock; outra instância pode considerá-lo obsoleto e assumir a execução.'
           );
-        }
-      } finally {
-        // Claim ficou conosco por erro no meio do caminho: devolve se possível.
-        if (claimPath) {
-          const occupied = await fs.promises
-            .lstat(targetLockPath)
-            .then(() => true)
-            .catch(() => false);
-          if (occupied) {
-            await fs.promises.unlink(claimPath).catch(() => {});
-          } else {
-            await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
-          }
         }
       }
     })().finally(() => {

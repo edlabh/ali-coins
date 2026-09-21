@@ -997,7 +997,12 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
       }
     }
 
-    const finalBal = computeFinalBalance(res.checkinResult, res.tasksResult);
+    // computeFinalBalance pode devolver o valor do check-in já com o sufixo " moedas";
+    // normaliza para não imprimir "N moedas moedas".
+    const finalBal = computeFinalBalance(res.checkinResult, res.tasksResult).replace(
+      /\s*moedas$/i,
+      ''
+    );
     logger.info(`  • Saldo Final: ${finalBal === 'N/D' ? 'N/D' : `${finalBal} moedas`}`);
 
     if (accMeta) {
