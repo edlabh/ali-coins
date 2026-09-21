@@ -353,38 +353,30 @@ async function acquireLock(
   const refreshLock = () => {
     if (released || refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
+      let tmpPath = null;
       try {
-        // Renovação atômica condicional: move o lock para um caminho privado, confere se
-        // ainda é o nosso (lockId/pid) e só então reescreve e o devolve ao caminho final.
-        // Elimina o TOCTOU em que um takeover por stale entre a leitura e a escrita fazia
-        // o refresh "ressuscitar" o lock e sobrescrever o do novo dono.
-        const claimPath = `${targetLockPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
-        try {
-          await fs.promises.rename(targetLockPath, claimPath);
-        } catch {
-          return; // lock já não existe
-        }
-
+        // Renova somente se o lock ainda for nosso. Lê e confere a posse ANTES de
+        // sobrescrever, e grava num arquivo temporário renomeado por cima (overwrite
+        // atômico). Diferente de mover o lock para um claim, o caminho final NUNCA fica
+        // ausente durante a renovação — evita que terceiros (ou um check de stale)
+        // observem o lock como inexistente (regressão observada no Windows).
+        if (!fs.existsSync(targetLockPath)) return;
         let isOurs = false;
         try {
-          const content = await fs.promises.readFile(claimPath, 'utf-8');
-          const current = JSON.parse(content);
+          const current = JSON.parse(await fs.promises.readFile(targetLockPath, 'utf-8'));
           isOurs = current.lockId
             ? current.lockId === lockData.lockId
             : current.pid === process.pid;
         } catch {
           isOurs = false;
         }
-
-        if (!isOurs || released) {
-          // Devolve o lock alheio ao lugar (não é nosso para renovar)
-          await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
-          return;
-        }
+        if (!isOurs || released) return;
 
         lockData.createdAt = new Date().toISOString();
-        await fs.promises.writeFile(claimPath, JSON.stringify(lockData, null, 2), { mode: 0o600 });
-        await fs.promises.rename(claimPath, targetLockPath);
+        tmpPath = `${targetLockPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+        await fs.promises.writeFile(tmpPath, JSON.stringify(lockData, null, 2), { mode: 0o600 });
+        await fs.promises.rename(tmpPath, targetLockPath);
+        tmpPath = null;
         refreshFailures = 0;
       } catch (err) {
         // Erro transitório (lock substituído, permissão, AV): avisa sem travar o run.
@@ -397,6 +389,9 @@ async function acquireLock(
             'Falha ao renovar o lock; outra instância pode considerá-lo obsoleto e assumir a execução.'
           );
         }
+      } finally {
+        // Se o temp foi criado mas a rename não concluiu, remove o resíduo.
+        if (tmpPath) await fs.promises.unlink(tmpPath).catch(() => {});
       }
     })().finally(() => {
       refreshInFlight = null;
