@@ -515,3 +515,20 @@ test('libs/report.js - computeCheckinCoinsGained contabiliza check-in do extrato
     25
   );
 });
+
+test('libs/ui/balance.js - extractTodayLedger aceita separador de milhar', () => {
+  const { extractTodayLedger } = require('../libs/ui/balance');
+  const r = extractTodayLedger('Bônus diário\n+1.000\nMissões de moedas\n+2,500\n');
+  assert.strictEqual(r.bonusCoins, 1000);
+  assert.strictEqual(r.missionsCoins, 2500);
+});
+
+test('libs/ui/balance.js - histórico reconhece "Bônus diário"/"Daily bonus" como check-in', () => {
+  const { getStreakFromDesktopHistory } = require('../libs/ui/balance');
+  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Los_Angeles' });
+  const ontem = new Date(Date.now() - 86400000).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Los_Angeles'
+  });
+  const t = `${hoje} PT\nBônus diário\n+40\n${ontem} PT\nBônus diário\n+40\n`;
+  assert.strictEqual(getStreakFromDesktopHistory(t), 2, 'deve contar 2 dias consecutivos');
+});

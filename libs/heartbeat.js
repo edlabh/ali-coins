@@ -61,12 +61,29 @@ function maskHeartbeatUrl(url) {
 function normalizeBaseUrl(url) {
   if (!url || typeof url !== 'string') return '';
   let clean = url.trim().replace(/\/+$/, '');
-  if (clean.endsWith('/start')) {
-    clean = clean.slice(0, -6);
-  } else if (clean.endsWith('/fail')) {
-    clean = clean.slice(0, -5);
-  }
+  // Remove sufixos de ação preservando query string (ex.: .../uuid/start?x=1)
+  clean = clean.replace(/\/(start|fail)(?=($|[?#]))/i, '');
   return clean;
+}
+
+/**
+ * Monta a URL de uma ação do heartbeat (start/fail) inserindo o segmento ANTES da
+ * query string, preservando-a (ex.: https://host/uuid?k=v -> https://host/uuid/start?k=v).
+ * @param {string} baseUrl
+ * @param {'start'|'fail'} action
+ * @returns {string}
+ */
+function buildActionUrl(baseUrl, action) {
+  const base = normalizeBaseUrl(baseUrl);
+  if (!base) return '';
+  try {
+    const u = new URL(base);
+    const path = u.pathname.replace(/\/+$/, '');
+    u.pathname = `${path}/${action}`;
+    return u.toString();
+  } catch {
+    return `${base}/${action}`;
+  }
 }
 
 /**
@@ -85,7 +102,7 @@ async function pingStart(url, options = {}) {
   }
 
   const timeoutMs = options.timeoutMs || 5000;
-  const startUrl = `${base}/start`;
+  const startUrl = buildActionUrl(base, 'start');
   const masked = maskHeartbeatUrl(startUrl);
 
   try {
@@ -236,7 +253,7 @@ async function pingFail(url, err = null, options = {}) {
   }
 
   const timeoutMs = options.timeoutMs || 5000;
-  const failUrl = `${base}/fail`;
+  const failUrl = buildActionUrl(base, 'fail');
   const masked = maskHeartbeatUrl(failUrl);
 
   let body = 'AliExpress Coins job encountered a failure';
@@ -320,10 +337,10 @@ async function sendHeartbeat(stage, params = {}) {
     return { ok: true, skipped: true };
   }
 
-  // Proteção contra SSRF: bloqueia destinos loopback/privados por IP literal (opt-in
-  // ALLOW_PRIVATE_WEBHOOKS). Não resolve DNS aqui para não depender de resolução em runtime
-  // (a URL é definida pelo operador no credentials.env).
-  const guard = await validateExternalUrl(targetUrl, { resolveDns: false });
+  // Proteção contra SSRF: bloqueia destinos loopback/privados e também hostnames que
+  // resolvem para IP privado (ex.: metadata interno via DNS). Opt-in ALLOW_PRIVATE_WEBHOOKS
+  // para ambientes que realmente precisam de destino privado.
+  const guard = await validateExternalUrl(targetUrl);
   if (!guard.ok) {
     logger.warn(
       { heartbeat: 'blocked', reason: guard.reason, url: maskHeartbeatUrl(targetUrl) },
@@ -348,6 +365,7 @@ async function sendHeartbeat(stage, params = {}) {
 module.exports = {
   maskHeartbeatUrl,
   normalizeBaseUrl,
+  buildActionUrl,
   pingStart,
   pingSuccess,
   pingFail,

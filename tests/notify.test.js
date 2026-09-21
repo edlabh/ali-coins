@@ -1188,3 +1188,16 @@ test('libs/notify.js - versão do app aparece na notificação (Host com vX.Y.Z)
   const lockMsg = buildMessage({ event: 'lock_active', error: new Error('lock'), hostname: 'h' });
   assert.ok(lockMsg.includes(`(v${APP_VERSION})`), 'lock_active também exibe a versão');
 });
+
+test('libs/notify.js - truncateMessageIfNeeded não parte emoji nem tags HTML', () => {
+  const { truncateMessageIfNeeded } = require('../libs/notify');
+  // emoji no limite + tag aberta cortada
+  const big = 'a'.repeat(4500) + '😀'.repeat(20) + '<code>email@exemplo.com</code>';
+  const out = truncateMessageIfNeeded(big);
+  assert.ok(out.includes('mensagem truncada'));
+  // não deve terminar com tag aberta sem fechar
+  const open = (out.match(/</g) || []).length;
+  const close = (out.match(/>/g) || []).length;
+  assert.strictEqual(open, close, 'tags HTML devem estar balanceadas');
+  assert.strictEqual(out.includes('\uFFFD'), false, 'não deve corromper emoji (U+FFFD)');
+});

@@ -915,36 +915,42 @@ test('libs/session.js - existingSessionData em memória evita nova descriptograf
   }
 });
 
-test('libs/session.js - avisa quando ENCRYPT_LOCAL_SESSION está ativo sem SESSION_SECRET', async () => {
+test('libs/session.js - recusa gravar em texto puro quando ENCRYPT_LOCAL_SESSION ativo sem SESSION_SECRET', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('session-plain-warn-');
   const logger = require('../logger');
-  const originalWarn = logger.warn;
-  const warnings = [];
+  const originalError = logger.error;
+  const errors = [];
   const origSecret = process.env.SESSION_SECRET;
   const origEnc = process.env.ENCRYPT_LOCAL_SESSION;
 
   try {
     delete process.env.SESSION_SECRET;
     delete process.env.ENCRYPT_LOCAL_SESSION;
-    logger.warn = (...args) => {
-      warnings.push(
+    logger.error = (...args) => {
+      errors.push(
         args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
       );
     };
 
-    await saveSession(
+    const res = await saveSession(
       { cookies: [{ name: 'xman_us_t', value: 'tok', domain: '.aliexpress.com' }] },
       'warn@example.com',
       { baseDir: tmpDir }
     );
 
+    assert.strictEqual(res, null, 'não deve salvar em texto puro');
     assert.ok(
-      warnings.some((w) => w.includes('texto puro')),
-      `Deve avisar sobre gravação em texto puro: ${warnings.join(' | ')}`
+      errors.some((e) => e.includes('texto puro')),
+      `Deve logar erro sobre gravação em texto puro: ${errors.join(' | ')}`
+    );
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session.json')),
+      false,
+      'nenhum arquivo plaintext deve ser criado'
     );
   } finally {
-    logger.warn = originalWarn;
+    logger.error = originalError;
     if (origSecret !== undefined) process.env.SESSION_SECRET = origSecret;
     else delete process.env.SESSION_SECRET;
     if (origEnc !== undefined) process.env.ENCRYPT_LOCAL_SESSION = origEnc;

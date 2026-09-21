@@ -136,10 +136,11 @@ function extractTodayLedger(todaySection) {
   let missionsCount = 0;
 
   // Cada lançamento é "<rótulo>\n+<valor>". Captura rótulo + valor de todos os créditos.
-  const entryRe = /([^\n+][^\n]*)\n\s*\+([0-9]+)/g;
+  // Aceita separadores de milhar (ex.: +1.000 / +1,000) e os remove antes do parse.
+  const entryRe = /([^\n+][^\n]*)\n\s*\+([0-9][0-9.,]*)/g;
   for (const m of text.matchAll(entryRe)) {
     const label = (m[1] || '').trim();
-    const value = parseInt(m[2], 10);
+    const value = parseInt(String(m[2]).replace(/[.,]/g, ''), 10);
     if (!label || isNaN(value)) continue;
 
     if (new RegExp(`^${CHECKIN_LABEL_PATTERN}$`, 'i').test(label)) {
@@ -163,8 +164,12 @@ function extractTodayLedger(todaySection) {
 function getStreakFromDesktopHistory(desktopText) {
   if (!desktopText || typeof desktopText !== 'string') return null;
 
-  const dateRegex =
-    /([0-9]{1,2})\/([0-9]{1,2})\/([0-9]{4})\s*PT[\s\S]{0,120}?(?:App daily check-in|Check-in diário no app)\s*\n\s*\+([0-9]+)/gi;
+  // Reconhece todos os rótulos de check-in (inclui "Bônus diário"/"Daily bonus"),
+  // alinhado ao CHECKIN_LABEL_PATTERN usado no extrato do dia.
+  const dateRegex = new RegExp(
+    `([0-9]{1,2})\\/([0-9]{1,2})\\/([0-9]{4})\\s*PT[\\s\\S]{0,120}?${CHECKIN_LABEL_PATTERN}\\s*\\n\\s*\\+([0-9]+)`,
+    'gi'
+  );
 
   const rawMatches = [...desktopText.matchAll(dateRegex)];
   if (rawMatches.length === 0) return null;
@@ -184,10 +189,19 @@ function getStreakFromDesktopHistory(desktopText) {
   } else if (hasP1GreaterThan12) {
     isUsFormat = false;
   } else {
-    const hasEnKeywords = /App daily check-in|My coins/i.test(desktopText);
+    // Sinais de LOCALE (não rótulos de check-in, que são em inglês mesmo na UI pt-BR):
+    // "Minhas moedas" (pt) vs "My coins" (en) e a data de hoje no formato en-US.
     const ptDateUs =
       new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) + ' PT';
-    isUsFormat = hasEnKeywords || desktopText.includes(ptDateUs);
+    const hasPtHeader = /Minhas moedas|B[ôo]nus di[áa]rio|Miss[õo]es de moedas/i.test(desktopText);
+    const hasEnHeader = /My coins/i.test(desktopText);
+    if (hasPtHeader && !hasEnHeader) {
+      isUsFormat = false;
+    } else if (hasEnHeader && !hasPtHeader) {
+      isUsFormat = true;
+    } else {
+      isUsFormat = desktopText.includes(ptDateUs);
+    }
   }
 
   const entries = [];

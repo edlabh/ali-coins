@@ -13,9 +13,9 @@ on:
         required: true
         type: string
 
-# Necessário para criar/editar a GitHub Release e marcar como latest
+# Menor privilégio por padrão; o job `release` eleva para write (criar/editar release).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -83,6 +83,8 @@ jobs:
     name: Publish GitHub Release
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

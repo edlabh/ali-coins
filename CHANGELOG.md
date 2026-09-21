@@ -19,10 +19,26 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **E-mail cru no webhook unificado (`libs/report.js`):** o relatório unificado passa a mascarar o usuário antes do envio externo.
 - **Escrita direta em bind mount não corrompe mais a sessão (`security.js`):** o fallback (quando o `rename` falha com `EBUSY`) cria backup `.bak-<ts>`, faz escrita completa (loop sobre `bytesWritten`) e restaura o backup em caso de falha, evitando sessão vazia/parcial se o processo for morto (OOM) durante a gravação.
 - **Scrypt considera o limite do cgroup (`security.js`):** `getEffectiveDefaultScryptN` usa `min(os.totalmem(), limit)` com leitura de `/sys/fs/cgroup/memory.max` (v2) e `memory.limit_in_bytes` (v1), evitando pico de ~128 MB em container com `--memory` reduzido.
+- **Renovação do lockfile não sobrescreve mais lock alheio (`lockfile.js`):** o refresh periódico passou a usar o mesmo padrão atômico-condicional do `release` (rename para caminho privado, confere `lockId`/`pid` e só então reescreve e devolve). Elimina o TOCTOU em que um takeover por stale entre a leitura e a escrita "ressuscitava" o lock antigo e sobrescrevia o do novo dono, permitindo execução concorrente.
+- **SSRF no heartbeat considera DNS (`libs/heartbeat.js`):** `validateExternalUrl` passa a resolver o hostname, bloqueando destinos que resolvem para IP loopback/privado (ex.: metadata interna via DNS). Opt-in `ALLOW_PRIVATE_WEBHOOKS=true` continua disponível para ambientes que precisam de destino privado.
+- **Webhook revalida o destino antes do envio (`libs/report.js`):** segunda validação imediatamente antes do `fetch`, reduzindo a janela de DNS rebinding entre validação e envio.
+- **Histórico reconhece todos os rótulos de check-in (`libs/ui/balance.js`):** o cálculo do streak no histórico desktop passa a usar o mesmo padrão de rótulos do extrato (inclui "Bônus diário"/"Daily bonus"), que antes não eram contados.
+- **Detecção de formato de data não confunde mais rótulo com locale (`libs/ui/balance.js`):** a heurística de mês/dia deixou de usar "App daily check-in" (rótulo em inglês mesmo na UI pt-BR) como sinal de locale, comparando cabeçalhos reais de interface ("Minhas moedas" vs "My coins") e a data de hoje.
+- **Valores com separador de milhar são contabilizados (`libs/ui/balance.js`):** o parser do extrato aceita `+1.000`/`+2,500`, remontando o valor corretamente em vez de truncá-lo.
+- **Retry do Telegram cancela o corpo e respeita `retry_after` (`libs/notify.js`):** em 429 o corpo é cancelado (libera o socket) e a espera segue o `retry_after` informado pelo servidor (teto de 30s), evitando rajadas que agravam o rate-limit.
+- **Truncamento de mensagem seguro (`libs/notify.js`):** o corte passa a ser por code points (não parte emojis/pares substitutos) e remove tags HTML abertas sem fechamento, evitando `HTTP 400` do Telegram por entidades inválidas.
+- **Sessão em texto puro exige opt-out explícito (`libs/session.js`):** com `ENCRYPT_LOCAL_SESSION` ativo (padrão) e `SESSION_SECRET` ausente/curto, a gravação passa a ser **recusada** com `logger.error` (antes gravava em claro com apenas um `warn`). Para permitir texto puro, use `ENCRYPT_LOCAL_SESSION=false`.
+- **Ambiente do Chromium sem segredos e sem credenciais de proxy (`browser.js`):** a lista de chaves sensíveis cobre `PASS`/`PWD`/`PRIVATE_KEY` e o userinfo embutido em `HTTP(S)_PROXY`/`ALL_PROXY` é removido antes de repassar ao navegador.
+- **URL de ação do heartbeat preserva a query string (`libs/heartbeat.js`):** `buildActionUrl` insere o segmento `start`/`fail` antes da query (ex.: `.../uuid?k=v` → `.../uuid/start?k=v`), em vez de anexar após ela.
+
+### Segurança
+
+- **Menor privilégio no workflow de release (`.github/workflows/release.yml`):** permissão global passa a `contents: read`, elevando para `contents: write` apenas no job que publica a release.
+- **Hardening do container de cron (`docker-run.example.sh`):** `--cap-drop=ALL` e `--security-opt=no-new-privileges`, além de rotação simples do `cron.log` (5 MB, configurável via `ALI_COINS_LOG_MAX_BYTES`) para evitar crescimento indefinido em VPS pequena.
 
 ### Testes
 
-- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup e cgroup — **331/331**.
+- Novos testes para sanitização de webhook (sem `sessionData`/PII), fallback com backup, cgroup, `buildActionUrl`/`normalizeBaseUrl`, separador de milhar no extrato, reconhecimento de "Bônus diário" no histórico, truncamento seguro de mensagem e saneamento do ambiente do Chromium — **336/336**.
 
 ## [1.4.1] - 2026-09-21
 

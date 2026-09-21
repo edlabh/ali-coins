@@ -565,6 +565,17 @@ async function performWebhookNotification(payload, customUrl = null) {
       bodyData = JSON.stringify({ text });
     }
 
+    // Revalida imediatamente antes do fetch para reduzir a janela de DNS rebinding
+    // (a resolução pode mudar entre a validação inicial e o envio).
+    const recheck = await validateExternalUrl(webhookUrl);
+    if (!recheck.ok) {
+      logger.warn(
+        { reason: recheck.reason },
+        'Webhook abortado: destino mudou para rede privada entre a validação e o envio.'
+      );
+      return false;
+    }
+
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers,

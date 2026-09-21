@@ -282,3 +282,25 @@ test('libs/heartbeat.js - sendHeartbeat bloqueia destino loopback/privado (SSRF)
     global.fetch = originalFetch;
   }
 });
+
+test('libs/heartbeat.js - buildActionUrl preserva query string e normalizeBaseUrl remove ação', () => {
+  const { buildActionUrl, normalizeBaseUrl } = require('../libs/heartbeat');
+
+  assert.strictEqual(
+    buildActionUrl('https://hc-ping.com/uuid', 'start'),
+    'https://hc-ping.com/uuid/start'
+  );
+  assert.strictEqual(
+    buildActionUrl('https://hc-ping.com/uuid?k=v', 'start'),
+    'https://hc-ping.com/uuid/start?k=v'
+  );
+  assert.strictEqual(
+    buildActionUrl('https://hc-ping.com/uuid?k=v', 'fail'),
+    'https://hc-ping.com/uuid/fail?k=v'
+  );
+  assert.strictEqual(
+    normalizeBaseUrl('https://hc-ping.com/uuid/start?k=v'),
+    'https://hc-ping.com/uuid?k=v'
+  );
+  assert.strictEqual(normalizeBaseUrl('https://hc-ping.com/uuid/fail'), 'https://hc-ping.com/uuid');
+});

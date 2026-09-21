@@ -33,6 +33,16 @@ LOG="$DIR/cron.log"
 MEM_LIMIT="${ALI_COINS_MEM:-768m}"
 MEM_SWAP="${ALI_COINS_MEM_SWAP:-1536m}"
 
+# Rotação simples do log: impede crescimento indefinido em VPS pequena (cron.log não é podado).
+LOG_MAX_BYTES="${ALI_COINS_LOG_MAX_BYTES:-5242880}" # 5 MB
+if [ -f "$LOG" ]; then
+  LOG_SIZE="$(wc -c < "$LOG" 2>/dev/null || echo 0)"
+  if [ "${LOG_SIZE:-0}" -gt "$LOG_MAX_BYTES" ]; then
+    mv "$LOG" "$LOG.1" 2>/dev/null || true
+    : > "$LOG"
+  fi
+fi
+
 MOUNTS=(-v "$DIR/credentials.env:/app/credentials.env:ro" -v "$DIR/scratch:/app/scratch")
 for f in "$DIR"/session*; do
   [ -f "$f" ] && MOUNTS+=(-v "$f:/app/$(basename "$f")")
@@ -46,6 +56,7 @@ done
   /usr/bin/docker run --rm --name "$RUN_NAME" \
     --init \
     --pids-limit=256 \
+    --cap-drop=ALL --security-opt=no-new-privileges \
     --memory="$MEM_LIMIT" --memory-swap="$MEM_SWAP" \
     --log-opt max-size=10m --log-opt max-file=3 \
     "${MOUNTS[@]}" \

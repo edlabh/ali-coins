@@ -1056,8 +1056,8 @@ test('libs/report.js - renderCheckinReport no modo --json mascara e-mail enviado
       { json: true }
     );
 
-    // Aguardar microtasks da promise sendWebhookNotification
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Aguarda a conclusão do webhook em voo (determinístico, cobre DNS + fetch)
+    await require('../libs/report').flushWebhooks(2000);
 
     // 1. stdout local preserva e-mail original/cru (não mascarado)
     assert.ok(
@@ -1116,8 +1116,8 @@ test('libs/report.js - renderTasksReport no modo --json mascara e-mail enviado a
       { json: true }
     );
 
-    // Aguardar microtasks da promise sendWebhookNotification
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Aguarda a conclusão do webhook em voo (determinístico, cobre DNS + fetch)
+    await require('../libs/report').flushWebhooks(2000);
 
     // 1. stdout local preserva e-mail original/cru (não mascarado)
     assert.ok(

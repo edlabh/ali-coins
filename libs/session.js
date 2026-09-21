@@ -395,12 +395,16 @@ async function saveSession(storageState, user, options = {}) {
   const { sPath, encPath, mPath } = resolveSessionPaths(options);
   const { secret, shouldEncrypt, encryptLocal } = getEncryptionConfig(options);
 
-  // Evita falsa sensação de proteção at-rest: avisa quando a criptografia foi pedida
-  // (ENCRYPT_LOCAL_SESSION=true, padrão) mas o SESSION_SECRET está ausente/curto.
+  // Segurança at-rest: NÃO gravar a sessão em texto puro quando a criptografia foi pedida
+  // (ENCRYPT_LOCAL_SESSION=true, padrão) sem um SESSION_SECRET válido. Gravar em claro
+  // expõe os cookies de autenticação. Para permitir plaintext, use opt-out explícito
+  // (ENCRYPT_LOCAL_SESSION=false ou --plaintext no import).
   if (encryptLocal && !shouldEncrypt) {
-    logger.warn(
-      'ENCRYPT_LOCAL_SESSION está ativo, mas SESSION_SECRET está ausente ou tem menos de 32 caracteres: a sessão será salva em texto puro (0o600).'
+    logger.error(
+      'ENCRYPT_LOCAL_SESSION está ativo, mas SESSION_SECRET está ausente ou tem menos de 32 caracteres. ' +
+        'Gravação em texto puro evitada por segurança; defina SESSION_SECRET (>= 32 chars) ou use ENCRYPT_LOCAL_SESSION=false explicitamente.'
     );
+    return null;
   }
 
   let prevMeta = {};

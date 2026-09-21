@@ -167,8 +167,36 @@ function getChromiumArgs() {
 // Segredos (SESSION_SECRET, ALI_PASSWORD, TELEGRAM_BOT_TOKEN, GITHUB_TOKEN, etc.)
 // NUNCA devem chegar ao navegador (zygote/network service/crashpad).
 const SENSITIVE_ENV_KEY_REGEX =
-  /(secret|password|passwd|token|cookie|credential|authorization|api[_-]?key)/i;
+  /(secret|password|passwd|_pw\b|pwd|token|cookie|credential|authorization|api[_-]?key|private[_-]?key)/i;
 const SENSITIVE_ENV_KEY_PREFIX_REGEX = /^(TELEGRAM_|NOTIFY_|ALI_|SESSION_|GITHUB_|HEARTBEAT_)/i;
+
+/**
+ * Remove credenciais embutidas (userinfo) de URLs de proxy antes de repassar ao Chromium.
+ * Ex.: http://user:pass@proxy:8080 -> http://proxy:8080
+ * @param {string} raw
+ * @returns {string}
+ */
+function stripUrlCredentials(raw) {
+  if (typeof raw !== 'string' || !raw || !raw.includes('@')) return raw;
+  try {
+    const u = new URL(raw);
+    if (!u.username && !u.password) return raw;
+    u.username = '';
+    u.password = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return raw;
+  }
+}
+
+const PROXY_ENV_KEYS = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy'
+];
 
 /**
  * Configura as variáveis de ambiente necessárias para o Chromium encontrar as bibliotecas do sistema,
@@ -180,7 +208,7 @@ function getChromiumEnv() {
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
     if (SENSITIVE_ENV_KEY_REGEX.test(key) || SENSITIVE_ENV_KEY_PREFIX_REGEX.test(key)) continue;
-    envVars[key] = value;
+    envVars[key] = PROXY_ENV_KEYS.includes(key) ? stripUrlCredentials(value) : value;
   }
   const localLibPath = path.join(__dirname, 'libs', 'extracted', 'usr', 'lib', 'x86_64-linux-gnu');
   if (process.platform === 'linux' && fs.existsSync(localLibPath)) {

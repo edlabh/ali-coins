@@ -35,11 +35,32 @@ async function postToTelegramWithRetry(apiUrl, payload, timeoutMs) {
       if (!retryable || attempt === TELEGRAM_MAX_ATTEMPTS) {
         return response;
       }
+
+      // Respeita retry_after do Telegram (429) quando presente, com teto de 30s.
+      let serverRetryMs = 0;
+      if (response.status === 429) {
+        try {
+          const body = await response.clone().json();
+          const ra = Number(body?.parameters?.retry_after);
+          if (Number.isFinite(ra) && ra > 0) serverRetryMs = Math.min(ra * 1000, 30000);
+        } catch {
+          // sem corpo/JSON: usa backoff padrão
+        }
+      }
+      // Cancela o corpo para liberar o socket antes de dormir/tentar de novo.
+      if (response.body && typeof response.body.cancel === 'function') {
+        await response.body.cancel().catch(() => {});
+      }
+
       lastErr = new Error(`HTTP ${response.status}`);
       logger.warn(
-        { attempt, status: response.status },
+        { attempt, status: response.status, retryAfterMs: serverRetryMs || undefined },
         'Falha transitória ao enviar notificação; tentando novamente...'
       );
+      if (serverRetryMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, serverRetryMs));
+        continue;
+      }
     } catch (err) {
       lastErr = err;
       if (attempt === TELEGRAM_MAX_ATTEMPTS) throw err;
@@ -690,10 +711,16 @@ function truncateMessageIfNeeded(text) {
   if (text.length <= TELEGRAM_MAX_LENGTH) {
     return text;
   }
-  const truncated = text.slice(0, TELEGRAM_SAFE_LIMIT);
-  const lastNewline = truncated.lastIndexOf('\n');
-  const cleanCut = lastNewline > 2000 ? truncated.slice(0, lastNewline) : truncated;
-  return `${cleanCut}\n\n<i>... [mensagem truncada pelo limite de caracteres]</i>`;
+  // Corta por code points (evita partir emojis/pares substitutos do UTF-16) e remove
+  // o último tag HTML aberto sem fechamento (evita entidades inválidas -> HTTP 400).
+  const codePoints = Array.from(text);
+  let cut = codePoints.slice(0, TELEGRAM_SAFE_LIMIT).join('');
+  const lastNewline = cut.lastIndexOf('\n');
+  if (lastNewline > 2000) cut = cut.slice(0, lastNewline);
+  const lastOpen = cut.lastIndexOf('<');
+  const lastClose = cut.lastIndexOf('>');
+  if (lastOpen > lastClose) cut = cut.slice(0, lastOpen);
+  return `${cut}\n\n<i>... [mensagem truncada pelo limite de caracteres]</i>`;
 }
 
 /**

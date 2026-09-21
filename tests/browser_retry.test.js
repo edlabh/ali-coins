@@ -627,3 +627,23 @@ test('browser.js - fecha o BrowserContext se o setup falhar após newContext', a
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - getChromiumEnv remove credenciais de proxy e chaves sensíveis extras', () => {
+  const { getChromiumEnv } = require('../browser');
+  const orig = { ...process.env };
+  const savedProxy = process.env.HTTPS_PROXY;
+  const savedPw = process.env.ALI_ACC_PASS;
+  try {
+    process.env.HTTPS_PROXY = 'http://user:senha@proxy.local:8080';
+    process.env.ALI_ACC_PASS = 'super-secreta';
+    const env = getChromiumEnv();
+    assert.strictEqual(env.HTTPS_PROXY, 'http://proxy.local:8080', 'userinfo do proxy removido');
+    assert.strictEqual(env.ALI_ACC_PASS, undefined, 'chave com PASS não deve ir ao Chromium');
+  } finally {
+    if (savedProxy !== undefined) process.env.HTTPS_PROXY = savedProxy;
+    else delete process.env.HTTPS_PROXY;
+    if (savedPw !== undefined) process.env.ALI_ACC_PASS = savedPw;
+    else delete process.env.ALI_ACC_PASS;
+    for (const k of Object.keys(process.env)) if (!(k in orig)) delete process.env[k];
+  }
+});

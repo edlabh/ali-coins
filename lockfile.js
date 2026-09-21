@@ -354,15 +354,37 @@ async function acquireLock(
     if (released || refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
       try {
-        const content = await fs.promises.readFile(targetLockPath, 'utf-8');
-        const current = JSON.parse(content);
-        // Só renova se o lock ainda for nosso (evita "ressuscitar" após takeover por stale)
-        const isOurs = current.lockId
-          ? current.lockId === lockData.lockId
-          : current.pid === process.pid;
-        if (!isOurs || released) return;
+        // Renovação atômica condicional: move o lock para um caminho privado, confere se
+        // ainda é o nosso (lockId/pid) e só então reescreve e o devolve ao caminho final.
+        // Elimina o TOCTOU em que um takeover por stale entre a leitura e a escrita fazia
+        // o refresh "ressuscitar" o lock e sobrescrever o do novo dono.
+        const claimPath = `${targetLockPath}.tmp-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+        try {
+          await fs.promises.rename(targetLockPath, claimPath);
+        } catch {
+          return; // lock já não existe
+        }
+
+        let isOurs = false;
+        try {
+          const content = await fs.promises.readFile(claimPath, 'utf-8');
+          const current = JSON.parse(content);
+          isOurs = current.lockId
+            ? current.lockId === lockData.lockId
+            : current.pid === process.pid;
+        } catch {
+          isOurs = false;
+        }
+
+        if (!isOurs || released) {
+          // Devolve o lock alheio ao lugar (não é nosso para renovar)
+          await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+          return;
+        }
+
         lockData.createdAt = new Date().toISOString();
-        await safeWriteFile(targetLockPath, JSON.stringify(lockData, null, 2), 'utf-8');
+        await fs.promises.writeFile(claimPath, JSON.stringify(lockData, null, 2), { mode: 0o600 });
+        await fs.promises.rename(claimPath, targetLockPath);
         refreshFailures = 0;
       } catch (err) {
         // Erro transitório (lock substituído, permissão, AV): avisa sem travar o run.
