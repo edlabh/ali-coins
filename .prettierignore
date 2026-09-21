@@ -8,3 +8,8 @@ session_token.txt
 *.zip
 *.lock
 package-lock.json
+session_token*.txt
+session_meta*.json
+session*.enc
+*.enc
+accounts.json

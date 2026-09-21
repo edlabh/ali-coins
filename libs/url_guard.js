@@ -351,11 +351,16 @@ async function safeFetch(rawUrl, init = {}, options = {}) {
   const maxRedirects = Number.isInteger(options.maxRedirects) ? options.maxRedirects : 5;
   let currentUrl = rawUrl;
   let currentInit = { ...init };
-  const transport = resolveFetchTransport({ allowPrivate: options.allowPrivate });
+  // Resolve o opt-in UMA vez: a validação e o dispatcher pinado precisam concordar.
+  // Sem isto, ALLOW_PRIVATE_WEBHOOKS=true permitia o destino na validação mas o lookup
+  // pinado da conexão o bloqueava (opt-in quebrado com undici instalado).
+  const allowPrivate =
+    typeof options.allowPrivate === 'boolean' ? options.allowPrivate : allowPrivateTargets();
+  const transport = resolveFetchTransport({ allowPrivate });
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const guard = await validateExternalUrl(currentUrl, {
-      allowPrivate: options.allowPrivate,
+      allowPrivate,
       dnsTimeoutMs: options.dnsTimeoutMs
     });
     if (!guard.ok) {
@@ -367,11 +372,25 @@ async function safeFetch(rawUrl, init = {}, options = {}) {
 
     // O dispatcher (quando presente) pina o IP validado no lookup da conexão: um DNS
     // com TTL 0 que devolva IP privado só na segunda resolução não consegue mais.
-    const response = await transport.fetchImpl(currentUrl, {
-      ...currentInit,
-      redirect: 'manual',
-      ...(transport.dispatcher ? { dispatcher: transport.dispatcher } : {})
-    });
+    let response;
+    try {
+      response = await transport.fetchImpl(currentUrl, {
+        ...currentInit,
+        redirect: 'manual',
+        ...(transport.dispatcher ? { dispatcher: transport.dispatcher } : {})
+      });
+    } catch (fetchErr) {
+      // O undici embrulha o erro do conector em `TypeError: fetch failed` com `cause`;
+      // propaga o bloqueio SSRF com o código que os callers esperam.
+      const cause = fetchErr && fetchErr.cause;
+      if (cause && cause.code === 'SSRF_BLOCKED') {
+        const blocked = new Error(`Destino bloqueado pelo guard SSRF: ${cause.message}`);
+        blocked.code = 'SSRF_BLOCKED';
+        blocked.reason = cause.message;
+        throw blocked;
+      }
+      throw fetchErr;
+    }
 
     // 3xx com Location: segue manualmente revalidando o próximo hop
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {

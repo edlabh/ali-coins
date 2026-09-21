@@ -592,11 +592,14 @@ async function runTasks(options = {}) {
         ) {
           missionsCoinsFromLedger = desktopResult.todayMissionsCoins;
         }
-      } catch {
-        // Ignorar
+      } catch (err) {
+        // Leitura do extrato falhou: o ganho das tarefas cai no fallback por diferença de
+        // saldo; registra para o operador saber que o valor não veio da fonte de verdade.
+        logger.warn(
+          { err: err.message },
+          'Falha ao ler o extrato desktop no fim das tarefas; usando fallback de saldo.'
+        );
       }
-
-      // Cálculo do ganho das tarefas. Prioriza o extrato ("Missões de moedas"); recorre à
       // diferença de saldo apenas quando o extrato não trouxer lançamentos de tarefas.
       const initNum =
         initialBalance !== null && initialBalance !== 'N/D'

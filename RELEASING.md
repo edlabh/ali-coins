@@ -1,14 +1,15 @@
 # Guia de Releases
 
 Este documento descreve o processo de release do `ali-coins`, incluindo a automação de
-GitHub Releases e os preparativos para a **1.0.0**.
+GitHub Releases e o fluxo das versões **1.x**.
 
 ## Versionamento
 
 - O projeto segue [SemVer](https://semver.org/lang/pt-BR/): `MAJOR.MINOR.PATCH`.
-- Enquanto em `0.x`, quebras de compatibilidade podem ocorrer em `MINOR`.
-- A **1.0.0** congela o contrato público: CLI, exit codes `0–6`, formato de
-  `session*.json(.enc)`, token `v3:N:r:p:...`, variáveis de ambiente e relatórios `--json`.
+- Mudanças compatíveis entram em `MINOR`; quebras de compatibilidade exigem `MAJOR`.
+- O contrato público (CLI, exit codes `0–6`, formato de `session*.json(.enc)`,
+  token `v3:N:r:p:...`, variáveis de ambiente e relatórios `--json`) é estável desde a
+  **1.0.0**.
 
 ## Fluxo de release (a partir da 1.0.0)
 

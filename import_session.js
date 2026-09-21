@@ -400,6 +400,7 @@ async function importAllSessions(options = {}) {
   const { loadAccounts } = require('./config');
   const accounts = loadAccounts(process.env, baseDir);
   const imported = [];
+  const failed = [];
   const keepTokens = Boolean(
     options.keepTokens ||
     process.argv.includes('--keep-tokens') ||
@@ -467,6 +468,7 @@ async function importAllSessions(options = {}) {
         }
       }
     } catch (err) {
+      failed.push({ file: path.basename(tPath), error: err.message });
       logger.error(
         { file: path.basename(tPath), err: err.message },
         'Falha ao importar arquivo de token.'
@@ -486,7 +488,7 @@ async function importAllSessions(options = {}) {
     logger.info('===================================================================');
   }
 
-  return imported;
+  return { imported, failed };
 }
 
 if (require.main === module) {
@@ -502,7 +504,22 @@ if (require.main === module) {
   const runPromise = allFlag ? importAllSessions() : importSession({ account: accountArg });
 
   runPromise
-    .then(() => {
+    .then(({ imported, failed }) => {
+      // Falha total ou parcial em lote não pode terminar em sucesso: o run_all.sh só
+      // retenta no exit 1 e o dead man's switch precisa enxergar a falha.
+      if (imported.length === 0) {
+        logger.error('Nenhuma sessão foi importada.');
+        flushAndExit(1);
+        return;
+      }
+      if (failed.length > 0) {
+        logger.error(
+          { failed: failed.map((f) => f.file) },
+          'Importação parcial: algumas contas não foram importadas.'
+        );
+        flushAndExit(1);
+        return;
+      }
       flushAndExit(0);
     })
     .catch((err) => {

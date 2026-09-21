@@ -451,7 +451,7 @@ test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote
     await safeWriteFile(acc2.sessionMetaPath, JSON.stringify({ user: acc2.user }, null, 2));
 
     // Exportar todas as contas
-    const exported = await exportAllSessions({
+    const { exported } = await exportAllSessions({
       baseDir: tmpDir,
       secret: TEST_SECRET
     });
@@ -475,7 +475,7 @@ test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote
     await fs.promises.unlink(acc2.sessionMetaPath);
 
     // Importar todas as contas no servidor remoto
-    const imported = await importAllSessions({
+    const { imported } = await importAllSessions({
       baseDir: tmpDir,
       secret: TEST_SECRET
     });
@@ -623,7 +623,7 @@ test('import_session.js - keepTokens preserva arquivos de token após importaç�
     await fs.promises.unlink(sPath);
     await fs.promises.unlink(mPath);
 
-    const imported = await importAllSessions({
+    const { imported } = await importAllSessions({
       baseDir: tmpDir,
       secret: TEST_SECRET,
       keepTokens: true

@@ -7,11 +7,11 @@ const { z } = require('zod');
 const { Command } = require('commander');
 const logger = require('./logger');
 const { safeChmod600 } = require('./security');
+const { allowPrivateTargets } = require('./libs/url_guard');
 
 // Caminhos padrão de arquivos
 const credentialsEnvPath = path.join(__dirname, 'credentials.env');
 const sessionPath = path.join(__dirname, 'session.json');
-const sessionEncPath = path.join(__dirname, 'session.json.enc');
 const sessionMetaPath = path.join(__dirname, 'session_meta.json');
 const sessionTokenPath = path.join(__dirname, 'session_token.txt');
 const scratchDir = path.join(__dirname, 'scratch');
@@ -261,19 +261,28 @@ const configSchema = z
             'HEARTBEAT_URL é obrigatória e deve ser uma URL válida (http/https) quando HEARTBEAT_ENABLED=true.',
           path: ['HEARTBEAT_URL']
         });
-      } else if (
-        /^http:\/\//i.test(data.HEARTBEAT_URL) &&
-        !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/i.test(data.HEARTBEAT_URL) &&
-        String(process.env.ALLOW_PRIVATE_WEBHOOKS || '').toLowerCase() !== 'true'
-      ) {
-        // O token do dead man's switch vai no path: em http ele trafega em claro e pode
-        // ser forjado. Aceita http apenas para localhost ou com opt-in explícito.
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message:
-            "HEARTBEAT_URL deve usar https:// (o token do dead man's switch não deve trafegar em claro). http:// é aceito apenas para localhost ou com ALLOW_PRIVATE_WEBHOOKS=true.",
-          path: ['HEARTBEAT_URL']
-        });
+      } else {
+        // Parseia com o MESMO parser do runtime: regex sobre a string bruta aceitava
+        // `http://localhost:8080@evil.com` (o hostname real é evil.com) e rejeitava
+        // `http://localhost?k=v`.
+        let hbUrl = null;
+        try {
+          hbUrl = new URL(data.HEARTBEAT_URL);
+        } catch {
+          // Formato já garantido pelo regex acima
+        }
+        const isLocalhostHb =
+          hbUrl && ['localhost', '127.0.0.1', '::1'].includes(hbUrl.hostname.toLowerCase());
+        if (hbUrl && hbUrl.protocol === 'http:' && !isLocalhostHb && !allowPrivateTargets()) {
+          // O token do dead man's switch vai no path: em http ele trafega em claro e pode
+          // ser forjado. Aceita http apenas para localhost ou com opt-in explícito.
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              "HEARTBEAT_URL deve usar https:// (o token do dead man's switch não deve trafegar em claro). http:// é aceito apenas para localhost ou com ALLOW_PRIVATE_WEBHOOKS=true.",
+            path: ['HEARTBEAT_URL']
+          });
+        }
       }
     }
     // Segurança at-rest: com a criptografia ligada (padrão), a ausência de SESSION_SECRET
@@ -396,10 +405,6 @@ function isHeartbeat(argv = process.argv) {
 
 function isShowToken() {
   return process.argv.includes('--show-token');
-}
-
-function isPlaintext() {
-  return process.argv.includes('--plaintext');
 }
 
 function getFromFile() {
@@ -856,7 +861,7 @@ async function handleDryRun() {
         },
         webhook: {
           urlConfigured: Boolean(process.env.NOTIFY_WEBHOOK_URL),
-          allowPrivateWebhooks: process.env.ALLOW_PRIVATE_WEBHOOKS === 'true'
+          allowPrivateWebhooks: allowPrivateTargets()
         },
         accounts: maskedAccounts
       };
@@ -894,7 +899,7 @@ async function handleDryRun() {
         ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}`
       );
       logger.info(
-        ` • Webhook de notificação: ${process.env.NOTIFY_WEBHOOK_URL ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}${process.env.ALLOW_PRIVATE_WEBHOOKS === 'true' ? ' (ALLOW_PRIVATE_WEBHOOKS=true)' : ''}`
+        ` • Webhook de notificação: ${process.env.NOTIFY_WEBHOOK_URL ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}${allowPrivateTargets() ? ' (ALLOW_PRIVATE_WEBHOOKS ativo)' : ''}`
       );
       logger.info(
         ` • Notificações Telegram: ${
@@ -937,7 +942,6 @@ module.exports = {
   isNotify,
   isHeartbeat,
   isShowToken,
-  isPlaintext,
   isAll,
   getAccountArg,
   getFromFile,
@@ -951,7 +955,6 @@ module.exports = {
   syncAccountSessions,
   credentialsEnvPath,
   sessionPath,
-  sessionEncPath,
   sessionMetaPath,
   sessionTokenPath,
   scratchDir,

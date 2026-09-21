@@ -323,12 +323,17 @@ async function acquireLock(
     const rawCreatedAt = existingLock.createdAt ? new Date(existingLock.createdAt).getTime() : NaN;
     const isFutureTimestamp = rawCreatedAt > Date.now() + CLOCK_SKEW_TOLERANCE_MS;
     const isInvalidTimestamp = Number.isNaN(rawCreatedAt) || isFutureTimestamp;
-    // A renovação periódica atualiza o MTIME (sem reescrever o conteúdo): o lock é
-    // fresco se createdAt OU mtime for recente. Timestamp inválido/futuro continua
-    // sendo stale imediato (anti-DoS), ignorando o mtime.
-    const lastRenewed = isInvalidTimestamp ? 0 : Math.max(rawCreatedAt, readResult.mtimeMs || 0);
+    const mtimeMs = Number.isFinite(readResult.mtimeMs) ? readResult.mtimeMs : 0;
+    const isMtimeFuture = mtimeMs > Date.now() + CLOCK_SKEW_TOLERANCE_MS;
+    // O mtime (renovação real) prevalece sobre createdAt inválido/futuro: com o relógio
+    // corrigido para trás (NTP/snapshot), um lock sendo renovado AGORA não pode ser
+    // removido como stale. mtime no futuro também é ignorado (anti-DoS).
+    const lastRenewed = Math.max(
+      isInvalidTimestamp ? 0 : rawCreatedAt,
+      isMtimeFuture ? 0 : mtimeMs
+    );
     const lockAge = Math.max(0, Date.now() - lastRenewed);
-    const isStale = isInvalidTimestamp || lockAge > staleTimeoutMs;
+    const isStale = lockAge > staleTimeoutMs;
     const isSameHost = existingLock.host === os.hostname();
 
     if (isStale) {
@@ -420,6 +425,46 @@ async function acquireLock(
 
   let refreshInFlight = null;
   let refreshFailures = 0;
+
+  // Renovação por reescrita condicional (fallback para FS sem suporte a utimes): move o
+  // lock para um claim, confere a geração e devolve reescrito — sem sobrescrever lock alheio.
+  const renewLockByRewrite = async () => {
+    const claimPath = `${targetLockPath}.refresh-${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+    try {
+      await fs.promises.rename(targetLockPath, claimPath);
+    } catch {
+      return false;
+    }
+    try {
+      let isOurs = false;
+      try {
+        const current = JSON.parse(await fs.promises.readFile(claimPath, 'utf-8'));
+        isOurs = current.lockId ? current.lockId === lockData.lockId : current.pid === process.pid;
+      } catch {
+        isOurs = false;
+      }
+      if (!isOurs || released) {
+        await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+        return false;
+      }
+      lockData.createdAt = new Date().toISOString();
+      await fs.promises.writeFile(claimPath, JSON.stringify(lockData, null, 2), { mode: 0o600 });
+      const occupied = await fs.promises
+        .lstat(targetLockPath)
+        .then(() => true)
+        .catch(() => false);
+      if (occupied) {
+        await fs.promises.unlink(claimPath).catch(() => {});
+      } else {
+        await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+      }
+      return true;
+    } catch {
+      await fs.promises.rename(claimPath, targetLockPath).catch(() => {});
+      return false;
+    }
+  };
+
   const refreshLock = () => {
     if (released || refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
@@ -439,12 +484,21 @@ async function acquireLock(
         if (!isOurs || released) return;
 
         // Renovação por MTIME: atômica, sem reescrever o conteúdo e SEM janela de
-        // ausência. O claim anterior deixava o lock invisível por alguns ms e, em
-        // runner lento, além da carência — um segundo processo podia assumir.
-        // Atualizar o mtime de um lock alheio (corrida de µs) apenas o rejuvenesce:
-        // não cria dupla posse nem sobrescreve geração.
+        // ausência. Atualizar o mtime de um lock alheio (corrida de µs) apenas o
+        // rejuvenesce: não cria dupla posse nem sobrescreve geração.
         const now = new Date();
-        await fs.promises.utimes(targetLockPath, now, now);
+        try {
+          await fs.promises.utimes(targetLockPath, now, now);
+        } catch (utimesErr) {
+          // FS sem suporte a utimes (mounts de rede/FAT) ou sem permissão: renova por
+          // reescrita condicional para o lock não expirar enquanto o run continua.
+          logger.warn(
+            { err: utimesErr.message, lockPath: targetLockPath },
+            'utimes indisponível; renovando o lock por reescrita condicional.'
+          );
+          const renewed = await renewLockByRewrite();
+          if (!renewed) throw utimesErr;
+        }
         refreshFailures = 0;
       } catch (err) {
         // Erro transitório (permissão, AV): avisa sem travar o run. Falhas persistentes
@@ -511,8 +565,12 @@ async function acquireLock(
     }
   };
 
-  // Libera o lock e reemite o sinal para que o processo encerre com o comportamento padrão
+  // Libera o lock e reemite o sinal para que o processo encerre com o comportamento padrão.
+  // Quando outro componente (ex.: all.js) também trata o sinal, ele conduz o encerramento
+  // completo (fecha browser → libera lock → flush): o lockfile NÃO interfere — liberar o
+  // lock aqui permitiria que outra instância iniciasse enquanto o browser ainda finaliza.
   const handleSignal = (signal) => {
+    if (process.listenerCount(signal) > 1) return;
     void release().finally(() => {
       removeSignalHandlers();
       try {
@@ -521,7 +579,8 @@ async function acquireLock(
         process.exit(1);
       }
       // Fallback (ex: Windows): garante encerramento mesmo se o sinal não for fatal
-      setTimeout(() => process.exit(1), 2000);
+      const fallbackTimer = setTimeout(() => process.exit(1), 2000);
+      if (fallbackTimer.unref) fallbackTimer.unref();
     });
   };
 

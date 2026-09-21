@@ -1161,7 +1161,6 @@ test('libs/notify.js - shouldSkipAccountNotification suprime conta com chat igua
 
 test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () => {
   const { configSchema } = require('../config');
-  const { version: APP_VERSION } = require('../package.json');
   const base = {
     ALI_USER: 'a@b.co',
     ALI_PASSWORD: 'pwd',

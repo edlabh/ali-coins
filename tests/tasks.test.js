@@ -117,7 +117,7 @@ test('tasks - executePrizeLandTask não clica quando o AbortSignal já foi abort
 
     const mockPage = {
       $: async () => ({ click: async () => {} }),
-      evaluate: async (fn, el) => {
+      evaluate: async (_fn, _el) => {
         clicked = true;
       },
       waitForTimeout: async () => {}
@@ -2450,7 +2450,7 @@ test('tasks - tryOpenFirstProductDetail abre item em nova aba e fecha (fallback)
     };
     const context = {
       pages: () => [mainPage, detailTab],
-      waitForEvent: async (evt) => detailTab
+      waitForEvent: async (_evt) => detailTab
     };
 
     // simula abertura de aba: pages() antes do clique não contém a detailTab

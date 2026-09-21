@@ -402,33 +402,48 @@ test('lockfile.js - createdAt futuro ou inválido não causa bloqueio permanente
   const tmpDir = createIsolatedTestDir('lockfile-timestamp-');
   const tmpLockPath = path.join(tmpDir, 'timestamp.lock');
 
+  // mtime antigo (2h): o critério de stale considera createdAt E mtime (renovação real).
+  const writeAgedLock = async (lockObj) => {
+    fs.writeFileSync(tmpLockPath, JSON.stringify(lockObj));
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.promises.utimes(tmpLockPath, old, old);
+  };
+
   try {
-    // 1. createdAt no futuro: tratado como stale e substituído imediatamente
+    // 1. createdAt no futuro + mtime antigo: tratado como stale e substituído
     const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    fs.writeFileSync(
-      tmpLockPath,
-      JSON.stringify({ pid: process.pid, createdAt: future, host: os.hostname() })
-    );
+    await writeAgedLock({ pid: process.pid, createdAt: future, host: os.hostname() });
     const releaseFuture = await acquireLock(false, 30000, tmpLockPath);
     const afterFuture = JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8'));
     assert.strictEqual(afterFuture.pid, process.pid);
     assert.notStrictEqual(afterFuture.createdAt, future, 'Timestamp futuro deve ser substituído');
     await releaseFuture();
 
-    // 2. createdAt inválido: tratado como stale imediatamente
-    fs.writeFileSync(
-      tmpLockPath,
-      JSON.stringify({ pid: process.pid, createdAt: 'data-invalida', host: os.hostname() })
-    );
+    // 2. createdAt inválido + mtime antigo: stale
+    await writeAgedLock({ pid: process.pid, createdAt: 'data-invalida', host: os.hostname() });
     const releaseInvalid = await acquireLock(false, 30000, tmpLockPath);
     assert.strictEqual(JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8')).pid, process.pid);
     await releaseInvalid();
 
-    // 3. createdAt ausente: continua sendo stale (comportamento histórico preservado)
-    fs.writeFileSync(tmpLockPath, JSON.stringify({ pid: process.pid, host: os.hostname() }));
+    // 3. createdAt ausente + mtime antigo: stale (comportamento histórico preservado)
+    await writeAgedLock({ pid: process.pid, host: os.hostname() });
     const releaseMissing = await acquireLock(false, 30000, tmpLockPath);
     assert.strictEqual(JSON.parse(fs.readFileSync(tmpLockPath, 'utf-8')).pid, process.pid);
     await releaseMissing();
+
+    // 4. createdAt futuro, mas mtime FRESCO (relógio corrigido para trás): lock VIVO,
+    //    não pode ser removido — o mtime da renovação real prevalece.
+    fs.writeFileSync(
+      tmpLockPath,
+      JSON.stringify({ pid: process.pid, createdAt: future, host: os.hostname() })
+    );
+    await assert.rejects(
+      async () => {
+        await acquireLock(false, 30000, tmpLockPath);
+      },
+      (err) => err instanceof LockActiveError,
+      'mtime fresco deve prevalecer sobre createdAt futuro (lock vivo)'
+    );
   } finally {
     cleanupIsolatedTestDir(tmpDir);
     assertRealFilesUntouched(realFilesSnapshot);

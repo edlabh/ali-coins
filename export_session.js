@@ -35,7 +35,7 @@ class ExportSessionError extends Error {
 }
 
 /**
- * Exporta a sessão atual criptografada com AES-256-GCM (formato v2)
+ * Exporta a sessão atual criptografada com AES-256-GCM (formato v3)
  * @param {object} [options={}]
  * @param {string} [options.secret]
  * @returns {Promise<{ token: string, fingerprint: string, user: string }>}
@@ -157,7 +157,7 @@ async function exportSession(options = {}) {
   logger.info(`[OK] Fingerprint do token (SHA-256): ${fingerprint}`);
   logger.info(`[OK] Tamanho do payload criptografado: ${blobSize} bytes`);
   logger.info('[OK] Permissões 0o600 aplicadas em todos os arquivos de sessão');
-  logger.info(`[OK] Token criptografado (v2) salvo em: ${path.basename(tPath)}\n`);
+  logger.info(`[OK] Token criptografado (v3) salvo em: ${path.basename(tPath)}\n`);
 
   logger.info('--- COMO IMPORTAR NO SEU SERVIDOR NA NUVEM DE FORMA SEGURA ---');
   logger.info('Opção A (Recomendada via STDIN):');
@@ -169,7 +169,7 @@ async function exportSession(options = {}) {
   if (showToken) {
     logger.warn('⚠️  [AVISO] Exibição de token em tela solicitada via --show-token.');
     process.stdout.write(
-      `\n--- TOKEN CRIPTOGRAFADO (v2) ---\n${encryptedBlob}\n--------------------------------\n`
+      `\n--- TOKEN CRIPTOGRAFADO (v3) ---\n${encryptedBlob}\n--------------------------------\n`
     );
   } else {
     logger.info(
@@ -191,6 +191,7 @@ async function exportAllSessions(options = {}) {
   const baseDir = options.baseDir || __dirname;
   const accounts = loadAccounts(process.env, baseDir);
   const exported = [];
+  const failed = [];
 
   logger.info('===================================================================');
   logger.info(`   EXPORTAÇÃO MULTI-CONTA DE SESSÕES ALIEXPRESS (${accounts.length} CONTAS)`);
@@ -229,6 +230,7 @@ async function exportAllSessions(options = {}) {
         tokenFile: path.basename(tPath)
       });
     } catch (err) {
+      failed.push({ index: acc.index, error: err.message });
       logger.error(
         { account: acc.maskedUser, err: err.message },
         `Falha ao exportar sessão da Conta ${acc.index}.`
@@ -253,7 +255,7 @@ async function exportAllSessions(options = {}) {
     logger.info('===================================================================');
   }
 
-  return exported;
+  return { exported, failed };
 }
 
 /**
@@ -388,9 +390,16 @@ if (require.main === module) {
         });
     } else if (allFlag || accounts.length > 1) {
       exportAllSessions()
-        .then((res) => {
-          if (res.length === 0) {
+        .then(({ exported, failed }) => {
+          if (exported.length === 0) {
             logger.warn('Nenhuma sessão ativa encontrada para exportar.');
+            return flushAndExit(1);
+          }
+          if (failed.length > 0) {
+            logger.error(
+              { failed: failed.map((f) => f.index) },
+              'Exportação parcial: algumas contas não foram exportadas.'
+            );
             return flushAndExit(1);
           }
           return flushAndExit(0);

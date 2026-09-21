@@ -16,7 +16,7 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 - **Sessão Resiliente & Troca de Conta:** Validação estrita de cookies (`xman_us_t`). Detecta alterações de conta no `credentials.env` e renova credenciais com segurança.
 - **Criptografia v3 de Alta Segurança:** Exportação segura de sessão usando derivação via `scrypt` com salt criptográfico dinâmico de 16 bytes, parâmetros explícitos e cifra `AES-256-GCM` (formato `v3:N:r:p:salt:iv:tag:ct:base64`). Mantém compatibilidade retroativa com tokens legados `v1` e `v2`.
 - **Lockfile com Prevenção de Concorrência & Stale Timeout:** Evita execuções sobrepostas no Cron com checagem de hostname + PID e timeout de inatividade (padrão: 30min).
-- **Diagnósticos Playwright:** Captura automática de trace (`retain-on-failure`), screenshots (`only-on-failure`) e vídeo opcional em `scratch/`.
+- **Diagnósticos Playwright:** Captura automática de trace (configurável via `PW_TRACE`; `retain-on-failure` no perfil padrão, `off` no modo low-memory), screenshots (`only-on-failure`) e vídeo opcional em `scratch/`.
 
 ---
 
@@ -35,16 +35,25 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 
 A CLI suporta as seguintes flags unificadas (via `commander`):
 
-| Flag                    | Descrição                                                                                |
-| :---------------------- | :--------------------------------------------------------------------------------------- |
-| `-d, --dry-run`         | Executa a validação completa de credenciais e ambiente sem inicializar o Chromium.       |
-| `-f, --force`           | Força a execução sobrescrevendo um lockfile ativo existente.                             |
-| `--json`                | Emite o relatório de execução, diagnósticos e validação em formato JSON puro.            |
-| `--notify`              | Força o envio de notificações via Telegram para a execução atual.                        |
-| `--no-notify`           | Desativa o envio de notificações via Telegram para a execução atual.                     |
-| `--show-token`          | Exibe o token criptografado na saída do terminal durante o `export_session.js`.          |
-| `--from-file <caminho>` | Lê o token criptografado a partir do arquivo especificado durante o `import_session.js`. |
-| `-h, --help`            | Exibe a mensagem de ajuda com a lista de parâmetros disponíveis.                         |
+| Flag                    | Descrição                                                                                  |
+| :---------------------- | :----------------------------------------------------------------------------------------- |
+| `-d, --dry-run`         | Executa a validação completa de credenciais e ambiente sem inicializar o Chromium.         |
+| `-f, --force`           | Força a execução sobrescrevendo um lockfile ativo existente.                               |
+| `--json`                | Emite o relatório de execução, diagnósticos e validação em formato JSON puro.              |
+| `--notify`              | Força o envio de notificações via Telegram para a execução atual.                          |
+| `--no-notify`           | Desativa o envio de notificações via Telegram para a execução atual.                       |
+| `--heartbeat`           | Força o envio de heartbeat / dead man's switch para a execução atual.                      |
+| `--no-heartbeat`        | Desativa o envio de heartbeat / dead man's switch para a execução atual.                   |
+| `--all`                 | Processa todas as contas configuradas (usado por `export_session.js`/`import_session.js`). |
+| `--account <id>`        | Seleciona a conta por índice ou e-mail nas CLIs de sessão.                                 |
+| `--plaintext`           | Permite gravar a sessão sem criptografia (opt-out explícito do at-rest).                   |
+| `--keep-tokens`         | Não remove os `session_token*.txt` após a importação multi-conta.                          |
+| `--rotate`              | Re-criptografa as sessões com a nova chave (`SESSION_SECRET_NEW`/`SESSION_SECRET_OLD`).    |
+| `--migrate`             | Migra `session.json` legado para `session.json.enc` via `import_session.js`.               |
+| `--version`             | Exibe a versão do projeto.                                                                 |
+| `--show-token`          | Exibe o token criptografado na saída do terminal durante o `export_session.js`.            |
+| `--from-file <caminho>` | Lê o token criptografado a partir do arquivo especificado durante o `import_session.js`.   |
+| `-h, --help`            | Exibe a mensagem de ajuda com a lista de parâmetros disponíveis.                           |
 
 ---
 
@@ -326,7 +335,7 @@ docker run --rm \
 
 ## Segurança e Permissões
 
-- **Criptografia At-Rest (`session.json.enc`):** Sessões locais são gravadas criptografadas com AES-256-GCM v2 (`scrypt` + salt aleatório) quando `SESSION_SECRET` estiver configurado (`ENCRYPT_LOCAL_SESSION=true`). Inclui leitura transparente com fallback para migração de `session.json` legado e rotação suave de chaves via `SESSION_SECRET_OLD`.
+- **Criptografia At-Rest (`session.json.enc`):** Sessões locais são gravadas criptografadas com AES-256-GCM v3 (`scrypt` + salt aleatório) quando `SESSION_SECRET` estiver configurado (`ENCRYPT_LOCAL_SESSION=true`). Inclui leitura transparente com fallback para migração de `session.json` legado, migração automática de tokens `v1`/`v2` para `v3` e rotação suave de chaves via `SESSION_SECRET_OLD`.
 - **Rotação de Chaves de Sessão:** A rotação at-rest pode ser executada manualmente via CLI:
   ```bash
   export SESSION_SECRET_OLD="chave_antiga_com_mais_de_32_chars"

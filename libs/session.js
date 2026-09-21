@@ -102,8 +102,9 @@ function getEncryptionConfig(options = {}) {
   if (options.encryptLocalSession !== undefined) {
     encryptLocal = Boolean(options.encryptLocalSession);
   } else if (process.env.ENCRYPT_LOCAL_SESSION !== undefined) {
-    const v = String(process.env.ENCRYPT_LOCAL_SESSION).toLowerCase();
-    encryptLocal = v !== 'false' && v !== '0';
+    const v = String(process.env.ENCRYPT_LOCAL_SESSION).trim().toLowerCase();
+    // Mesmas formas aceitas pelo schema do config (off/no/0/false desligam).
+    encryptLocal = !/^(false|0|off|no)$/.test(v);
   }
 
   const shouldEncrypt = Boolean(

@@ -100,7 +100,8 @@ async function runCheckin(options = {}) {
       }
     }
 
-    // 3. Inicializar contexto mobile
+    // 3. Inicializar contexto mobile. `newPage` fica DENTRO do try que fecha o contexto:
+    // se falhar (contexto morto), o finally fecha o contexto em vez de deixá-lo órfão.
     const context = await newMobileContext(
       browser,
       hasValidSession ? sessionData || currentSessionPath : null,
@@ -108,10 +109,11 @@ async function runCheckin(options = {}) {
         allowMedia: config.ALLOW_MEDIA
       }
     );
-    const page = await context.newPage();
+    let page = null;
     let attemptedLogin = false;
 
     try {
+      page = await context.newPage();
       if (hasValidSession) {
         await gotoWithRetry(page, SELECTORS.desktop.mycoinUrl, {
           waitUntil: 'domcontentloaded',
@@ -325,8 +327,13 @@ async function runCheckin(options = {}) {
         const updatedStorage = await context.storageState();
         sessionData = updatedStorage;
         await saveSession(updatedStorage, userEmail, sessionOpts);
-      } catch {
-        // Ignorar
+      } catch (err) {
+        // Falha ao persistir a sessão não invalida o check-in, mas precisa ficar visível:
+        // sem log, o run seguinte refaz login e o operador não sabe o motivo.
+        logger.warn(
+          { err: err.message },
+          'Falha ao atualizar/persistir a sessão após o check-in (cookies não gravados).'
+        );
       }
 
       await closeContextWithDiagnostics(context, { failed: false, name: 'checkin-mobile' });
@@ -602,9 +609,14 @@ if (require.main === module) {
       const result = await runCheckin();
       if (releaseLock) await releaseLock();
       const report = { type: 'checkin', ...result };
-      const event = result && result.alreadyCollected ? 'already_collected' : 'success';
+      // Mesma regra do fluxo unificado: crédito confirmado no extrato de hoje conta como
+      // nova ação mesmo com alreadyCollected=true (o bot pode não ter clicado).
+      const hadNewCheckin = Boolean(
+        result && (!result.alreadyCollected || result.checkinCoinsFromLedger === true)
+      );
+      const event = hadNewCheckin ? 'success' : 'already_collected';
       await sendTelegram({ config: cfg, report, event }).catch(() => {});
-      if (result && result.alreadyCollected) {
+      if (!hadNewCheckin) {
         await flushAndExit(2);
       }
       await flushAndExit(0);

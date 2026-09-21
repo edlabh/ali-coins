@@ -629,7 +629,11 @@ function buildMessage({
     const checkinCoins = computeCheckinCoinsGained({
       coinsGainedToday: report.coinsGainedToday,
       alreadyCollected: report.alreadyCollected,
-      streakDays: report.streakDays
+      streakDays: report.streakDays,
+      // O crédito vindo do extrato de HOJE deve ser contabilizado mesmo com
+      // alreadyCollected=true (antes o objeto reduzido o descartava e o Telegram
+      // mostrava "+0 moedas" com crédito real no dia).
+      checkinCoinsFromLedger: report.checkinCoinsFromLedger === true
     });
 
     const streakDays =

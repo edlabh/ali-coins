@@ -438,7 +438,7 @@ test('libs/ui/balance.js - closeCachedDesktopContext fecha o contexto reutilizad
   }
 });
 
-test('libs/ui/balance.js - shouldReuseDesktopContext é true por padrão e aceita opt-out', () => {
+test('libs/ui/balance.js - shouldReuseDesktopContext é false por padrão (opt-in) e aceita opt-in', () => {
   const { shouldReuseDesktopContext } = require('../libs/ui/balance');
   const original = process.env.DESKTOP_REUSE_CONTEXT;
   try {

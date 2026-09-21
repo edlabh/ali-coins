@@ -349,7 +349,7 @@ Você pode agendar a rotação de chave de sessão no `crontab` (por exemplo, no
 ### 2. Backups e Retenção Automática (Pruning)
 
 - A cada rotação, um backup cifrado da sessão anterior é gravado em `scratch/session.bak-<timestamp>.json.enc` com permissão estrita `0o600`.
-- O mecanismo de **prune automático** descarta backups com mais de 7 dias de retenção (configurável através de `BACKUP_RETENTION_DAYS`), evitando acúmulo de arquivos residuais no disco da VPS.
+- O mecanismo de **prune automático** descarta backups com mais de 7 dias de retenção (configurável através de `SESSION_BACKUP_RETENTION_DAYS` (diagnósticos usam `DIAGNOSTICS_RETENTION_DAYS`)), evitando acúmulo de arquivos residuais no disco da VPS.
 
 ---
 

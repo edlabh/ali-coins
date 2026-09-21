@@ -641,7 +641,10 @@ async function main() {
                 ? 'streak_break'
                 : accError
                   ? 'failure'
-                  : !accCheckin?.alreadyCollected || (accTasks && accTasks.totalActions > 0)
+                  : (accCheckin &&
+                        (!accCheckin.alreadyCollected ||
+                          accCheckin.checkinCoinsFromLedger === true)) ||
+                      (accTasks && accTasks.totalActions > 0)
                     ? 'success'
                     : 'already_collected';
             const msSinceLastNotify = Date.now() - lastNotifyAt;
@@ -832,6 +835,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  main,
-  calculateAccountBackoff
+  main
 };

@@ -11,6 +11,30 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.7] - 2026-09-21
+
+### Corrigido
+
+- **`ALLOW_PRIVATE_WEBHOOKS=true` volta a funcionar com o pinning de DNS (`libs/url_guard.js`):** a validação lia o opt-in do ambiente, mas o dispatcher pinado usava o modo estrito (default) — o destino privado era permitido na checagem e bloqueado na conexão. O opt-in agora é resolvido **uma vez** e repassado à validação e ao dispatcher; o bloqueio vindo do conector (embrulhado pelo undici em `TypeError: fetch failed`) é propagado como `SSRF_BLOCKED`, preservando o tratamento dos chamadores.
+- **`ENCRYPT_LOCAL_SESSION=off/no` respeitado no runtime (`libs/session.js`):** o schema aceitava `off/no/0/false`, mas `getEncryptionConfig` só reconhecia `false`/`0` — com `off` o processo continuava exigindo `SESSION_SECRET` (e sem ele não persistia a sessão). Runtime e schema agora usam o mesmo conjunto de valores.
+- **`HEARTBEAT_URL` validada com parser de URL (`config.js`):** a regex aceitava `http://localhost:8080@evil.com` (hostname real `evil.com`) e rejeitava `http://localhost?k=v`. Agora usa `new URL()` e compara o `hostname`; `ALLOW_PRIVATE_WEBHOOKS` é lido pelo mesmo helper do runtime (`allowPrivateTargets`, aceitando `1/on/yes`).
+- **`LOG_LEVEL` inválido não derruba mais com stack trace (`logger.js`):** o pino lançava no `require` (antes do `ConfigValidationError`). Agora há fallback para `info` com aviso em stderr e a validação acionável continua no schema.
+- **Lockfile: relógio para trás não remove lock vivo (`lockfile.js`):** `createdAt` "futuro" (NTP/snapshot corrigido para trás) zerava a idade e ignorava o `mtime` recém-renovado. O `mtime` da renovação real agora prevalece sobre `createdAt` inválido/futuro; `mtime` no futuro continua sendo ignorado (anti-DoS).
+- **Lockfile: fallback quando `utimes` não está disponível (`lockfile.js`):** FS sem suporte (mounts de rede/FAT) deixava o lock expirar enquanto o run continuava; agora renova por **reescrita condicional** (claim + conferência de geração), sem sobrescrever lock alheio.
+- **Encerramento por sinal não é mais atropelado pelo lockfile (`lockfile.js`):** quando outro componente (ex.: `all.js`) trata o sinal, o lockfile não libera o lock nem reemite o sinal — o app conduz o shutdown completo (fecha browser → libera lock → flush). Sem outro handler, mantém o comportamento standalone.
+- **Notificação de check-in contabiliza o crédito do extrato (`libs/notify.js`):** o objeto reduzido descartava `checkinCoinsFromLedger` e o Telegram mostrava "+0 moedas" mesmo com crédito confirmado no dia.
+- **Contexto mobile não vaza se `newPage()` falhar (`collect.js`):** a criação da página agora fica dentro do `try` que fecha o contexto (evita contexto órfão no browser compartilhado).
+- **Evento por conta alinhado ao consolidado (`all.js`):** a notificação individual considera `checkinCoinsFromLedger` como nova ação, como o relatório unificado.
+- **`collect.js` standalone alinhado ao unificado (`collect.js`):** crédito confirmado no extrato conta como nova ação (exit 0 em vez de 2).
+- **Exit codes de lote em `import_session.js`/`export_session.js`:** falha total **ou parcial** encerra com exit 1 (antes uma conta importada/exportada mascarava as demais que falharam).
+- **Erros engolidos agora são visíveis:** falha ao persistir a sessão pós-check-in (`collect.js`) e falha na leitura do extrato no fim das tarefas (`do_tasks.js`).
+
+### Limpeza
+
+- Código morto removido: `isPlaintext()`/`sessionEncPath` (config), re-export `calculateAccountBackoff` (all.js).
+- `npm run lint` agora usa `--max-warnings=0` (warnings de teste ajustados); `.prettierignore` cobre `session_token*.txt`, `session_meta*.json` e `*.enc`.
+- Documentação corrigida: formato **v3** (era "v2" em `export_session.js`/README), tabela de flags do README completa (`--all`, `--account`, `--plaintext`, `--keep-tokens`, `--heartbeat`, `--rotate`, `--migrate`), `CLOUD_SESSIONS.md` com `SESSION_BACKUP_RETENTION_DAYS`/`DIAGNOSTICS_RETENTION_DAYS`, `RELEASING.md` atualizado para 1.x, tracing documentado conforme o modo low-memory.
+
 ## [1.4.6] - 2026-09-21
 
 ### Segurança

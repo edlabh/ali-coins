@@ -196,9 +196,21 @@ if (isJsonMode) {
   }
 }
 
+const PINO_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']);
+const requestedLevel = process.env.LOG_LEVEL
+  ? String(process.env.LOG_LEVEL).trim().toLowerCase()
+  : 'info';
+if (!PINO_LEVELS.has(requestedLevel)) {
+  // O pino lançaria no require (antes do ConfigValidationError): avisa e usa 'info';
+  // o schema do config continua validando o valor para o usuário.
+  process.stderr.write(
+    `[logger] LOG_LEVEL inválido ("${requestedLevel}"); usando "info". Valores aceitos: ${[...PINO_LEVELS].join(', ')}.\n`
+  );
+}
+
 const logger = pino(
   {
-    level: process.env.LOG_LEVEL || 'info',
+    level: PINO_LEVELS.has(requestedLevel) ? requestedLevel : 'info',
     redact: {
       paths: redactKeys,
       censor: '[REDACTED]'
