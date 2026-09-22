@@ -170,7 +170,7 @@ Enviada no modo conta única e, no modo multi-conta, somente com `TELEGRAM_PER_A
 
 ```text
 ✅ ali-coins — 22/09/2026
-👤 Conta: ag***@gmail.com
+👤 Conta: jo***@example.com
 🖥️ Host: servidor-vps (v1.5.1)
 🪙 Ganhas hoje: +111 moedas (check-in +40 / tarefas +71)
 📅 Sequência: 219 dias
@@ -189,8 +189,8 @@ Sempre enviada no modo multi-conta (independente de `TELEGRAM_PER_ACCOUNT`):
 ✅ AliExpress Moedas - Multi-Conta (Sucesso) — 22/09/2026
 📊 Resumo: 2/2 contas processadas com sucesso
 
-[1] ag***@gmail.com: 💰 3043 moedas | 🪙 +111 (+40/+71) | Streak: 219
-[2] ed***@gmail.com: 💰 625 moedas | 🪙 +57 (+1/+56) | Streak: 7
+[1] jo***@example.com: 💰 3043 moedas | 🪙 +111 (+40/+71) | Streak: 219
+[2] ma***@example.com: 💰 625 moedas | 🪙 +57 (+1/+56) | Streak: 7
 
 ⏱️ Duração Total: 5m 10s
 📅 Data: 22/09/2026 15:28:28
@@ -205,8 +205,8 @@ Sempre enviada no modo multi-conta (independente de `TELEGRAM_PER_ACCOUNT`):
 
 ```text
 🔴 ali-coins — 22/09/2026 15:23:38
-⚠️ Erro: Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "re***@yahoo.com.br".
-👤 Conta: re***@yahoo.com.br
+⚠️ Erro: Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "fe***@example.com".
+👤 Conta: fe***@example.com
 🖥️ Host: servidor-vps (v1.5.1)
 
 ⚠️ Aviso de Sessão Remota:
