@@ -225,7 +225,7 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
    ```cron
    SHELL=/bin/zsh
    PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-   NODE_OPTIONS="--max-old-space-size=192"
+   NODE_OPTIONS="--max-old-space-size=256"
 
    0 8 * * * cd /caminho/completo/para/ali-coins && ./run_all.sh >> coins_daily.log 2>&1
    ```
@@ -258,7 +258,7 @@ O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segun
        <key>EnvironmentVariables</key>
        <dict>
            <key>NODE_OPTIONS</key>
-           <string>--max-old-space-size=192</string>
+           <string>--max-old-space-size=256</string>
        </dict>
        <key>ProgramArguments</key>
        <array>
@@ -319,7 +319,7 @@ Se você executa a automação em máquinas virtuais macOS ou Macs com recursos 
    Para forçar o Garbage Collector do Node.js a manter a heap compacta:
 
    ```bash
-   export NODE_OPTIONS="--max-old-space-size=192"
+   export NODE_OPTIONS="--max-old-space-size=256"
    ./run_all.sh
    ```
 

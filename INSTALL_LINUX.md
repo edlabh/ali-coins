@@ -372,12 +372,12 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
    Para forçar o Garbage Collector do Node.js a coletar lixo antes de atingir o limite de RAM do servidor:
    - **No terminal:**
      ```bash
-     export NODE_OPTIONS="--max-old-space-size=192"
+     export NODE_OPTIONS="--max-old-space-size=256"
      ./run_all.sh
      ```
    - **No Crontab (`crontab -e`):**
      ```cron
-     NODE_OPTIONS="--max-old-space-size=192"
+     NODE_OPTIONS="--max-old-space-size=256"
      0 8 * * * cd /home/ubuntu/ali-coins && ./run_all.sh >> cron.log 2>&1
      ```
 
@@ -391,7 +391,7 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
    Isso reduz o pico instantâneo de memória da derivação de chave de ~134 MB para apenas ~33 MB (ou `16384` para ~16 MB), mantendo a cifra AES-256-GCM 100% segura.
 
 5. **Em Containers Docker:**
-   Se executar via Docker, a imagem já traz `NODE_OPTIONS="--max-old-space-size=192"` embutido. Ao rodar o container, adicione os limites de cgroups:
+   Se executar via Docker, a imagem já traz `NODE_OPTIONS="--max-old-space-size=256"` embutido. Ao rodar o container, adicione os limites de cgroups:
    ```bash
    docker run --rm --init --pids-limit=256 \
      --shm-size=256m \
@@ -400,6 +400,7 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
      -v "$PWD/session.json.enc:/app/session.json.enc" \
      ali-coins:latest
    ```
+   Alternativa declarativa: o `docker-compose.yml` do repositório já traz os mesmos limites de `shm`, tmpfs, memória e segurança (`docker compose up`).
 
 ### E. Servidores em Nuvem (Oracle Cloud, AWS, VPS): Desafio de Captcha ou Bloqueio no Login
 

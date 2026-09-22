@@ -3,6 +3,9 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
+REM Protecao contra OOM Killer fora do container: mesma folga de heap do Dockerfile.
+if not defined NODE_OPTIONS set "NODE_OPTIONS=--max-old-space-size=256"
+
 node "%~dp0collect.js" %*
 set EXIT_CODE=%ERRORLEVEL%
 

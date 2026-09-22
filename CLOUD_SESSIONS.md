@@ -266,10 +266,12 @@ Para evitar falhas por memória:
    ```
 
    - `--memory=768m --memory-swap=1536m`: o container pode usar até 768 MB de RAM + 768 MB de swap, deixando ~200 MB para o SO — evita que o OOM Killer derrube o processo principal.
-   - `--shm-size=256m`: folga para o `/dev/shm` (a automação já usa `--disable-dev-shm-usage`, então o valor é preventivo).
+   - `--shm-size=256m`: folga para o `/dev/shm`. Com 128 MB ou mais livres, o Chromium usa tmpfs em RAM; a flag `--disable-dev-shm-usage` só é aplicada automaticamente quando o `/dev/shm` é pequeno (ex.: container padrão de 64 MB).
    - `--init` e `--pids-limit=256`: evitam acúmulo de processos filhos do Chromium.
    - Um exemplo pronto de wrapper de cron, com medição de pico de memória, está em
      [`docker-run.example.sh`](docker-run.example.sh).
+   - Alternativa declarativa: o [`docker-compose.yml`](docker-compose.yml) já traz os mesmos
+     limites (`shm_size: 256m`, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`, 768M).
    - **Lockfile por ambiente:** o lock fica no diretório do projeto (`ali-coins-<uid>.lock`).
      Dentro do container ele vive em `/app` (efêmero), portanto **execuções nativas no host
      e execuções via Docker não compartilham o mesmo lock** — evite rodar as duas
@@ -302,7 +304,7 @@ Para evitar falhas por memória:
    Para limitar também o heap do Node.js fora do container, exporte no shell ou adicione ao `crontab -e`:
 
    ```cron
-   NODE_OPTIONS="--max-old-space-size=192"
+   NODE_OPTIONS="--max-old-space-size=256"
    0 4 * * * cd /home/ubuntu/ali-coins && ./run_all.sh >> cron.log 2>&1
    ```
 

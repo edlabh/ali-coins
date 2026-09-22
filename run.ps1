@@ -7,5 +7,8 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
+# Proteção contra OOM Killer fora do container: mesma folga de heap do Dockerfile.
+if (-not $env:NODE_OPTIONS) { $env:NODE_OPTIONS = '--max-old-space-size=256' }
+
 & node (Join-Path $ScriptDir "collect.js") @args
 exit $LASTEXITCODE

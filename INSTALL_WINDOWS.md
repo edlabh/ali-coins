@@ -313,7 +313,7 @@ Os tokens criptografados serão gravados em `session_token.txt` (Conta 1), `sess
 Abra o PowerShell na pasta do projeto e execute (exemplo para rodar diariamente às **08:00**):
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c set "NODE_OPTIONS=--max-old-space-size=192" && run_all.bat >> coins_daily.log 2>&1' -WorkingDirectory "$PWD"
+$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c set "NODE_OPTIONS=--max-old-space-size=256" && run_all.bat >> coins_daily.log 2>&1' -WorkingDirectory "$PWD"
 $trigger = New-ScheduledTaskTrigger -Daily -At 8:00AM
 Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Trigger $trigger -Description "Coleta diária de moedas do AliExpress"
 ```
@@ -401,11 +401,11 @@ Se você executa a automação em máquinas virtuais Windows compactas ou comput
    - Para forçar o Garbage Collector do Node.js a manter o consumo compacto (192 MB):
      - No Prompt de Comando (CMD):
        ```cmd
-       set "NODE_OPTIONS=--max-old-space-size=192" && run_all.bat
+       set "NODE_OPTIONS=--max-old-space-size=256" && run_all.bat
        ```
      - No PowerShell:
        ```powershell
-       $env:NODE_OPTIONS = "--max-old-space-size=192"
+       $env:NODE_OPTIONS = "--max-old-space-size=256"
        .\run_all.ps1
        ```
 
