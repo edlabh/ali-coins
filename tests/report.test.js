@@ -1216,6 +1216,39 @@ test('libs/report.js - buildUnifiedReportPayload propaga tasksError no meta', ()
   }
 });
 
+test('libs/report.js - buildUnifiedReportPayload omite tasksError nulo sem divergir do schema', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalWarn = logger.warn;
+  const warnings = [];
+  logger.warn = (obj, msg) => {
+    warnings.push(typeof obj === 'string' ? obj : msg || (obj && obj.msg));
+  };
+  try {
+    const checkin = {
+      alreadyCollected: true,
+      coinsGainedToday: '0',
+      streakDays: 5,
+      totalBalance: '100',
+      duration: '2s'
+    };
+    const payload = buildUnifiedReportPayload(checkin, null, {
+      finalBalance: '100 moedas',
+      tasksError: null
+    });
+
+    assert.strictEqual(payload.meta.tasksError, undefined);
+    assert.strictEqual(
+      warnings.some((msg) => String(msg).includes('diverge do schema')),
+      false,
+      'payload com tasksError nulo não pode divergir do schema'
+    );
+  } finally {
+    logger.warn = originalWarn;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/report.js - buildMultiAccountReportPayload propaga tasksError por conta', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {

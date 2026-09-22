@@ -32,9 +32,13 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Menos overhead de rede/IPC no Playwright (`browser.js`):** o bloqueio de recursos decide primeiro por `resourceType()` (imagem/mídia/fonte abortadas **sem** materializar URL nem rodar regex); a regex de extensão ficou restrita a tipos genéricos (`other`) e a telemetria continua bloqueada por substring. Flags `--disable-animations` e `--disable-smooth-scrolling` adicionadas às flags de economia de CPU.
 - **Fim do skeleton detectado mais rápido (`libs/tasks/verifier.js`):** o loop de auto-cura passou de sleeps fixos de 1s (12 iterações) para checagens a cada **350ms** (25 iterações, ~9s no total), com o reload defensivo mantido em ~6s — economiza de 2 a 4s por conta quando o DOM estabiliza antes do teto.
 
+### Corrigido
+
+- **Falso aviso de schema no relatório unificado (`libs/report.js`):** `meta.tasksError` nulo (quando a etapa de tarefas não falhou) agora é omitido do payload em vez de enviado como `null` — o schema aceita string opcional, então o aviso "Payload do relatório diverge do schema (campo ausente ou tipo inesperado)" não aparece mais. A divergência ficava latente enquanto o envio individual por conta estava desligado (o payload individual só é construído com `TELEGRAM_PER_ACCOUNT=true`); o builder multi-conta já normalizava (`item.tasksError || undefined`).
+
 ### Testes
 
-- Suíte mantida em **387/387**; lint (`--max-warnings=0`) e format limpos.
+- Suíte mantida em **389/389**; lint (`--max-warnings=0`) e format limpos.
 
 ## [1.4.8] - 2026-09-22
 

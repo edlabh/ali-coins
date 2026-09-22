@@ -439,7 +439,9 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
       totalCoinsGained,
       checkinCoinsGained,
       tasksCoinsGained,
-      tasksError: meta.tasksError
+      // `null` (sem erro de tarefas) vira campo ausente: o schema aceita string opcional,
+      // e o envio individual por conta passa a validar sem o aviso de divergência.
+      tasksError: meta.tasksError || undefined
     }
   };
 
