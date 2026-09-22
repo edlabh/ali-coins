@@ -26,6 +26,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   evidência de cookie expirado) e o `run_all.sh` mantém a retentativa única em exit 1 para
   falhas transitórias.
 
+### Documentação
+
+- `TELEGRAM.md`: corrigida a descrição do modo multi-conta com um único chat (o
+  consolidado é sempre enviado; a mensagem individual é suprimida com
+  `TELEGRAM_PER_ACCOUNT=false`) e documentada a variável `TELEGRAM_PER_ACCOUNT` no
+  exemplo de `credentials.env` e na lista de recursos.
+- `setup_linux.sh`: numeração das etapas alinhada (8 etapas, incluindo a verificação de
+  restrições de User Namespaces/AppArmor).
+
 ### Testes
 
 - Regressão em `tests/collect_guard.test.js` (saldo `N/D` com streak em cache → sessão

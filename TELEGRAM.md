@@ -11,7 +11,7 @@ O recurso é **100% opcional** (desativado por padrão) e utiliza o cliente HTTP
 - **Status Automático em Tempo Real:** Notifica execuções com sucesso (+ moedas), coletas já realizadas hoje, falhas críticas e alertas de lockfile ativo.
 - **Formatação Rica em HTML:** Apresenta saldo atualizado, sequência de dias (streak), moedas ganhas, lista de tarefas concluídas e tempo de execução.
 - **Resiliente & Não-Bloqueante:** Se a API do Telegram oscilar ou estiver indisponível, a automação registra um aviso no log e preserva o código de saída original do job (nunca aborta o script).
-- **Suporte Multi-Conta:** Agrupa e consolida o status de todas as contas em uma única mensagem elegante.
+- **Suporte Multi-Conta:** Agrupa e consolida o status de todas as contas em uma única mensagem elegante. Com `TELEGRAM_PER_ACCOUNT=true`, envia também o detalhe individual de cada conta.
 - **Modo Silencioso:** Opção de envio sem sinal sonoro (`TELEGRAM_SILENT=true`), ideal para execuções na madrugada via Cron.
 
 ---
@@ -99,6 +99,11 @@ TELEGRAM_CHAT_ID="987654321"
 # TELEGRAM_CHAT_ID_2="111222333"
 # TELEGRAM_CHAT_ID_3="444555666"
 
+# Enviar também a notificação INDIVIDUAL de cada conta, além do consolidado (padrão: false).
+# Com false (padrão), contas que usam o mesmo chat do consolidado têm a mensagem individual
+# suprimida (evita rajada); o consolidado é sempre enviado.
+TELEGRAM_PER_ACCOUNT=false
+
 # Enviar notificação sem som (notificação silenciosa) (padrão: false)
 TELEGRAM_SILENT=false
 
@@ -110,7 +115,7 @@ NOTIFY_HOST_LABEL="meu-servidor-vps"
 ```
 
 > 💡 **Multi-Contas com Apenas 1 Bot / 1 Chat (Recomendado):**
-> Se você deseja receber os relatórios de todas as contas no mesmo bot e na mesma conversa, declare apenas `TELEGRAM_CHAT_ID`. O sistema aplica fallback automático para todas as contas e envia tanto os relatórios de cada conta quanto o resumo consolidado no mesmo chat!
+> Se você deseja receber os relatórios de todas as contas no mesmo bot e na mesma conversa, declare apenas `TELEGRAM_CHAT_ID`. O sistema aplica fallback automático para todas as contas e envia o **resumo consolidado** no mesmo chat. Para evitar rajada de mensagens, a notificação **individual** de cada conta é suprimida quando o chat dela é igual ao `TELEGRAM_CHAT_ID` (comportamento padrão, `TELEGRAM_PER_ACCOUNT=false`). Ligue `TELEGRAM_PER_ACCOUNT=true` para receber também o detalhe de cada conta separadamente (ex.: com `TELEGRAM_CHAT_ID_2`/`TELEGRAM_CHAT_ID_3` próprios).
 
 Garanta que as permissões do arquivo estejam restritas ao seu usuário:
 

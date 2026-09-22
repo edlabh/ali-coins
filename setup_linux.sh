@@ -26,7 +26,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 1. Verificar e instalar ferramentas essenciais (curl, git, ca-certificates)
-echo "[1/7] Verificando ferramentas básicas do sistema..."
+echo "[1/8] Verificando ferramentas básicas do sistema..."
 if ! command -v curl >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
   echo "Instalando curl, git e utilitários..."
   $SUDO apt-get update -qq
@@ -34,7 +34,7 @@ if ! command -v curl >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
 fi
 
 # 2. Verificar versão do Node.js
-echo "[2/7] Verificando versão do Node.js..."
+echo "[2/8] Verificando versão do Node.js..."
 NEED_NODE_INSTALL=false
 
 if command -v node >/dev/null 2>&1; then
@@ -60,11 +60,11 @@ if [ "$NEED_NODE_INSTALL" = true ]; then
 fi
 
 # 3. Instalar dependências npm
-echo "[3/7] Instalando dependências do projeto (npm install)..."
+echo "[3/8] Instalando dependências do projeto (npm install)..."
 npm install
 
 # 4. Instalar navegador Chromium do Playwright
-echo "[4/7] Baixando binário do Chromium via Playwright..."
+echo "[4/8] Baixando binário do Chromium via Playwright..."
 if [ -f "$SCRIPT_DIR/node_modules/playwright/cli.js" ]; then
   node "$SCRIPT_DIR/node_modules/playwright/cli.js" install chromium
 else
@@ -72,7 +72,7 @@ else
 fi
 
 # 5. Instalar dependências de sistema para o Chromium no Linux
-echo "[5/7] Instalando bibliotecas do sistema para o Chromium..."
+echo "[5/8] Instalando bibliotecas do sistema para o Chromium..."
 INSTALL_DEPS_SUCCESS=false
 if [ -n "$SUDO" ]; then
   if $SUDO env "PATH=$PATH" npx playwright install-deps chromium; then
@@ -117,6 +117,7 @@ else
 fi
 
 # 6. Configurar perfil AppArmor se Ubuntu 23.10 / 24.04+ com restrição de userns
+echo "[6/8] Verificando restrições de User Namespaces (AppArmor)..."
 if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
   RESTRICT_USERNS="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo "0")"
   if [ "$RESTRICT_USERNS" = "1" ] && [ -d /etc/apparmor.d ] && command -v apparmor_parser >/dev/null 2>&1; then
@@ -141,7 +142,7 @@ EOF
 fi
 
 # 7. Permissões de scripts e arquivo de credenciais
-echo "[6/7] Ajustando permissões e credenciais..."
+echo "[7/8] Ajustando permissões e credenciais..."
 chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
 
 if [ ! -f "$SCRIPT_DIR/credentials.env" ]; then
@@ -171,7 +172,7 @@ if [ -n "$GEN_KEY" ] && [ -f "$SCRIPT_DIR/credentials.env" ]; then
 fi
 
 # 8. Teste de inicialização do Chromium
-echo "[7/7] Testando inicialização do Chromium no ambiente..."
+echo "[8/8] Testando inicialização do Chromium no ambiente..."
 if [ -d "$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu" ]; then
   export LD_LIBRARY_PATH="$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
 fi
