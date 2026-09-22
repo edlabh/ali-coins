@@ -163,35 +163,55 @@ npm start -- --dry-run --notify
 | **2FA Requerido (Cron)** |       `5`       |          Sim          | 🔐 Interrupção rápida (<5s) em cron sem TTY com instruções de export/import        |
 | **Falha Global (Crash)** |       `6`       |          Sim          | 💥 Erro fatal não tratado ou Promise rejeitada (uncaughtException / unhandled)     |
 
-### Exemplo de Mensagem Recebida (Modo Unificado):
+### Exemplo de Mensagem Recebida (Notificação Individual por Conta):
+
+Enviada no modo conta única e, no modo multi-conta, somente com `TELEGRAM_PER_ACCOUNT=true`
+(com o padrão `false`, o individual é suprimido quando o chat coincide com o consolidado).
 
 ```text
-✅ AliExpress Moedas - Sucesso
-
+✅ ali-coins — 22/09/2026
 👤 Conta: ag***@gmail.com
-💰 Saldo Atualizado: 1555 moedas
-🔥 Sequência (Streak): 200 dias seguidos
-📅 Check-in: Coletado com sucesso (+40 moedas)
-
-📋 Tarefas Realizadas:
- • Explore sponsored items: Concluída (+5 moedas)
- • Pesquise por "fone bluetooth gamer": Concluída (+5 moedas)
-
-⏱️ Duração: Check-in: 5s | Tarefas: 10s | Total: 15s
-📅 Data: 14/09/2026 16:15:00 | 🖥️ Host: servidor-vps
+🖥️ Host: servidor-vps (v1.5.1)
+🪙 Ganhas hoje: +111 moedas (check-in +40 / tarefas +71)
+📅 Sequência: 219 dias
+💰 Saldo: 3043 moedas
+⏱️ Duração: 2m 27s
 ```
 
-### Exemplo de Mensagem Recebida (Modo Multi-Conta):
+> Sem ação nova (check-in já coletado e sem tarefas pendentes), o título vira
+> `ℹ️ ali-coins — ...` e os ganhos aparecem como `+0`.
+
+### Exemplo de Mensagem Recebida (Consolidada Multi-Conta):
+
+Sempre enviada no modo multi-conta (independente de `TELEGRAM_PER_ACCOUNT`):
 
 ```text
-✅ AliExpress Moedas - Multi-Conta (Sucesso)
+✅ AliExpress Moedas - Multi-Conta (Sucesso) — 22/09/2026
 📊 Resumo: 2/2 contas processadas com sucesso
 
-[1] jo***@gmail.com: 💰 1555 moedas | Streak: 200d (+40) | Tarefas: 2
-[2] ma***@gmail.com: 💰 320 moedas | Streak: 12d (+20) | Tarefas: 1
+[1] ag***@gmail.com: 💰 3043 moedas | 🪙 +111 (+40/+71) | Streak: 219
+[2] ed***@gmail.com: 💰 625 moedas | 🪙 +57 (+1/+56) | Streak: 7
 
-⏱️ Duração Total: 38s
-📅 Data: 14/09/2026 16:15:00 | 🖥️ Host: servidor-vps
+⏱️ Duração Total: 5m 10s
+📅 Data: 22/09/2026 15:28:28
+🖥️ Host: servidor-vps (v1.5.1)
+```
+
+> Sem ação nova, o título vira `ℹ️ ... (Já Coletado)`. Se alguma conta falhar, o
+> consolidado é enviado no formato de falha (🔴) e o detalhe por conta fica nas
+> notificações individuais (com `TELEGRAM_PER_ACCOUNT=true`).
+
+### Exemplo de Mensagem Recebida (Falha com Sessão Importada Expirada):
+
+```text
+🔴 ali-coins — 22/09/2026 15:23:38
+⚠️ Erro: Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "re***@yahoo.com.br".
+👤 Conta: re***@yahoo.com.br
+🖥️ Host: servidor-vps (v1.5.1)
+
+⚠️ Aviso de Sessão Remota:
+A sessão em uso foi importada de outro host (via import_session.js) e parece ter expirado ou sido invalidada pelo AliExpress.
+💡 Ação necessária: É necessário gerar uma nova sessão executando node export_session.js no servidor de origem e importá-la neste host com node import_session.js.
 ```
 
 ---

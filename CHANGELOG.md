@@ -30,8 +30,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 - `TELEGRAM.md`: corrigida a descrição do modo multi-conta com um único chat (o
   consolidado é sempre enviado; a mensagem individual é suprimida com
-  `TELEGRAM_PER_ACCOUNT=false`) e documentada a variável `TELEGRAM_PER_ACCOUNT` no
-  exemplo de `credentials.env` e na lista de recursos.
+  `TELEGRAM_PER_ACCOUNT=false`), documentada a variável `TELEGRAM_PER_ACCOUNT` no
+  exemplo de `credentials.env` e na lista de recursos, e substituídos os exemplos de
+  mensagem pelos formatos reais (individual, consolidada e falha com sessão expirada).
 - `setup_linux.sh`: numeração das etapas alinhada (8 etapas, incluindo a verificação de
   restrições de User Namespaces/AppArmor).
 
