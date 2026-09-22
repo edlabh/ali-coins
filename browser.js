@@ -88,6 +88,10 @@ const BACKGROUND_CPU_SAVING_ARGS = [
   '--disable-default-apps',
   '--disable-client-side-phishing-detection',
   '--metrics-recording-only',
+  // Reduz processamento visual no headless: sem animações/scroll suave a GPU virtual
+  // gasta menos CPU em composição (as tarefas não dependem de animação).
+  '--disable-animations',
+  '--disable-smooth-scrolling',
   '--disable-features=Translate,AcceptCHFrame,MediaRouter,OptimizationHints'
 ];
 
@@ -333,23 +337,30 @@ async function setupResourceBlocking(context, allowMedia = false) {
   await context.route('**/*', (route) => {
     const req = route.request();
     const resourceType = req.resourceType();
+
+    // 1) Fast-path por TIPO: imagens/mídia/fontes são abortadas sem materializar a URL
+    //    nem rodar regex (economiza IPC/CPU em cada requisição).
+    if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font') {
+      return route.abort();
+    }
+
     const url = req.url().toLowerCase();
 
-    // Bloquear imagens, mídias pesadas e fontes
-    if (['image', 'media', 'font'].includes(resourceType)) {
-      return route.abort();
-    }
-
-    if (/\.(png|jpg|jpeg|webp|gif|svg|mp4|webm|woff2|woff|ttf)(\?.*)?$/i.test(url)) {
-      return route.abort();
-    }
-
-    // Bloquear domínios pesados de telemetria externa desnecessários para a tarefa
+    // 2) Telemetria conhecida: substring barata, aplicada a qualquer tipo.
     if (
       url.includes('umeng.com') ||
       url.includes('google-analytics.com') ||
       url.includes('googletagmanager.com') ||
       url.includes('doubleclick.net')
+    ) {
+      return route.abort();
+    }
+
+    // 3) Regex de extensão apenas para tipos genéricos ('other'): document/script/
+    //    stylesheet/xhr não carregam assets de imagem/fonte e evitam a regex.
+    if (
+      resourceType === 'other' &&
+      /\.(png|jpg|jpeg|webp|gif|svg|mp4|webm|woff2|woff|ttf)(\?.*)?$/i.test(url)
     ) {
       return route.abort();
     }

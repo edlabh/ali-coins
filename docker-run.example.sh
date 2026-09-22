@@ -62,6 +62,8 @@ done
   /usr/bin/docker run --rm --name "$RUN_NAME" \
     --init \
     --pids-limit=256 \
+    --shm-size=256m \
+    --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m \
     --cap-drop=ALL --security-opt=no-new-privileges \
     --memory="$MEM_LIMIT" --memory-swap="$MEM_SWAP" \
     --log-opt max-size=10m --log-opt max-file=3 \

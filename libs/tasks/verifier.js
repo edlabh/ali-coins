@@ -35,7 +35,10 @@ async function openTaskDrawer(optionsOrPage, maybeLogger) {
   // Auto-cura: monitora se a página está presa no esqueleto de carregamento (skeleton)
   if (page.evaluate) {
     let reloaded = false;
-    for (let wait = 0; wait < 12; wait++) {
+    // Checagens a cada 350ms (até ~9s no total): o bot detecta o fim do skeleton e clica
+    // no botão de tarefas assim que o DOM estabiliza, economizando 2-4s por conta em vez
+    // de dormir 1s fixo por iteração.
+    for (let wait = 0; wait < 25; wait++) {
       const isSkeleton = await page
         .evaluate(() => !!document.querySelector('.login-pending-container'))
         .catch(() => false);
@@ -44,15 +47,16 @@ async function openTaskDrawer(optionsOrPage, maybeLogger) {
 
       if (hasBtn || (!isSkeleton && wait > 0)) break;
 
-      // Se persistir no skeleton por 6 segundos e ainda não recarregou, recarrega a página defensivamente
-      if (wait === 6 && !reloaded && typeof page.reload === 'function') {
+      // Se persistir no skeleton por ~6 segundos (17 × 350ms) e ainda não recarregou,
+      // recarrega a página defensivamente
+      if (wait === 17 && !reloaded && typeof page.reload === 'function') {
         logger.info('Página presa em skeleton de carregamento. Recarregando página (reload)...');
         reloaded = true;
         await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
       }
 
       if (page.waitForTimeout) {
-        await page.waitForTimeout(1000).catch(() => {});
+        await page.waitForTimeout(350).catch(() => {});
       }
     }
   }

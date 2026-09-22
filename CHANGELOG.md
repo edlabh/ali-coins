@@ -11,6 +11,18 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.5.0] - 2026-09-22
+
+### Performance e Eficiência
+
+- **Container mais enxuto e econômico (`Dockerfile`, `docker-run.example.sh`):** caches de download (Playwright/apt) removidos na mesma camada (`rm -rf /root/.cache /tmp/*`); `NODE_OPTIONS=--max-old-space-size=256` (folga de GC sem pressionar hosts de 1 GB); `HEALTHCHECK` com `--interval=10m` e `--start-period=90s` (menos CPU em background); `--shm-size=256m` e `--tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m` no exemplo de execução, evitando que buffers de rasterização/renderização do Chromium gravem na camada `overlay2`.
+- **Menos overhead de rede/IPC no Playwright (`browser.js`):** o bloqueio de recursos decide primeiro por `resourceType()` (imagem/mídia/fonte abortadas **sem** materializar URL nem rodar regex); a regex de extensão ficou restrita a tipos genéricos (`other`) e a telemetria continua bloqueada por substring. Flags `--disable-animations` e `--disable-smooth-scrolling` adicionadas às flags de economia de CPU.
+- **Fim do skeleton detectado mais rápido (`libs/tasks/verifier.js`):** o loop de auto-cura passou de sleeps fixos de 1s (12 iterações) para checagens a cada **350ms** (25 iterações, ~9s no total), com o reload defensivo mantido em ~6s — economiza de 2 a 4s por conta quando o DOM estabiliza antes do teto.
+
+### Testes
+
+- Suíte mantida em **387/387**; lint (`--max-warnings=0`) e format limpos.
+
 ## [1.4.8] - 2026-09-22
 
 ### Corrigido

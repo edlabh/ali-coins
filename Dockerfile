@@ -44,8 +44,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Modo produção: logs em JSON direto no stdout (sem pino-pretty, que é devDependency)
 ENV NODE_ENV=production
 
-# Teto de heap V8 do processo Node: GC mais agressivo antes de pressionar hosts de 1 GB
-ENV NODE_OPTIONS=--max-old-space-size=192
+# Teto de heap V8 do processo Node: GC mais agressivo antes de pressionar hosts de 1 GB.
+# 256 MB dá folga ao GC (menos pausas sob pressão) sem ameaçar hosts de 1 GB.
+ENV NODE_OPTIONS=--max-old-space-size=256
 
 WORKDIR /app
 
@@ -64,6 +65,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts && \
     npx playwright install --only-shell chromium && \
     npm cache clean --force && \
+    rm -rf /root/.cache /tmp/* && \
     chown -R appuser:appuser /ms-playwright /app
 
 # Copiar código-fonte da aplicação
@@ -77,10 +79,11 @@ USER appuser
 
 # Verificação de saúde real: valida credentials.env/schema sem fallback enganoso.
 # Se o arquivo não estiver montado ou a configuração estiver inválida, o container fica unhealthy.
-# Intervalo de 5 min: o job roda 1x/dia; checagens a cada 30s só gastariam CPU/RAM à toa.
+# Intervalo de 10 min: o job roda 1x/dia; checagens mais frequentes só gastariam CPU à toa.
+# start-period de 90s dá margem ao primeiro dry-run sob CPU/RAM apertadas.
 # Timeout/retries folgados: sob pressão de CPU/RAM durante o run, o dry-run pode passar de
 # 15s e marcar o container como unhealthy sem falha real de configuração.
-HEALTHCHECK --interval=5m --timeout=30s --start-period=60s --retries=5 \
+HEALTHCHECK --interval=10m --timeout=30s --start-period=90s --retries=5 \
     CMD node all.js --dry-run --json > /dev/null 2>&1
 
 STOPSIGNAL SIGTERM
