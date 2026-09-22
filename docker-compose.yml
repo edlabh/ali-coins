@@ -22,7 +22,6 @@ services:
     image: ali-coins:latest
     container_name: ali-coins
     init: true
-    pids_limit: 256
     shm_size: '256m'
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=256m
@@ -34,6 +33,7 @@ services:
       resources:
         limits:
           memory: 768M
+          pids: 256
     memswap_limit: 1536m
     volumes:
       - type: bind
