@@ -119,6 +119,36 @@ function isLowMemoryModeEnabled() {
 }
 
 /**
+ * Decide se o Chromium deve iniciar com `--disable-dev-shm-usage`.
+ *
+ * A flag existe para contornar o /dev/shm pequeno (64 MB) do Docker padrão. Em hosts
+ * Linux nativos ou containers com `--shm-size` >= 128 MB, o /dev/shm é tmpfs em RAM e a
+ * flag forçaria o Chromium a gravar buffers/IPC no disco (I/O e latência).
+ *
+ * @param {object} [deps={}] Injeção para testes
+ * @param {string} [deps.platform] process.platform
+ * @param {Function} [deps.statfs] fs.statfsSync
+ * @param {string} [deps.shmPath='/dev/shm']
+ * @returns {boolean}
+ */
+function shouldDisableDevShmUsage({
+  platform = process.platform,
+  statfs = fs.statfsSync,
+  shmPath = '/dev/shm'
+} = {}) {
+  // Windows/macOS não têm /dev/shm: a flag não se aplica.
+  if (platform !== 'linux') return false;
+  try {
+    const stat = statfs(shmPath);
+    const freeMb = (stat.bfree * stat.bsize) / (1024 * 1024);
+    return freeMb < 128;
+  } catch {
+    // Sem acesso/estatística: fallback defensivo (comportamento histórico).
+    return true;
+  }
+}
+
+/**
  * Monta os argumentos do Chromium com overrides opcionais (usados no fallback de launch).
  * @param {object} [overrides={}]
  * @param {boolean} [overrides.forceNoSandbox=false] Força --no-sandbox mesmo sem root/CI/NO_SANDBOX
@@ -129,11 +159,12 @@ function buildChromiumArgs({ forceNoSandbox = false, lowMemory } = {}) {
   const info = isNoSandboxRequired();
   const shouldDisable = info.shouldDisable || forceNoSandbox;
   const useLowMemory = lowMemory !== undefined ? Boolean(lowMemory) : isLowMemoryModeEnabled();
-  const args = [
-    '--disable-dev-shm-usage',
-    '--disable-blink-features=AutomationControlled',
-    ...BACKGROUND_CPU_SAVING_ARGS
-  ];
+  const args = ['--disable-blink-features=AutomationControlled', ...BACKGROUND_CPU_SAVING_ARGS];
+
+  // Só força o uso de disco para os buffers quando o /dev/shm é pequeno (Docker padrão).
+  if (shouldDisableDevShmUsage()) {
+    args.push('--disable-dev-shm-usage');
+  }
 
   if (shouldDisable) {
     logger.warn(
@@ -610,6 +641,7 @@ module.exports = {
   stripUrlCredentials,
   isLowMemoryModeEnabled,
   getLowMemoryChromiumArgs,
+  shouldDisableDevShmUsage,
   getChromiumJsHeapMb,
   DEFAULT_JS_HEAP_MB,
   NO_ZYGOTE_ARG,

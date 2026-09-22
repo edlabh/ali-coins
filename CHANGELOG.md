@@ -15,6 +15,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Performance e Eficiência
 
+**2ª rodada:**
+
+- **Check-in mobile sem navegação redundante (`collect.js`):** o contexto mobile navegava primeiro para a página desktop `mycoin.html` e, na linha seguinte, descartava a página para a URL mobile. Agora vai **direto** para `m.aliexpress.com/p/coin-index/index.html` (o contexto já herda os cookies do `storageState`), com o fallback defensivo mantido caso o site redirecione para a versão desktop — economiza 3–6s de rede/CPU e ~25–40 MB de heap por conta.
+- **`/dev/shm` detectado dinamicamente (`browser.js`):** novo `shouldDisableDevShmUsage()` — em Windows/macOS não aplica a flag; em Linux usa `fs.statfsSync('/dev/shm')` e só adiciona `--disable-dev-shm-usage` quando o espaço livre é **< 128 MB** (Docker padrão de 64 MB). Em hosts nativos ou containers com `--shm-size=256m`, o Chromium volta a usar tmpfs em RAM (evita I/O de disco nos buffers). Falha de `statfs` cai no fallback defensivo (aplica a flag).
+- **Heap V8 padronizado nos scripts nativos (`run_all.sh`, `run.sh`, `run_tasks.sh`):** `export NODE_OPTIONS="${NODE_OPTIONS:--max-old-space-size=256}"` — mesma proteção do container contra o OOM Killer quando a automação roda direto na VPS via cron (valor existente é preservado).
+- **BuildKit cache mounts e `docker-compose.yml` (`Dockerfile`, `.dockerignore`):** caches de apt e npm ficam **fora da imagem** (`--mount=type=cache`), acelerando reconstruções; criado `docker-compose.yml` de referência com `shm_size: 256m`, tmpfs `/tmp`, `cap_drop: [ALL]`, `no-new-privileges`, limite de 768M e binds com `create_host_path: false` (falha clara se um arquivo obrigatório não existir).
+
+**1ª rodada:**
+
 - **Container mais enxuto e econômico (`Dockerfile`, `docker-run.example.sh`):** caches de download (Playwright/apt) removidos na mesma camada (`rm -rf /root/.cache /tmp/*`); `NODE_OPTIONS=--max-old-space-size=256` (folga de GC sem pressionar hosts de 1 GB); `HEALTHCHECK` com `--interval=10m` e `--start-period=90s` (menos CPU em background); `--shm-size=256m` e `--tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m` no exemplo de execução, evitando que buffers de rasterização/renderização do Chromium gravem na camada `overlay2`.
 - **Menos overhead de rede/IPC no Playwright (`browser.js`):** o bloqueio de recursos decide primeiro por `resourceType()` (imagem/mídia/fonte abortadas **sem** materializar URL nem rodar regex); a regex de extensão ficou restrita a tipos genéricos (`other`) e a telemetria continua bloqueada por substring. Flags `--disable-animations` e `--disable-smooth-scrolling` adicionadas às flags de economia de CPU.
 - **Fim do skeleton detectado mais rápido (`libs/tasks/verifier.js`):** o loop de auto-cura passou de sleeps fixos de 1s (12 iterações) para checagens a cada **350ms** (25 iterações, ~9s no total), com o reload defensivo mantido em ~6s — economiza de 2 a 4s por conta quando o DOM estabiliza antes do teto.

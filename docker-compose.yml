@@ -1,0 +1,58 @@
+# Docker Compose de referência para produção.
+#
+# Equivalente declarativo ao docker-run.example.sh:
+#   - /dev/shm e /tmp em memória (o Chromium não grava buffers na camada overlay2)
+#   - limites de memória/pids, cap_drop ALL e no-new-privileges
+#   - bind mounts somente-leitura para credenciais/contas
+#
+# Uso:
+#   docker compose build
+#   docker compose run --rm ali-coins      # execução avulsa (equivalente ao cron)
+#   docker compose up                      # execução padrão (CMD do Dockerfile)
+#
+# Notas:
+#   - Os binds usam `create_host_path: false`: se o arquivo não existir, o Compose
+#     FALHA com mensagem clara em vez de criar um diretório root no host.
+#   - Remova/comente os binds de `accounts.json` (multi-conta) e `session.json.enc`
+#     se não forem usados no seu setup.
+services:
+  ali-coins:
+    build:
+      context: .
+    image: ali-coins:latest
+    container_name: ali-coins
+    init: true
+    pids_limit: 256
+    shm_size: '256m'
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    memswap_limit: 1536m
+    volumes:
+      - type: bind
+        source: ./credentials.env
+        target: /app/credentials.env
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./accounts.json
+        target: /app/accounts.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./session.json.enc
+        target: /app/session.json.enc
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./scratch
+        target: /app/scratch

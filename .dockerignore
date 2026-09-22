@@ -64,3 +64,7 @@ eslint.config.js
 # Backups/temporários de escrita atômica (podem conter sessão)
 *.bak-*
 *.tmp-*
+
+# Compose de referência (não precisa entrar na imagem)
+docker-compose*.yml
+compose*.yml

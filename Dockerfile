@@ -17,8 +17,12 @@
 # Para atualizar o digest: docker buildx imagetools inspect node:22-slim
 FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
-# Instalar dependências essenciais de runtime do Chromium (sem curl: não é usado em runtime)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Instalar dependências essenciais de runtime do Chromium (sem curl: não é usado em runtime).
+# Cache mounts do BuildKit: os índices/pacotes ficam FORA da imagem e são reaproveitados
+# entre builds (por isso não há `rm -rf /var/lib/apt/lists/*` aqui).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libnss3 \
     libnspr4 \
@@ -35,8 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libpango-1.0-0 \
     libcairo2 \
-    fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-liberation
 
 # Cache compartilhado de binários do navegador Playwright
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
@@ -62,9 +65,10 @@ RUN groupadd -g 10001 appuser && \
 # Nota BuildKit: Para compilações mais velozes com cache local de navegadores, pode-se usar:
 # RUN --mount=type=cache,target=/ms-playwright npx playwright install --only-shell chromium
 COPY package*.json ./
-RUN npm ci --omit=dev --ignore-scripts && \
+# Cache mount do npm: o cache de pacotes fica fora da imagem e acelera reconstruções.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev --ignore-scripts && \
     npx playwright install --only-shell chromium && \
-    npm cache clean --force && \
     rm -rf /root/.cache /tmp/* && \
     chown -R appuser:appuser /ms-playwright /app
 

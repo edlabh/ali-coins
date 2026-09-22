@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# Proteção contra OOM Killer fora do container: mesma folga de heap do Dockerfile.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=256}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "$(uname)" = "Linux" ] && [ -d "$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu" ]; then
   export LD_LIBRARY_PATH="$SCRIPT_DIR/libs/extracted/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"

@@ -114,18 +114,16 @@ async function runCheckin(options = {}) {
 
     try {
       page = await context.newPage();
-      if (hasValidSession) {
-        await gotoWithRetry(page, SELECTORS.desktop.mycoinUrl, {
-          waitUntil: 'domcontentloaded',
-          timeout: config.NAV_TIMEOUT_SHORT
-        }).catch(() => {});
-        await page.waitForLoadState('domcontentloaded');
-      }
-
-      await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+      // Navega DIRETO para a URL mobile: o contexto já herda os cookies do storageState e
+      // a visita prévia ao mycoin desktop era descartada na linha seguinte — desperdiçava
+      // 3-6s de rede/CPU e ~25-40 MB de heap por conta processando o DOM desktop em
+      // viewport mobile.
+      const mobileCoinUrl = 'https://m.aliexpress.com/p/coin-index/index.html';
+      await gotoWithRetry(page, mobileCoinUrl, {
         waitUntil: 'domcontentloaded',
         timeout: config.NAV_TIMEOUT
       });
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
 
       if (!hasValidSession) {
         // Se não possui sessão prévia válida, aguarda pelo formulário de login
@@ -143,7 +141,7 @@ async function runCheckin(options = {}) {
 
       if (page.url().includes('coin-pc-index')) {
         await page.setViewportSize({ width: 412, height: 915 });
-        await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
+        await gotoWithRetry(page, mobileCoinUrl, {
           waitUntil: 'domcontentloaded',
           timeout: config.NAV_TIMEOUT_SHORT
         });

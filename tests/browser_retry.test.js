@@ -190,7 +190,8 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
   const {
     getChromiumArgs,
     isLowMemoryModeEnabled,
-    getLowMemoryChromiumArgs
+    getLowMemoryChromiumArgs,
+    shouldDisableDevShmUsage
   } = require('../browser');
   const original = process.env.CHROMIUM_LOW_MEMORY;
   const originalHeap = process.env.CHROMIUM_JS_HEAP_MB;
@@ -216,7 +217,11 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
       EXPECTED_LOW_MEMORY_FLAGS,
       'Conjunto de flags de baixo consumo deve ser exatamente o documentado'
     );
-    assert.ok(defaultArgs.includes('--disable-dev-shm-usage'), 'Flags base devem ser preservadas');
+    assert.strictEqual(
+      defaultArgs.includes('--disable-dev-shm-usage'),
+      shouldDisableDevShmUsage(),
+      'A flag --disable-dev-shm-usage deve seguir a detecção de /dev/shm'
+    );
     assert.ok(
       defaultArgs.includes('--disable-blink-features=AutomationControlled'),
       'Flags base devem ser preservadas'
@@ -238,7 +243,11 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
         false,
         `Nenhuma flag de baixo consumo deve permanecer com CHROMIUM_LOW_MEMORY=${offValue}`
       );
-      assert.ok(args.includes('--disable-dev-shm-usage'), 'Flags base permanecem no opt-out');
+      assert.strictEqual(
+        args.includes('--disable-dev-shm-usage'),
+        shouldDisableDevShmUsage(),
+        'A flag --disable-dev-shm-usage deve permanecer consistente no opt-out'
+      );
     }
 
     // 3. Opt-in explícito continua funcionando
@@ -645,5 +654,44 @@ test('browser.js - getChromiumEnv remove credenciais de proxy e chaves sensívei
     if (savedPw !== undefined) process.env.ALI_ACC_PASS = savedPw;
     else delete process.env.ALI_ACC_PASS;
     for (const k of Object.keys(process.env)) if (!(k in orig)) delete process.env[k];
+  }
+});
+
+test('browser.js - shouldDisableDevShmUsage decide por plataforma e espaço em /dev/shm', () => {
+  const { shouldDisableDevShmUsage } = require('../browser');
+  const realFilesSnapshot = snapshotRealFiles();
+  const MB = 1024 * 1024;
+  try {
+    // Windows/macOS não têm /dev/shm: a flag não se aplica
+    assert.strictEqual(shouldDisableDevShmUsage({ platform: 'win32' }), false);
+    assert.strictEqual(shouldDisableDevShmUsage({ platform: 'darwin' }), false);
+
+    // Linux com /dev/shm pequeno (64 MB): aplica a flag
+    const small = () => ({ bsize: 4096, bfree: (64 * MB) / 4096 });
+    assert.strictEqual(
+      shouldDisableDevShmUsage({ platform: 'linux', statfs: small }),
+      true,
+      '/dev/shm pequeno deve desabilitar o uso'
+    );
+
+    // Linux com /dev/shm grande (256 MB): não aplica (tmpfs em RAM)
+    const big = () => ({ bsize: 4096, bfree: (256 * MB) / 4096 });
+    assert.strictEqual(
+      shouldDisableDevShmUsage({ platform: 'linux', statfs: big }),
+      false,
+      '/dev/shm grande deve permitir o uso de RAM'
+    );
+
+    // Exceção no statfs: fallback defensivo
+    const boom = () => {
+      throw new Error('EACCES');
+    };
+    assert.strictEqual(
+      shouldDisableDevShmUsage({ platform: 'linux', statfs: boom }),
+      true,
+      'exceção deve cair no fallback defensivo'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
   }
 });
