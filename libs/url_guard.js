@@ -8,6 +8,7 @@
 const dns = require('dns').promises;
 const dnsNative = require('node:dns');
 const net = require('net');
+const logger = require('../logger');
 
 // undici é opcional: quando disponível, o transporte usa um dispatcher com `lookup`
 // PINADO — o IP validado na checagem é o mesmo usado na conexão, eliminando o TOCTOU
@@ -19,6 +20,29 @@ try {
   undici = null;
 }
 const NATIVE_FETCH = globalThis.fetch;
+let undiciWarningEmitted = false;
+
+/**
+ * Emite (uma única vez por processo) o aviso de que o pinning de DNS está desativado,
+ * deixando a mitigação SSRF apenas na resolução prévia de DNS.
+ * @returns {boolean} true se emitiu agora; false se já havia emitido.
+ */
+function warnUndiciUnavailableOnce() {
+  if (undiciWarningEmitted) return false;
+  undiciWarningEmitted = true;
+  logger.warn(
+    'Módulo undici indisponível: proteção anti-DNS rebinding via lookup pinado desativada; ' +
+      'mitigação SSRF baseada exclusivamente em resolução prévia de DNS.'
+  );
+  return true;
+}
+
+/**
+ * Reseta a flag de aviso (uso exclusivo em testes).
+ */
+function _resetUndiciWarningForTest() {
+  undiciWarningEmitted = false;
+}
 
 const PRIVATE_HOSTNAMES = new Set([
   'localhost',
@@ -302,29 +326,38 @@ let pinnedAgentAllowPrivate = null;
  * @param {boolean} allowPrivate
  * @returns {object|null}
  */
-function getPinnedDispatcher(allowPrivate) {
-  if (!undici || typeof undici.Agent !== 'function') return null;
+function getPinnedDispatcher(allowPrivate, undiciModule = undici) {
+  if (!undiciModule || typeof undiciModule.Agent !== 'function') return null;
   if (allowPrivate) {
-    if (!pinnedAgentAllowPrivate) pinnedAgentAllowPrivate = new undici.Agent();
+    if (!pinnedAgentAllowPrivate) pinnedAgentAllowPrivate = new undiciModule.Agent();
     return pinnedAgentAllowPrivate;
   }
   if (!pinnedAgentStrict) {
-    pinnedAgentStrict = new undici.Agent({ connect: { lookup: createSafeLookup() } });
+    pinnedAgentStrict = new undiciModule.Agent({ connect: { lookup: createSafeLookup() } });
   }
   return pinnedAgentStrict;
 }
 
 /**
  * Decide o transporte do safeFetch: mantém o mock de `global.fetch` quando presente
- * (testes) e, em produção, usa undici com lookup pinado quando disponível.
+ * (testes) e, em produção, usa undici com lookup pinado quando disponível. Se o
+ * conector pinado não puder ser criado, emite aviso (uma vez) e cai para o fetch
+ * nativo — sem pinning, mas com a validação de DNS prévia.
  * @param {object} [options={}]
  * @param {boolean} [options.allowPrivate]
+ * @param {object|null} [options.undiciModule] Injeção para testes
  * @returns {{ fetchImpl: Function, dispatcher: object|null }}
  */
-function resolveFetchTransport({ allowPrivate = false } = {}) {
+function resolveFetchTransport({ allowPrivate = false, undiciModule = undici } = {}) {
   const usingMock = globalThis.fetch !== NATIVE_FETCH;
-  if (!usingMock && undici && typeof undici.fetch === 'function') {
-    return { fetchImpl: undici.fetch, dispatcher: getPinnedDispatcher(allowPrivate) };
+  if (!usingMock && undiciModule && typeof undiciModule.fetch === 'function') {
+    const dispatcher = getPinnedDispatcher(allowPrivate, undiciModule);
+    if (dispatcher) {
+      return { fetchImpl: undiciModule.fetch, dispatcher };
+    }
+  }
+  if (!usingMock) {
+    warnUndiciUnavailableOnce();
   }
   return { fetchImpl: globalThis.fetch, dispatcher: null };
 }
@@ -452,5 +485,7 @@ module.exports = {
   filterSafeAddresses,
   createSafeLookup,
   resolveFetchTransport,
+  warnUndiciUnavailableOnce,
+  _resetUndiciWarningForTest,
   PRIVATE_HOSTNAMES
 };

@@ -268,6 +268,74 @@ test('config.js - HEARTBEAT_URL exige https (http só localhost/opt-in)', () => 
   );
 });
 
+test('config.js - NOTIFY_WEBHOOK_URL validada no boot (formato e https)', () => {
+  const base = {
+    ALI_USER: 'a@b.co',
+    ALI_PASSWORD: 'p',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
+  assert.strictEqual(
+    configSchema.safeParse({
+      ...base,
+      NOTIFY_WEBHOOK_URL: 'https://discord.com/api/webhooks/123'
+    }).success,
+    true,
+    'HTTPS válida deve passar'
+  );
+  assert.strictEqual(
+    configSchema.safeParse({ ...base, NOTIFY_WEBHOOK_URL: 'http://127.0.0.1:8080/hook' }).success,
+    true,
+    'HTTP loopback deve passar por padrão'
+  );
+  const httpPublic = configSchema.safeParse({
+    ...base,
+    NOTIFY_WEBHOOK_URL: 'http://example.com/hook'
+  });
+  assert.strictEqual(httpPublic.success, false, 'HTTP público deve ser rejeitado');
+  assert.ok(
+    httpPublic.error.issues.some((i) => i.path.join('.') === 'NOTIFY_WEBHOOK_URL'),
+    'issue deve apontar para NOTIFY_WEBHOOK_URL'
+  );
+  assert.strictEqual(
+    configSchema.safeParse({ ...base, NOTIFY_WEBHOOK_URL: 'ftp://x' }).success,
+    false,
+    'esquema inválido deve ser rejeitado'
+  );
+  assert.strictEqual(
+    configSchema.safeParse({ ...base, NOTIFY_WEBHOOK_URL: '' }).success,
+    true,
+    'vazia é permitida (webhook opcional)'
+  );
+});
+
+test('config.js - NOTIFY_WEBHOOK_URL http público com ALLOW_PRIVATE_WEBHOOKS=true', () => {
+  const original = process.env.ALLOW_PRIVATE_WEBHOOKS;
+  process.env.ALLOW_PRIVATE_WEBHOOKS = 'true';
+  try {
+    const r = configSchema.safeParse({
+      ALI_USER: 'a@b.co',
+      ALI_PASSWORD: 'p',
+      SESSION_SECRET: '12345678901234567890123456789012',
+      NOTIFY_WEBHOOK_URL: 'http://example.com/hook'
+    });
+    assert.strictEqual(r.success, true, 'opt-in explícito deve liberar http público');
+  } finally {
+    if (original !== undefined) process.env.ALLOW_PRIVATE_WEBHOOKS = original;
+    else delete process.env.ALLOW_PRIVATE_WEBHOOKS;
+  }
+});
+
+test('config.js - NOTIFY_HOST_LABEL é truncado em 64 caracteres', () => {
+  const parsed = configSchema.parse({
+    ALI_USER: 'a@b.co',
+    ALI_PASSWORD: 'p',
+    SESSION_SECRET: '12345678901234567890123456789012',
+    NOTIFY_HOST_LABEL: `  ${'x'.repeat(100)}  `
+  });
+  assert.strictEqual(parsed.NOTIFY_HOST_LABEL.length, 64);
+  assert.strictEqual(parsed.NOTIFY_HOST_LABEL, 'x'.repeat(64));
+});
+
 test('libs/heartbeat.js - maskHeartbeatUrl mascara tokens em query string', () => {
   const { maskHeartbeatUrl } = require('../libs/heartbeat');
 

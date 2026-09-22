@@ -217,6 +217,15 @@ const configSchema = z
     NOTIFY_HOST_LABEL: z
       .preprocess((val) => {
         if (val === undefined || val === null) return '';
+        // Limite defensivo: rótulos longos inflam o tamanho da mensagem do Telegram.
+        return String(val).trim().slice(0, 64);
+      }, z.string())
+      .default(''),
+    // URL do webhook de notificação (Discord/Telegram/HTTP POST): validada no boot
+    // (antes só era avaliada em runtime, deixando URLs malformadas/http passarem).
+    NOTIFY_WEBHOOK_URL: z
+      .preprocess((val) => {
+        if (val === undefined || val === null) return '';
         return String(val).trim();
       }, z.string())
       .default(''),
@@ -295,6 +304,40 @@ const configSchema = z
             message:
               "HEARTBEAT_URL deve usar https:// (o token do dead man's switch não deve trafegar em claro). http:// é aceito apenas para localhost ou com ALLOW_PRIVATE_WEBHOOKS=true.",
             path: ['HEARTBEAT_URL']
+          });
+        }
+      }
+    }
+    // NOTIFY_WEBHOOK_URL: mesma regra do HEARTBEAT_URL, validada no boot.
+    if (data.NOTIFY_WEBHOOK_URL && data.NOTIFY_WEBHOOK_URL.length > 0) {
+      let whUrl = null;
+      try {
+        whUrl = new URL(data.NOTIFY_WEBHOOK_URL);
+      } catch {
+        // Formato inválido: cai no issue abaixo
+      }
+      if (!/^https?:\/\//i.test(data.NOTIFY_WEBHOOK_URL) || !whUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'NOTIFY_WEBHOOK_URL deve ser uma URL válida começando com http:// ou https://.',
+          path: ['NOTIFY_WEBHOOK_URL']
+        });
+      } else {
+        const whHost = whUrl.hostname
+          .toLowerCase()
+          .replace(/^\[|\]$/g, '')
+          .replace(/\.$/, '');
+        const isLoopbackWh =
+          whHost === 'localhost' ||
+          whHost === '::1' ||
+          /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(whHost) ||
+          /^::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(whHost);
+        if (whUrl.protocol === 'http:' && !isLoopbackWh && !allowPrivateTargets()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              'NOTIFY_WEBHOOK_URL deve usar https:// (o webhook não deve trafegar em claro). http:// é aceito apenas para localhost ou com ALLOW_PRIVATE_WEBHOOKS=true.',
+            path: ['NOTIFY_WEBHOOK_URL']
           });
         }
       }
@@ -528,6 +571,7 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TELEGRAM_PER_ACCOUNT: process.env.TELEGRAM_PER_ACCOUNT,
     TELEGRAM_TIMEOUT_MS: process.env.TELEGRAM_TIMEOUT_MS,
     NOTIFY_HOST_LABEL: process.env.NOTIFY_HOST_LABEL,
+    NOTIFY_WEBHOOK_URL: process.env.NOTIFY_WEBHOOK_URL,
     HEARTBEAT_ENABLED: rawHeartbeatEnabled,
     HEARTBEAT_URL: rawHeartbeatUrl,
     HEARTBEAT_TIMEOUT_MS: process.env.HEARTBEAT_TIMEOUT_MS
@@ -885,7 +929,7 @@ async function handleDryRun() {
           timeoutMs: cfg.HEARTBEAT_TIMEOUT_MS
         },
         webhook: {
-          urlConfigured: Boolean(process.env.NOTIFY_WEBHOOK_URL),
+          urlConfigured: Boolean(cfg.NOTIFY_WEBHOOK_URL),
           allowPrivateWebhooks: allowPrivateTargets()
         },
         accounts: maskedAccounts
@@ -924,7 +968,7 @@ async function handleDryRun() {
         ` • SESSION_SECRET: ${cfg.SESSION_SECRET ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}`
       );
       logger.info(
-        ` • Webhook de notificação: ${process.env.NOTIFY_WEBHOOK_URL ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}${allowPrivateTargets() ? ' (ALLOW_PRIVATE_WEBHOOKS ativo)' : ''}`
+        ` • Webhook de notificação: ${cfg.NOTIFY_WEBHOOK_URL ? '[CONFIGURADO]' : '[NÃO CONFIGURADO]'}${allowPrivateTargets() ? ' (ALLOW_PRIVATE_WEBHOOKS ativo)' : ''}`
       );
       logger.info(
         ` • Notificações Telegram: ${

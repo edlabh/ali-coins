@@ -20,12 +20,29 @@ const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper')
 test('libs/notify.js - escapeHtml neutraliza caracteres perigosos para HTML do Telegram', () => {
   assert.strictEqual(
     escapeHtml('Hello <world> & "friends"'),
-    'Hello &lt;world&gt; &amp; "friends"'
+    'Hello &lt;world&gt; &amp; &quot;friends&quot;'
   );
   assert.strictEqual(escapeHtml('<b>bold</b>'), '&lt;b&gt;bold&lt;/b&gt;');
   assert.strictEqual(escapeHtml(12345), '12345');
   assert.strictEqual(escapeHtml(null), '');
   assert.strictEqual(escapeHtml(undefined), '');
+});
+
+test('libs/notify.js - NOTIFY_HOST_LABEL é escapado no HTML do Telegram', () => {
+  const { buildMessage } = require('../libs/notify');
+  const original = process.env.NOTIFY_HOST_LABEL;
+  process.env.NOTIFY_HOST_LABEL = '<Servidor #1 & "Teste">';
+  try {
+    const msg = buildMessage({ event: 'success', report: { userEmail: 'a@b.com' } });
+    assert.ok(!msg.includes('<Servidor'), 'não deve conter a tag crua');
+    assert.ok(
+      msg.includes('&lt;Servidor #1 &amp; &quot;Teste&quot;&gt;'),
+      'deve escapar < > & e " no rótulo do host'
+    );
+  } finally {
+    if (original !== undefined) process.env.NOTIFY_HOST_LABEL = original;
+    else delete process.env.NOTIFY_HOST_LABEL;
+  }
 });
 
 test('libs/notify.js - truncateMessageIfNeeded respeita limite de 4096 caracteres do Telegram', () => {

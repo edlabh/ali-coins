@@ -97,7 +97,11 @@ async function postToTelegramWithRetry(apiUrl, payload, timeoutMs) {
  */
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -291,7 +295,9 @@ function buildMessage({
   hostname = process.env.NOTIFY_HOST_LABEL || os.hostname()
 } = {}) {
   const now = formatDateTime(new Date());
-  // Host com a versão do app: exibe "host (vX.Y.Z)" em todas as mensagens.
+  // Host com a versão do app: exibe "host (vX.Y.Z)" em todas as mensagens. O rótulo vem
+  // de NOTIFY_HOST_LABEL (operador) e DEVE ser escapado: caracteres como `<`/`&`
+  // quebrariam o parse de entidades HTML da API do Telegram (HTTP 400).
   const safeHost = escapeHtml(`${hostname} (v${APP_VERSION})`);
 
   const resolveUser = (rep) => {

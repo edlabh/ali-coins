@@ -68,6 +68,30 @@ test('libs/url_guard.js - M1: lookup pinado bloqueia IP privado na conexão', as
   });
 });
 
+test('libs/url_guard.js - avisa quando o pinning de DNS (undici) está indisponível (uma vez)', () => {
+  const { resolveFetchTransport, _resetUndiciWarningForTest } = require('../libs/url_guard');
+  const logger = require('../logger');
+  const originalWarn = logger.warn;
+  const captured = [];
+  logger.warn = (...args) => {
+    captured.push(args.map(String).join(' '));
+  };
+  try {
+    _resetUndiciWarningForTest();
+    const transport = resolveFetchTransport({ undiciModule: null });
+    assert.strictEqual(transport.dispatcher, null, 'sem undici não há dispatcher pinado');
+    assert.strictEqual(transport.fetchImpl, globalThis.fetch, 'fallback para o fetch nativo');
+    assert.strictEqual(captured.length, 1, 'deve emitir exatamente um aviso');
+    assert.ok(captured[0].includes('undici indisponível'), 'mensagem do aviso');
+    // Idempotência: segunda chamada não repete o aviso
+    resolveFetchTransport({ undiciModule: null });
+    assert.strictEqual(captured.length, 1, 'aviso deve ser idempotente por processo');
+  } finally {
+    logger.warn = originalWarn;
+    _resetUndiciWarningForTest();
+  }
+});
+
 test('libs/url_guard.js - allowPrivateTargets lê ALLOW_PRIVATE_WEBHOOKS', () => {
   assert.strictEqual(allowPrivateTargets({}), false);
   assert.strictEqual(allowPrivateTargets({ ALLOW_PRIVATE_WEBHOOKS: 'false' }), false);

@@ -11,6 +11,18 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.4.8] - 2026-09-22
+
+### Segurança
+
+- **`NOTIFY_WEBHOOK_URL` validada no boot (`config.js`):** a URL do webhook era avaliada apenas em runtime, então URLs malformadas ou `http://` em claro passavam pelo startup. Agora o schema valida formato (`http(s)://` + `new URL()`) e rejeita `http://` para destinos externos não-loopback, exigindo `https://` — aceitando `http://` apenas para loopback (`localhost`, `127.0.0.0/8`, `::1`, `::ffff:127.x`) ou com `ALLOW_PRIVATE_WEBHOOKS=true`, idêntico à regra do `HEARTBEAT_URL`. O `--dry-run` passa a refletir o valor validado.
+- **`NOTIFY_HOST_LABEL` higienizado e escapado (`config.js`, `libs/notify.js`):** o rótulo é truncado em **64 caracteres** no schema e `escapeHtml` agora também converte `"` em `&quot;` (antes só `<`, `>`, `&`), evitando que um rótulo com `<`/`&`/`"` quebre o parse de entidades HTML da API do Telegram (HTTP 400).
+- **Alerta defensivo sem o conector pinado (`libs/url_guard.js`):** quando `undici` está ausente (ou o `Agent` não pode ser criado), o transporte cai para o fetch nativo **com aviso explícito, uma única vez por processo**, informando que a proteção anti-DNS rebinding via lookup pinado está desativada e a mitigação SSRF fica restrita à resolução prévia de DNS.
+
+### Testes
+
+- +5 testes: validação de `NOTIFY_WEBHOOK_URL` (HTTPS, HTTP loopback, HTTP público rejeitado, opt-in, esquema inválido), truncamento do rótulo, escape do rótulo no HTML, e aviso idempotente de `undici` ausente; total **387**.
+
 ## [1.4.7] - 2026-09-21
 
 ### Corrigido
