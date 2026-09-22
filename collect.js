@@ -239,9 +239,12 @@ async function runCheckin(options = {}) {
               // (overlay/anti-bot/botão errado) era contado como check-in feito —
               // incrementava streak, creditava moedas e mascarava quebra de sequência.
               // `.e2e_normal_task_right_btn` NÃO entra: é botão genérico sempre presente.
+              // 3s de margem: a UI atual pode demorar >2s para pintar o marcador de "hoje"
+              // (com 2s o bot seguia para o próximo seletor e clicava de novo, sem dano,
+              // mas com warns desnecessários).
               const confirmed = await page
                 .waitForSelector('[class*="today-checked"], [class*="aecoin-today-checked"]', {
-                  timeout: 2000
+                  timeout: 3000
                 })
                 .then(() => true)
                 .catch(() => false);

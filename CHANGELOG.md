@@ -13,6 +13,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [1.4.8] - 2026-09-22
 
+### Corrigido
+
+- **Confirmação do check-in com margem maior (`collect.js`):** o `waitForSelector` do marcador de "hoje" subiu de **2s → 3s**. Na execução real de 22/09 o primeiro clique registrou, mas o marcador demorou mais de 2s para aparecer; o bot seguia para o próximo seletor (com clique redundante e warns desnecessários). Com 3s a confirmação acontece na primeira tentativa na maioria dos casos, mantendo o fallback em cascata quando realmente necessário.
+
 ### Segurança
 
 - **`NOTIFY_WEBHOOK_URL` validada no boot (`config.js`):** a URL do webhook era avaliada apenas em runtime, então URLs malformadas ou `http://` em claro passavam pelo startup. Agora o schema valida formato (`http(s)://` + `new URL()`) e rejeita `http://` para destinos externos não-loopback, exigindo `https://` — aceitando `http://` apenas para loopback (`localhost`, `127.0.0.0/8`, `::1`, `::ffff:127.x`) ou com `ALLOW_PRIVATE_WEBHOOKS=true`, idêntico à regra do `HEARTBEAT_URL`. O `--dry-run` passa a refletir o valor validado.
