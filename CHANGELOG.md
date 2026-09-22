@@ -11,6 +11,26 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.5.1] - 2026-09-22
+
+### Corrigido
+
+- **Sessão inválida deixa de ser reportada como execução normal (`collect.js`):** o
+  guarda-chuva do check-in aceitava `streakDays` herdado de `previousStreakDays`
+  (metadados do último dia bom) como prova de sessão viva; com o saldo em `N/D` — sempre
+  lido fresco na execução atual, sem fallback — a execução terminava com ✅, `+0 moedas` e
+  saldo `N/D` mesmo com os cookies invalidados pelo AliExpress. Agora um `totalBalance`
+  ausente (`N/D`/null) interrompe a execução com o erro de login, acionando o alerta de
+  sessão importada expirada (`isImportedSessionExpired`) já existente no `libs/notify.js`.
+  A sessão continua **preservada** (a limpeza segue em `validateAndRefresh`, só com
+  evidência de cookie expirado) e o `run_all.sh` mantém a retentativa única em exit 1 para
+  falhas transitórias.
+
+### Testes
+
+- Regressão em `tests/collect_guard.test.js` (saldo `N/D` com streak em cache → sessão
+  inválida); suíte em **390/390**; lint/format limpos.
+
 ## [1.5.0] - 2026-09-22
 
 ### Performance e Eficiência

@@ -28,6 +28,24 @@ const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
 
 /**
+ * Guarda-chuva de sessão inválida no check-in: indica se faltam dados frescos da
+ * execução atual para considerar a sessão viva.
+ *
+ * O saldo (`totalBalance`) é SEMPRE lido na execução atual — não tem fallback de dias
+ * anteriores. Já o `streakDays` pode herdar `previousStreakDays` dos metadados
+ * (`resolveStreakDays`, libs/report.js) quando a detecção de hoje falha, mascarando uma
+ * sessão morta (bug: execução com saldo "N/D" era reportada como sucesso ✅). Por isso
+ * o saldo ausente ("N/D"/null) é o critério confiável.
+ *
+ * @param {{ totalBalance?: string|number|null }} [checkinData]
+ * @returns {boolean} true quando a sessão deve ser tratada como inválida
+ */
+function isSessionDataMissing(checkinData = {}) {
+  const { totalBalance } = checkinData;
+  return totalBalance === 'N/D' || totalBalance === null || totalBalance === undefined;
+}
+
+/**
  * Executa o fluxo completo de check-in diário de moedas do AliExpress
  * @param {object} [options={}]
  * @param {import('playwright').Browser} [options.browser] Instância compartilhada de navegador
@@ -478,15 +496,12 @@ async function runCheckin(options = {}) {
         }
       }
 
-      const hasStreak = streakDays !== 'N/D' && streakDays !== null;
-      const hasTotalBalance = totalBalance !== 'N/D' && totalBalance !== null;
-      const hasCheckinCoins =
-        desktopResult.todayCheckinCoins !== null || isCollected || coinsGainedToday !== '0';
-
-      if (
-        (!hasStreak && !hasTotalBalance && !hasCheckinCoins) ||
-        (attemptedLogin && !hasStreak && !hasTotalBalance)
-      ) {
+      // Guarda-chuva de sessão inválida: o saldo é sempre lido fresco nesta execução,
+      // então "N/D" indica sessão quebrada mesmo que `streakDays` tenha herdado
+      // `previousStreakDays` de um dia bom (resolveStreakDays) e mascarado a falha.
+      // A sessão NÃO é apagada aqui (pode ser apenas parsing do DOM); a limpeza fica em
+      // validateAndRefresh, somente com evidência de cookie de autenticação expirado.
+      if (isSessionDataMissing({ totalBalance })) {
         if (isImportedSession) {
           logger.error(
             '[Sessão Remota Expirada] Não foi possível obter streak e saldo. A sessão importada de outro host expirou ou foi invalidada pelo AliExpress. ' +
@@ -494,7 +509,13 @@ async function runCheckin(options = {}) {
           );
         }
         logger.error(
-          { user: maskUser(userEmail), streakDays, totalBalance, coinsGainedToday },
+          {
+            user: maskUser(userEmail),
+            streakDays,
+            totalBalance,
+            coinsGainedToday,
+            attemptedLogin
+          },
           'Erro ao efetuar o login: não foi possível obter streak e saldo.'
         );
         // Sessão preservada intencionalmente: a falha pode ser apenas de parsing do DOM
@@ -652,4 +673,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runCheckin };
+module.exports = { runCheckin, isSessionDataMissing };
