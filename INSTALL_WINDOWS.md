@@ -313,7 +313,7 @@ Os tokens criptografados serão gravados em `session_token.txt` (Conta 1), `sess
 Abra o PowerShell na pasta do projeto e execute (exemplo para rodar diariamente às **08:00**):
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c set "NODE_OPTIONS=--max-old-space-size=256" && run_all.bat >> coins_daily.log 2>&1' -WorkingDirectory "$PWD"
+$action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c set "NODE_OPTIONS=--max-old-space-size=256" && set "NODE_COMPILE_CACHE=%TEMP%\ali-coins-compile-cache" && run_all.bat >> coins_daily.log 2>&1' -WorkingDirectory "$PWD"
 $trigger = New-ScheduledTaskTrigger -Daily -At 8:00AM
 Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Trigger $trigger -Description "Coleta diária de moedas do AliExpress"
 ```
@@ -398,16 +398,19 @@ Se você executa a automação em máquinas virtuais Windows compactas ou comput
    - O `browser.js` já aplica por padrão os argumentos `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false` em execuções via `run_all.bat` e `run_all.ps1`.
 
 3. **Limite de Heap do Node.js (`NODE_OPTIONS`):**
-   - Para forçar o Garbage Collector do Node.js a manter o consumo compacto (192 MB):
+   - Para forçar o Garbage Collector do Node.js a manter o consumo compacto (256 MB):
      - No Prompt de Comando (CMD):
        ```cmd
-       set "NODE_OPTIONS=--max-old-space-size=256" && run_all.bat
+       set "NODE_OPTIONS=--max-old-space-size=256" && set "NODE_COMPILE_CACHE=%TEMP%\ali-coins-compile-cache" && run_all.bat
        ```
      - No PowerShell:
        ```powershell
        $env:NODE_OPTIONS = "--max-old-space-size=256"
+       $env:NODE_COMPILE_CACHE = Join-Path $env:TEMP "ali-coins-compile-cache"
        .\run_all.ps1
        ```
+
+   > Os scripts `run_all.bat`/`run.ps1`/`run_tasks.*` já definem `NODE_OPTIONS` e `NODE_COMPILE_CACHE` (cache de bytecode V8 no `%TEMP%`) automaticamente.
 
 4. **Reduzir o Custo Criptográfico do `scrypt`:**
    - No `credentials.env`, configure `SCRYPT_N=32768` (ou `16384`) para limitar o pico de derivação de chave de ~134 MB para ~33 MB durante a leitura/gravação da sessão `.enc`.

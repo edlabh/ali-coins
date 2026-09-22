@@ -381,6 +381,8 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
      0 8 * * * cd /home/ubuntu/ali-coins && ./run_all.sh >> cron.log 2>&1
      ```
 
+   > Os scripts `run_all.sh`/`run.sh`/`run_tasks.sh` já definem `NODE_OPTIONS` e `NODE_COMPILE_CACHE` (cache de bytecode V8 em `/tmp/ali-coins-compile-cache-$UID`) automaticamente — as linhas acima são úteis ao chamar `node` diretamente.
+
 4. **Reduzir o Custo Criptográfico do `scrypt`:**
    No `credentials.env`, defina:
 
@@ -391,7 +393,7 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
    Isso reduz o pico instantâneo de memória da derivação de chave de ~134 MB para apenas ~33 MB (ou `16384` para ~16 MB), mantendo a cifra AES-256-GCM 100% segura.
 
 5. **Em Containers Docker:**
-   Se executar via Docker, a imagem já traz `NODE_OPTIONS="--max-old-space-size=256"` embutido. Ao rodar o container, adicione os limites de cgroups:
+   Se executar via Docker, a imagem já traz `NODE_OPTIONS="--max-old-space-size=256"` e `NODE_COMPILE_CACHE=/tmp/node-compile-cache` embutidos. Ao rodar o container, adicione os limites de cgroups:
    ```bash
    docker run --rm --init --pids-limit=256 \
      --shm-size=256m \

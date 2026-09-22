@@ -259,6 +259,8 @@ O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segun
        <dict>
            <key>NODE_OPTIONS</key>
            <string>--max-old-space-size=256</string>
+           <key>NODE_COMPILE_CACHE</key>
+           <string>/tmp/ali-coins-compile-cache</string>
        </dict>
        <key>ProgramArguments</key>
        <array>
@@ -322,6 +324,8 @@ Se você executa a automação em máquinas virtuais macOS ou Macs com recursos 
    export NODE_OPTIONS="--max-old-space-size=256"
    ./run_all.sh
    ```
+
+   > Os scripts `run_all.sh`/`run.sh`/`run_tasks.sh` já definem `NODE_OPTIONS` e `NODE_COMPILE_CACHE` (cache de bytecode V8 em `/tmp/ali-coins-compile-cache-$UID`) automaticamente — as linhas acima são úteis ao chamar `node` diretamente.
 
 3. **Custo Criptográfico do `scrypt`:**
    No `credentials.env`, configure `SCRYPT_N=32768` (ou `16384`) para limitar o pico de derivação de chave de ~134 MB para ~33 MB durante o carregamento de sessão.

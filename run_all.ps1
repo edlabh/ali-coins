@@ -10,5 +10,8 @@ Set-Location $ScriptDir
 # Proteção contra OOM Killer fora do container: mesma folga de heap do Dockerfile.
 if (-not $env:NODE_OPTIONS) { $env:NODE_OPTIONS = '--max-old-space-size=256' }
 
+# Cache de bytecode V8 (Node 22+): arranque mais rapido (pasta no TEMP do usuario).
+if (-not $env:NODE_COMPILE_CACHE) { $env:NODE_COMPILE_CACHE = Join-Path $env:TEMP 'ali-coins-compile-cache' }
+
 & node (Join-Path $ScriptDir "all.js") @args
 exit $LASTEXITCODE
