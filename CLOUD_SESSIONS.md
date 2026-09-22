@@ -268,6 +268,7 @@ Para evitar falhas por memória:
    - `--memory=768m --memory-swap=1536m`: o container pode usar até 768 MB de RAM + 768 MB de swap, deixando ~200 MB para o SO — evita que o OOM Killer derrube o processo principal.
    - `--shm-size=256m`: folga para o `/dev/shm`. Com 128 MB ou mais livres, o Chromium usa tmpfs em RAM; a flag `--disable-dev-shm-usage` só é aplicada automaticamente quando o `/dev/shm` é pequeno (ex.: container padrão de 64 MB).
    - `--init` e `--pids-limit=256`: evitam acúmulo de processos filhos do Chromium.
+   - `NODE_COMPILE_CACHE=/tmp/node-compile-cache` (já embutido na imagem): com `/tmp` em tmpfs, o cache de bytecode V8 acelera o arranque do processo e do healthcheck.
    - Um exemplo pronto de wrapper de cron, com medição de pico de memória, está em
      [`docker-run.example.sh`](docker-run.example.sh).
    - Alternativa declarativa: o [`docker-compose.yml`](docker-compose.yml) já traz os mesmos

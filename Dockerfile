@@ -51,6 +51,11 @@ ENV NODE_ENV=production
 # 256 MB dá folga ao GC (menos pausas sob pressão) sem ameaçar hosts de 1 GB.
 ENV NODE_OPTIONS=--max-old-space-size=256
 
+# Cache de bytecode V8 (Node 22+): o /tmp é tmpfs em memória nas execuções com --shm/tmpfs,
+# então os módulos compilados (playwright, pino, zod...) ficam na RAM e o arranque do
+# processo + healthcheck fica mais rápido. O container é --rm: o cache é descartável.
+ENV NODE_COMPILE_CACHE=/tmp/node-compile-cache
+
 WORKDIR /app
 
 # Criar usuário e grupo de sistema dedicados 'appuser' (UID 10001 / GID 10001)

@@ -15,6 +15,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Performance e Eficiência
 
+**3ª rodada:**
+
+- **Cache de bytecode V8 (`NODE_COMPILE_CACHE`, Node 22+):** o Dockerfile define `NODE_COMPILE_CACHE=/tmp/node-compile-cache` (com `/tmp` em tmpfs nas execuções com `--shm`/tmpfs, o bytecode compilado de `playwright`/`pino`/`zod` fica em RAM) e os scripts `run_all.sh`/`run.sh`/`run_tasks.sh` usam `/tmp/ali-coins-compile-cache-$UID` (pasta isolada por usuário, valor existente preservado). Reduz o tempo de arranque do processo e do healthcheck.
+
 **2ª rodada:**
 
 - **Check-in mobile sem navegação redundante (`collect.js`):** o contexto mobile navegava primeiro para a página desktop `mycoin.html` e, na linha seguinte, descartava a página para a URL mobile. Agora vai **direto** para `m.aliexpress.com/p/coin-index/index.html` (o contexto já herda os cookies do `storageState`), com o fallback defensivo mantido caso o site redirecione para a versão desktop — economiza 3–6s de rede/CPU e ~25–40 MB de heap por conta.
