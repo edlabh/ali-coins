@@ -11,6 +11,24 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.5.4] - 2026-09-23
+
+### Corrigido
+
+- **Notificação consolidada de falha agora identifica as contas afetadas
+  (`libs/notify.js`):** quando alguma conta falhava em modo multi-conta, o evento virava
+  `failure` e a mensagem consolidada caía no texto genérico "Erro desconhecido durante o
+  processamento." — sem dizer qual conta falhou (a lista com `❌` só era renderizada em
+  sucesso/já coletado). Agora o relatório multi-conta é renderizado também em falha, com
+  título `🔴 ... (Falha)`, resumo `S/T`, lista por conta (incluindo `❌ Falha (erro)`),
+  aviso de sessão remota quando aplicável, duração, data e host. A regra de não atribuir o
+  alerta a uma única linha `Conta:` é preservada (Bug 15).
+
+### Testes
+
+- Regressão em `tests/notify.test.js` (consolidado em falha lista as contas com `❌` e não
+  usa "Erro desconhecido"); suíte em **391/391**; lint/format limpos.
+
 ## [1.5.3] - 2026-09-23
 
 ### Alterado

@@ -278,6 +278,114 @@ function extractRelevantErrorMessage(error) {
 }
 
 /**
+ * Renderiza a mensagem consolidada multi-conta para `success`, `already_collected` e
+ * `failure`.
+ *
+ * Em falha, a lista por conta identifica QUAIS contas falharam (com o erro de cada uma):
+ * antes o evento `failure` caía no texto genérico "Erro desconhecido durante o
+ * processamento." sem indicar a conta. A regra de não atribuir o alerta a uma única
+ * linha "Conta:" é preservada — cada item da lista traz o próprio usuário mascarado.
+ *
+ * @param {object} params
+ * @param {object} params.report Payload `multi_account_report`
+ * @param {'success'|'already_collected'|'failure'} params.event
+ * @param {Error|object|string|null} [params.error]
+ * @param {string} params.safeHost Host já escapado (com versão)
+ * @param {string} params.now Data/hora formatada
+ * @returns {string} Mensagem formatada em HTML para Telegram
+ */
+function buildMultiAccountMessage({ report, event, error = null, safeHost, now }) {
+  const statusByEvent = {
+    success: { emoji: '✅', desc: 'Sucesso' },
+    already_collected: { emoji: 'ℹ️', desc: 'Já Coletado' },
+    failure: { emoji: '🔴', desc: 'Falha' }
+  };
+  const status = statusByEvent[event] || statusByEvent.success;
+  const reportDate = formatDate(new Date());
+
+  const lines = [
+    `${status.emoji} <b>AliExpress Moedas - Multi-Conta (${status.desc}) — ${reportDate}</b>`,
+    `📊 <b>Resumo:</b> ${toSafeInt(report.meta?.successfulAccounts, 0)}/${toSafeInt(report.meta?.totalAccounts, 0)} contas processadas com sucesso`,
+    ''
+  ];
+
+  if (Array.isArray(report.accounts)) {
+    report.accounts.forEach((acc, idx) => {
+      const userMasked = escapeHtml(acc.user);
+      if (acc.error) {
+        lines.push(
+          `[${idx + 1}] <code>${userMasked}</code>: ❌ Falha (${escapeHtml(sanitizeSensitiveQueryParams(String(acc.error)))})`
+        );
+        return;
+      }
+
+      const streak = toSafeStreak(acc.checkin?.streakDays);
+      // Fonte única de cálculo centralizada em report.js
+      const checkinCoins = toSafeInt(
+        acc.meta?.checkinCoinsGained ?? computeCheckinCoinsGained(acc.checkin)
+      );
+      let tasksCoins = 0;
+      if (acc.meta?.tasksCoinsGained !== undefined) {
+        tasksCoins = toSafeInt(acc.meta.tasksCoinsGained);
+      } else if (acc.tasks && typeof acc.tasks.coinsGained === 'number') {
+        tasksCoins = toSafeInt(computeTasksCoinsGained(acc.tasks, acc.checkin));
+      } else {
+        const balanceAfterCheckin = parseInt(
+          String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
+          10
+        );
+        const balanceFinal = parseInt(
+          String(
+            acc.meta?.finalBalance || acc.tasks?.finalBalance || acc.tasks?.finalCoins || ''
+          ).replace(/\D/g, ''),
+          10
+        );
+        const rawDiff =
+          !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
+            ? Math.max(0, balanceFinal - balanceAfterCheckin)
+            : 0;
+        tasksCoins = toSafeInt(rawDiff);
+      }
+      const totalCoins = toSafeInt(acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins);
+      const balance =
+        acc.meta?.finalBalance ||
+        (acc.checkin?.totalBalance ? `${acc.checkin.totalBalance} moedas` : 'N/D');
+
+      lines.push(
+        `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${escapeHtml(streak)}`
+      );
+    });
+  }
+
+  lines.push('');
+  let multiTotalDuration = report.meta?.totalDuration;
+  if (!multiTotalDuration || multiTotalDuration === '0s') {
+    if (report.meta?.startTime && report.meta?.endTime) {
+      const ms = new Date(report.meta.endTime) - new Date(report.meta.startTime);
+      if (ms > 0) multiTotalDuration = formatDuration(ms);
+    }
+  }
+  if (multiTotalDuration && multiTotalDuration !== '0s') {
+    lines.push(`⏱️ <b>Duração Total:</b> ${escapeHtml(multiTotalDuration)}`);
+  }
+  if (checkIfImportedSessionExpired(error, report)) {
+    lines.push('');
+    lines.push('⚠️ <b>Aviso de Sessão Remota:</b>');
+    lines.push(
+      'Uma ou mais contas utilizam sessão importada de outro host que parece ter expirado.'
+    );
+    lines.push(
+      '💡 <i>Ação necessária:</i> Gere uma nova sessão com <code>node export_session.js</code> no servidor de origem e importe com <code>node import_session.js</code>.'
+    );
+  }
+
+  lines.push(`📅 <b>Data:</b> ${now}`);
+  lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
+
+  return truncateMessageIfNeeded(lines.join('\n'));
+}
+
+/**
  * Constrói mensagem formatada em HTML para o Telegram a partir do relatório e evento
  * @param {object} params
  * @param {object} [params.report] Objeto de relatório (--json) de libs/report.js
@@ -334,6 +442,17 @@ function buildMessage({
       `📅 <b>Data:</b> ${now}`,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`
     ].join('\n');
+  }
+
+  // Relatório Multi-Conta (sucesso, já coletado ou falha): a lista por conta identifica
+  // as contas afetadas — em falha, evita o texto genérico sem dizer qual conta falhou.
+  // Eventos específicos (lock/streak/2FA) continuam nos ramos próprios abaixo.
+  if (
+    report &&
+    report.type === 'multi_account_report' &&
+    (event === 'success' || event === 'already_collected' || event === 'failure')
+  ) {
+    return buildMultiAccountMessage({ report, event, error, safeHost, now });
   }
 
   // 3. Lockfile ativo
@@ -433,96 +552,7 @@ function buildMessage({
     return lines.join('\n');
   }
 
-  // 7. Relatório Multi-Conta
-  if (report && report.type === 'multi_account_report') {
-    const isAlready = event === 'already_collected';
-    const titleEmoji = isAlready ? 'ℹ️' : '✅';
-    const statusDesc = isAlready ? 'Já Coletado' : 'Sucesso';
-    const reportDate = formatDate(new Date());
-
-    const lines = [
-      `${titleEmoji} <b>AliExpress Moedas - Multi-Conta (${statusDesc}) — ${reportDate}</b>`,
-      `📊 <b>Resumo:</b> ${toSafeInt(report.meta?.successfulAccounts, 0)}/${toSafeInt(report.meta?.totalAccounts, 0)} contas processadas com sucesso`,
-      ''
-    ];
-
-    if (Array.isArray(report.accounts)) {
-      report.accounts.forEach((acc, idx) => {
-        const userMasked = escapeHtml(acc.user);
-        if (acc.error) {
-          lines.push(
-            `[${idx + 1}] <code>${userMasked}</code>: ❌ Falha (${escapeHtml(sanitizeSensitiveQueryParams(String(acc.error)))})`
-          );
-          return;
-        }
-
-        const streak = toSafeStreak(acc.checkin?.streakDays);
-        // Fonte única de cálculo centralizada em report.js
-        const checkinCoins = toSafeInt(
-          acc.meta?.checkinCoinsGained ?? computeCheckinCoinsGained(acc.checkin)
-        );
-        let tasksCoins = 0;
-        if (acc.meta?.tasksCoinsGained !== undefined) {
-          tasksCoins = toSafeInt(acc.meta.tasksCoinsGained);
-        } else if (acc.tasks && typeof acc.tasks.coinsGained === 'number') {
-          tasksCoins = toSafeInt(computeTasksCoinsGained(acc.tasks, acc.checkin));
-        } else {
-          const balanceAfterCheckin = parseInt(
-            String(acc.tasks?.initialBalance || acc.checkin?.totalBalance || '').replace(/\D/g, ''),
-            10
-          );
-          const balanceFinal = parseInt(
-            String(
-              acc.meta?.finalBalance || acc.tasks?.finalBalance || acc.tasks?.finalCoins || ''
-            ).replace(/\D/g, ''),
-            10
-          );
-          const rawDiff =
-            !isNaN(balanceAfterCheckin) && !isNaN(balanceFinal)
-              ? Math.max(0, balanceFinal - balanceAfterCheckin)
-              : 0;
-          tasksCoins = toSafeInt(rawDiff);
-        }
-        const totalCoins = toSafeInt(acc.meta?.totalCoinsGained ?? checkinCoins + tasksCoins);
-        const balance =
-          acc.meta?.finalBalance ||
-          (acc.checkin?.totalBalance ? `${acc.checkin.totalBalance} moedas` : 'N/D');
-
-        lines.push(
-          `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${escapeHtml(streak)}`
-        );
-      });
-    }
-
-    lines.push('');
-    let multiTotalDuration = report.meta?.totalDuration;
-    if (!multiTotalDuration || multiTotalDuration === '0s') {
-      if (report.meta?.startTime && report.meta?.endTime) {
-        const ms = new Date(report.meta.endTime) - new Date(report.meta.startTime);
-        if (ms > 0) multiTotalDuration = formatDuration(ms);
-      }
-    }
-    if (multiTotalDuration && multiTotalDuration !== '0s') {
-      lines.push(`⏱️ <b>Duração Total:</b> ${escapeHtml(multiTotalDuration)}`);
-    }
-    if (checkIfImportedSessionExpired(error, report)) {
-      lines.push('');
-      lines.push('⚠️ <b>Aviso de Sessão Remota:</b>');
-      lines.push(
-        'Uma ou mais contas utilizam sessão importada de outro host que parece ter expirado.'
-      );
-      lines.push(
-        '💡 <i>Ação necessária:</i> Gere uma nova sessão com <code>node export_session.js</code> no servidor de origem e importe com <code>node import_session.js</code>.'
-      );
-    }
-
-    lines.push(`📅 <b>Data:</b> ${now}`);
-    lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
-
-    return truncateMessageIfNeeded(lines.join('\n'));
-  }
-
-  // 6. Relatório Unificado (Conta Única)
+  // 7. Relatório Unificado (Conta Única)
   if (report && report.type === 'unified_report') {
     const reportDate = formatDate(new Date());
     const userDisplay = resolveUser(report);
@@ -625,7 +655,7 @@ function buildMessage({
     return lines.join('\n');
   }
 
-  // 7. Relatório Apenas Check-in
+  // 8. Relatório Apenas Check-in
   if (report && report.type === 'checkin') {
     const isAlready = event === 'already_collected' || report.alreadyCollected;
     const titleEmoji = isAlready ? 'ℹ️' : '✅';
@@ -676,7 +706,7 @@ function buildMessage({
     return lines.join('\n');
   }
 
-  // 8. Relatório Apenas Tarefas
+  // 9. Relatório Apenas Tarefas
   if (report && report.type === 'tasks') {
     const titleEmoji = '✅';
     const reportDate = formatDate(new Date());

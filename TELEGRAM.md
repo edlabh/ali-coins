@@ -198,8 +198,24 @@ Sempre enviada no modo multi-conta (independente de `TELEGRAM_PER_ACCOUNT`):
 ```
 
 > Sem ação nova, o título vira `ℹ️ ... (Já Coletado)`. Se alguma conta falhar, o
-> consolidado é enviado no formato de falha (🔴) e o detalhe por conta fica nas
-> notificações individuais (com `TELEGRAM_PER_ACCOUNT=true`).
+> consolidado é enviado no formato de falha (🔴) com a **lista das contas afetadas**
+> (incluindo o erro real de cada uma):
+
+```text
+🔴 AliExpress Moedas - Multi-Conta (Falha) — 23/09/2026
+📊 Resumo: 1/2 contas processadas com sucesso
+
+[1] jo***@example.com: 💰 3043 moedas | 🪙 +0 (+0/+0) | Streak: 219
+[2] ma***@example.com: ❌ Falha (Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "ma***@example.com".)
+
+⏱️ Duração Total: 3m 53s
+
+⚠️ Aviso de Sessão Remota:
+Uma ou mais contas utilizam sessão importada de outro host que parece ter expirado.
+💡 Ação necessária: Gere uma nova sessão com node export_session.js no servidor de origem e importe com node import_session.js.
+📅 Data: 23/09/2026 17:57:04
+🖥️ Host: servidor-vps (v1.5.4)
+```
 
 ### Exemplo de Mensagem Recebida (Falha com Sessão Importada Expirada):
 

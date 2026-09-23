@@ -635,6 +635,51 @@ test('libs/notify.js - Bug 15: alertas de multi-conta não atribuem falsamente a
   }
 });
 
+test('libs/notify.js - consolidado multi-conta em falha identifica as contas afetadas', () => {
+  const multiReport = {
+    type: 'multi_account_report',
+    accounts: [
+      {
+        user: 'jo***@example.com',
+        checkin: { streakDays: 219, totalBalance: '3043', alreadyCollected: true },
+        tasks: null,
+        meta: {
+          finalBalance: '3043 moedas',
+          totalCoinsGained: 0,
+          checkinCoinsGained: 0,
+          tasksCoinsGained: 0
+        }
+      },
+      {
+        user: 'ma***@example.com',
+        checkin: null,
+        tasks: null,
+        error: 'Erro ao efetuar o login: não foi possível obter streak e saldo.',
+        isImportedSessionExpired: true
+      }
+    ],
+    meta: { totalAccounts: 2, successfulAccounts: 1, totalDuration: '3m 53s' }
+  };
+
+  const msg = buildMessage({ report: multiReport, event: 'failure', hostname: 'test-host' });
+
+  assert.ok(msg.includes('Multi-Conta (Falha)'), 'título deve indicar falha');
+  assert.ok(msg.includes('📊 <b>Resumo:</b> 1/2'), 'resumo deve mostrar 1/2 contas');
+  assert.ok(msg.includes('jo***@example.com'), 'conta OK deve aparecer na lista');
+  assert.ok(msg.includes('ma***@example.com'), 'conta que falhou deve aparecer na lista');
+  assert.ok(
+    msg.includes('❌ Falha (Erro ao efetuar o login'),
+    'erro real da conta deve aparecer na lista'
+  );
+  assert.ok(msg.includes('Aviso de Sessão Remota'), 'aviso de sessão importada deve ser mantido');
+  assert.strictEqual(msg.includes('Erro desconhecido'), false, 'não deve usar o texto genérico');
+  assert.strictEqual(
+    msg.includes('👤 <b>Conta:</b>'),
+    false,
+    'não deve atribuir o alerta a uma única conta (Bug 15)'
+  );
+});
+
 test('libs/notify.js - resolução de duração em notificações unificadas, individuais e multi-conta', () => {
   const hostname = 'test-host';
 
