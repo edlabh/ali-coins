@@ -11,6 +11,25 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.5.3] - 2026-09-23
+
+### Alterado
+
+- **`undici` 7.29.1 → 8.11.0** (dependência de produção; PR #9 do Dependabot): o uso do
+  projeto é restrito a `undici.Agent({ connect: { lookup } })` e `undici.fetch` em
+  `libs/url_guard.js` (pinning de DNS anti-rebinding), API estável na linha 8. As breaking
+  changes do v8 (remoção dos wrappers legados, isolamento do dispatcher global e HTTP/2
+  por padrão) não afetam esse uso, e a linha 8 inclui as correções de segurança mais
+  recentes.
+- **Node do ambiente de desenvolvimento local atualizado para 22.23.2** (mesma versão da
+  imagem Docker): a `undici@8` exige Node ≥ 22.19; CI (`node-version: 22`) e imagem já
+  eram compatíveis.
+
+### Testes
+
+- Suíte em **390/390** (incluindo `tests/url_guard.test.js`, 12/12); lint/format limpos;
+  `--dry-run --json` validado com Node 22.23.2 + undici 8.11.0.
+
 ## [1.5.2] - 2026-09-23
 
 ### Alterado
