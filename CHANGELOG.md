@@ -11,6 +11,23 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.5.2] - 2026-09-23
+
+### Alterado
+
+- **`dotenv` 17.4.2 → 18.0.3** (dependência de produção; PR #8 do Dependabot): a versão
+  18 adiciona CLI própria e parser rápido opcional (`config({ fast: true })`), move a
+  mensagem de injeção para `stderr` e remove recursos não utilizados pelo projeto
+  (`.env.vault`, preloading e tips). O projeto usa apenas
+  `dotenv.config({ path, quiet: true })` em `logger.js`, `config.js`,
+  `export_session.js` e `import_session.js` — comportamento preservado, com a opção
+  `quiet` ainda suportada e sem ruído em `stdout`/`stderr`.
+
+### Testes
+
+- Suíte em **390/390**; lint/format limpos; `node all.js --dry-run --json` validado com a
+  18.0.3 (config válida, 2 contas detectadas, sem saída extra do dotenv).
+
 ## [1.5.1] - 2026-09-22
 
 ### Corrigido
