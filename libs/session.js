@@ -1056,10 +1056,11 @@ async function migrateLegacySession(options = {}) {
  */
 function secretsEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return a === b;
-  const bufA = Buffer.from(a, 'utf-8');
-  const bufB = Buffer.from(b, 'utf-8');
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
+  // Hashear com SHA-256 garante que ambos os buffers tenham exatamente 32 bytes,
+  // eliminando o retorno antecipado e blindando contra vazamento do tamanho da chave.
+  const hashA = crypto.createHash('sha256').update(a, 'utf-8').digest();
+  const hashB = crypto.createHash('sha256').update(b, 'utf-8').digest();
+  return crypto.timingSafeEqual(hashA, hashB);
 }
 
 /**
@@ -1099,5 +1100,6 @@ module.exports = {
   rotateSessionSecret,
   updateSessionStreak,
   migrateLegacySession,
-  SessionMigrationError
+  SessionMigrationError,
+  secretsEqual
 };

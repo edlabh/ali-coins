@@ -198,7 +198,7 @@ async function importSession(options = {}) {
   logger.info('===================================================================');
 
   const secret = options.secret !== undefined ? options.secret : process.env.SESSION_SECRET;
-  if (!secret || typeof secret !== 'string' || secret.length < 32) {
+  if (!secret || typeof secret !== 'string' || secret.trim().length < 32) {
     throw new ImportSessionError(
       'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para descriptografia segura.'
     );

@@ -695,3 +695,71 @@ test('browser.js - shouldDisableDevShmUsage decide por plataforma e espaço em /
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - setupResourceBlocking intercepta assets e trata erros de abort/continue', async () => {
+  const { setupResourceBlocking } = require('../browser');
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let registeredPattern = null;
+    let routeHandler = null;
+    const mockContext = {
+      route: async (pattern, handler) => {
+        registeredPattern = pattern;
+        routeHandler = handler;
+      }
+    };
+
+    await setupResourceBlocking(mockContext);
+    assert.strictEqual(registeredPattern, '**/*');
+    assert.strictEqual(typeof routeHandler, 'function');
+
+    // 1: abort de imagem com erro de target closed (não deve lançar exceção)
+    let abortCalled = false;
+    const mockRouteImage = {
+      request: () => ({
+        resourceType: () => 'image',
+        url: () => 'https://example.com/logo.png'
+      }),
+      abort: async () => {
+        abortCalled = true;
+        throw new Error('Target closed');
+      },
+      continue: async () => {}
+    };
+    await routeHandler(mockRouteImage);
+    assert.strictEqual(abortCalled, true);
+
+    // 2: abort de telemetria
+    let telemetryAborted = false;
+    const mockRouteTelemetry = {
+      request: () => ({
+        resourceType: () => 'script',
+        url: () => 'https://www.google-analytics.com/analytics.js'
+      }),
+      abort: async () => {
+        telemetryAborted = true;
+      },
+      continue: async () => {}
+    };
+    await routeHandler(mockRouteTelemetry);
+    assert.strictEqual(telemetryAborted, true);
+
+    // 3: continue para script legítimo com erro de target closed (não deve lançar exceção)
+    let continueCalled = false;
+    const mockRouteScript = {
+      request: () => ({
+        resourceType: () => 'script',
+        url: () => 'https://ae01.alicdn.com/app.js'
+      }),
+      abort: async () => {},
+      continue: async () => {
+        continueCalled = true;
+        throw new Error('Route is already handled');
+      }
+    };
+    await routeHandler(mockRouteScript);
+    assert.strictEqual(continueCalled, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});

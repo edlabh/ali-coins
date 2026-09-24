@@ -84,10 +84,14 @@ async function openTaskDrawer(optionsOrPage, maybeLogger) {
         try {
           await taskBtn.click({ timeout: 2000 });
         } catch {
-          if (page.evaluate) {
+          if (typeof taskBtn.evaluate === 'function') {
+            await taskBtn.evaluate((el) => el.click()).catch(() => {});
+          } else if (page.evaluate) {
             await page.evaluate((el) => el.click(), taskBtn).catch(() => {});
           }
         }
+      } else if (typeof taskBtn.evaluate === 'function') {
+        await taskBtn.evaluate((el) => el.click()).catch(() => {});
       } else if (page.evaluate) {
         await page.evaluate((el) => el.click(), taskBtn).catch(() => {});
       }

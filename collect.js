@@ -76,6 +76,11 @@ async function runCheckin(options = {}) {
 
   if (isInternalBrowser) {
     browser = await launchBrowser({ headless: config.HEADLESS });
+    if (typeof options.onBrowserLaunch === 'function') {
+      try {
+        options.onBrowserLaunch(browser);
+      } catch {}
+    }
   }
 
   let wasAlreadyCollectedToday = false;
@@ -606,22 +611,63 @@ if (require.main === module) {
     return;
   }
 
+  let activeBrowser = null;
+  let releaseLock = null;
+  let gracefulExitRef = null;
+
+  // Encerramento por sinal em modo standalone: fecha o browser antes de liberar o lock,
+  // prevenindo processos Chromium órfãos na memória se interrompido via SIGINT/SIGTERM.
+  const handleShutdownSignal = (signal) => {
+    logger.warn({ signal }, 'Sinal recebido em collect.js; fechando browser e liberando lock...');
+    if (typeof gracefulExitRef === 'function') {
+      void gracefulExitRef(1);
+      return;
+    }
+    try {
+      process.kill(process.pid, signal);
+    } catch {
+      process.exit(1);
+    }
+  };
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, () => handleShutdownSignal(signal));
+  }
+
   (async () => {
     if (await handleDryRun()) {
       await flushAndExit(0);
     }
 
     const { sendTelegram } = require('./libs/notify');
-    let releaseLock = null;
     try {
       cfg = loadConfig(true);
     } catch {
       // Ignorar se falhar antes do lock
     }
 
+    gracefulExitRef = async (exitCode = 1) => {
+      gracefulExitRef = null;
+      if (activeBrowser) {
+        await Promise.race([
+          activeBrowser.close().catch(() => {}),
+          new Promise((resolve) => {
+            const timer = setTimeout(resolve, 3000);
+            if (timer.unref) timer.unref();
+          })
+        ]);
+        activeBrowser = null;
+      }
+      if (releaseLock) {
+        await releaseLock().catch(() => {});
+        releaseLock = null;
+      }
+      await flushAndExit(exitCode);
+    };
+
     try {
       releaseLock = await acquireLock(isForce());
     } catch (err) {
+      gracefulExitRef = null;
       if (err instanceof LockActiveError) {
         await sendTelegram({ config: cfg, event: 'lock_active', error: err }).catch(() => {});
         await flushAndExit(3);
@@ -632,7 +678,13 @@ if (require.main === module) {
     }
 
     try {
-      const result = await runCheckin();
+      const result = await runCheckin({
+        onBrowserLaunch: (b) => {
+          activeBrowser = b;
+        }
+      });
+      activeBrowser = null;
+      gracefulExitRef = null;
       if (releaseLock) await releaseLock();
       const report = { type: 'checkin', ...result };
       // Mesma regra do fluxo unificado: crédito confirmado no extrato de hoje conta como
@@ -647,6 +699,8 @@ if (require.main === module) {
       }
       await flushAndExit(0);
     } catch (err) {
+      activeBrowser = null;
+      gracefulExitRef = null;
       if (releaseLock) await releaseLock();
       if (err.name === 'TwoFactorRequiredNonInteractive' || err.is2FARequired) {
         logger.error(

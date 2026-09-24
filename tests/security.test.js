@@ -833,3 +833,41 @@ test(
     }
   }
 );
+
+test('security.js - encryptSession/decryptSession rejeitam segredos compostos apenas por espaços', () => {
+  const { encryptSession, decryptSession } = require('../security');
+  const whitespaceSecret = ' '.repeat(32);
+  const token = 'v3:131072:8:1:AAAA:BBBB:CCCC:DDDD:base64';
+
+  assert.throws(
+    () => encryptSession('{}', whitespaceSecret),
+    /SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres/
+  );
+
+  assert.throws(
+    () => decryptSession(token, whitespaceSecret),
+    /SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres/
+  );
+});
+
+test('libs/session.js - secretsEqual compara segredos em tempo constante via digest SHA-256', () => {
+  const { secretsEqual } = require('../libs/session');
+
+  assert.strictEqual(
+    secretsEqual('um-segredo-de-32-caracteres-longos', 'um-segredo-de-32-caracteres-longos'),
+    true,
+    'segredos idênticos devem retornar true'
+  );
+  assert.strictEqual(
+    secretsEqual('um-segredo-de-32-caracteres-longos', 'outro-segredo-de-32-caracteres-ok'),
+    false,
+    'segredos distintos com mesmo comprimento devem retornar false'
+  );
+  assert.strictEqual(
+    secretsEqual('curto', 'um-segredo-de-32-caracteres-longos'),
+    false,
+    'segredos com comprimentos distintos devem retornar false'
+  );
+  assert.strictEqual(secretsEqual(null, null), true);
+  assert.strictEqual(secretsEqual(null, 'secret'), false);
+});

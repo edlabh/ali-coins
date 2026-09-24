@@ -147,9 +147,10 @@ test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no 
   const { launchBrowser } = require('../browser');
   const realFilesSnapshot = snapshotRealFiles();
   let browser;
+  let page;
   try {
     browser = await launchBrowser({ headless: true });
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await page.setContent('<html><body><div id="root"></div></body></html>');
 
     async function validateSelectors(obj, path = '') {
@@ -170,6 +171,9 @@ test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no 
     await validateSelectors(SELECTORS);
     assert.ok(true, 'Todos os seletores foram parseados com sucesso');
   } finally {
+    if (page) {
+      await page.close().catch(() => {});
+    }
     if (browser) {
       await browser.close().catch(() => {});
     }

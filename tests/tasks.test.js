@@ -571,6 +571,40 @@ test('tasks - openTaskDrawer utiliza fallback getByRole se seletor CSS falhar', 
   }
 });
 
+test('tasks - openTaskDrawer suporta fallback por taskBtn.evaluate quando click direto falha', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let evaluatedClick = false;
+    const mockRoleBtn = {
+      click: async () => {
+        throw new Error('Element is not clickable at point');
+      },
+      evaluate: async (fn) => {
+        evaluatedClick = true;
+        return fn({ click: () => {} });
+      }
+    };
+
+    const mockPage = {
+      $eval: async () => false,
+      evaluate: async () => false,
+      $: async () => null,
+      getByRole: () => ({
+        count: async () => 1,
+        first: () => mockRoleBtn
+      }),
+      waitForSelector: async () => true,
+      waitForTimeout: async () => {}
+    };
+
+    const opened = await openTaskDrawer(mockPage);
+    assert.strictEqual(opened, true);
+    assert.strictEqual(evaluatedClick, true);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('tasks - openTaskDrawer retorna false graciosamente após 5 tentativas sem exceção', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {

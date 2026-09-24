@@ -21,12 +21,29 @@ jobs:
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
 
-      # Gate de segurança de supply-chain: aguarda o workflow 'CI' (testes e linter)
+      # 1. Supply-chain: NUNCA auto-mergear mudanças em .github/workflows/**. O ecossistema
+      # `github-actions` do Dependabot altera SHAs de actions nos workflows; uma action
+      # maliciosa só executaria após o merge (com contents: write), fora do gate de CI.
+      # Executado PRIMEIRO para falhar rápido e economizar minutos de runner do GitHub Actions.
+      - name: Bloquear auto-merge de mudanças em workflows
+        id: workflows
+        run: |
+          FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
+          if echo "$FILES" | grep -q '^\.github/workflows/'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "PR altera .github/workflows/** — auto-merge desabilitado (revisão humana obrigatória)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Gate de segurança de supply-chain: aguarda o workflow 'CI' (testes e linter)
       # concluir com sucesso no SHA exato do PR antes de permitir auto-merge.
       # O polling via 'gh api' foca exclusivamente no workflow 'CI', prevenindo
       # qualquer possibilidade de deadlock circular com a execução deste próprio job.
       - name: Wait for CI workflow to succeed
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        if: steps.workflows.outputs.skip != 'true' && (steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor')
         run: |
           echo "Aguardando o workflow 'CI' concluir com sucesso no commit $HEAD_SHA..."
           TIMEOUT_SECONDS=1200 # 20 minutos
@@ -64,22 +81,6 @@ jobs:
           exit 1
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Supply-chain: NUNCA auto-mergear mudanças em .github/workflows/**. O ecossistema
-      # `github-actions` do Dependabot altera SHAs de actions nos workflows; uma action
-      # maliciosa só executaria após o merge (com contents: write), fora do gate de CI.
-      - name: Bloquear auto-merge de mudanças em workflows
-        id: workflows
-        run: |
-          FILES=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')
-          if echo "$FILES" | grep -q '^\.github/workflows/'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "PR altera .github/workflows/** — auto-merge desabilitado (revisão humana obrigatória)."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge for Dependabot PRs (patch and minor)

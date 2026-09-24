@@ -887,7 +887,11 @@ async function sendTelegram({
     }
 
     if (!response.ok) {
-      const respBody = await response.text().catch(() => '');
+      const rawRespBody = await response.text().catch(() => '');
+      const respBody =
+        typeof rawRespBody === 'string'
+          ? rawRespBody.replace(/(bot\d+:[\w-]{20,})/gi, 'bot[REDACTED_TOKEN]').slice(0, 1024)
+          : '';
       logger.warn(
         { status: response.status, statusText: response.statusText, response: respBody },
         'Falha ao enviar notificação para o Telegram.'

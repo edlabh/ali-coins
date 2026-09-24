@@ -171,7 +171,7 @@ Enviada no modo conta única e, no modo multi-conta, somente com `TELEGRAM_PER_A
 ```text
 ✅ ali-coins — 22/09/2026
 👤 Conta: jo***@example.com
-🖥️ Host: servidor-vps (v1.5.5)
+🖥️ Host: servidor-vps (v1.6.0)
 🪙 Ganhas hoje: +111 moedas (check-in +40 / tarefas +71)
 📅 Sequência: 219 dias
 💰 Saldo: 3043 moedas
@@ -194,7 +194,7 @@ Sempre enviada no modo multi-conta (independente de `TELEGRAM_PER_ACCOUNT`):
 
 ⏱️ Duração Total: 5m 10s
 📅 Data: 22/09/2026 15:28:28
-🖥️ Host: servidor-vps (v1.5.5)
+🖥️ Host: servidor-vps (v1.6.0)
 ```
 
 > Sem ação nova, o título vira `ℹ️ ... (Já Coletado)`. Se alguma conta falhar, o
@@ -214,7 +214,7 @@ Sempre enviada no modo multi-conta (independente de `TELEGRAM_PER_ACCOUNT`):
 Uma ou mais contas utilizam sessão importada de outro host que parece ter expirado.
 💡 Ação necessária: Gere uma nova sessão com node export_session.js no servidor de origem e importe com node import_session.js.
 📅 Data: 23/09/2026 17:57:04
-🖥️ Host: servidor-vps (v1.5.5)
+🖥️ Host: servidor-vps (v1.6.0)
 ```
 
 ### Exemplo de Mensagem Recebida (Falha com Sessão Importada Expirada):
@@ -223,7 +223,7 @@ Uma ou mais contas utilizam sessão importada de outro host que parece ter expir
 🔴 ali-coins — 22/09/2026 15:23:38
 ⚠️ Erro: Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "fe***@example.com".
 👤 Conta: fe***@example.com
-🖥️ Host: servidor-vps (v1.5.5)
+🖥️ Host: servidor-vps (v1.6.0)
 
 ⚠️ Aviso de Sessão Remota:
 A sessão em uso foi importada de outro host (via import_session.js) e parece ter expirado ou sido invalidada pelo AliExpress.

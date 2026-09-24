@@ -139,10 +139,12 @@ async function closeContextWithDiagnostics(context, { failed = false, name = 'co
     if (failed && (pwTrace === 'retain-on-failure' || pwTrace === 'on')) {
       const traceFile = path.join(outDir, `${name}-trace-${Date.now()}.zip`);
       await context.tracing.stop({ path: traceFile }).catch(() => {});
+      safeChmod600(traceFile);
       logger.warn({ traceFile }, 'Playwright trace capturado e salvo após falha.');
     } else if (pwTrace === 'on') {
       const traceFile = path.join(outDir, `${name}-trace-${Date.now()}.zip`);
       await context.tracing.stop({ path: traceFile }).catch(() => {});
+      safeChmod600(traceFile);
     } else {
       await context.tracing.stop().catch(() => {});
     }
@@ -168,7 +170,7 @@ async function saveFailureScreenshot(page, name = 'failure') {
   const outDir = getDiagnosticsDir();
   const filePath = path.join(outDir, `${name}-${Date.now()}.png`);
   try {
-    await page.screenshot({ path: filePath, ...getScreenshotOptions() });
+    await page.screenshot({ path: filePath, timeout: 5000, ...getScreenshotOptions() });
     safeChmod600(filePath);
     pagesWithManualScreenshot.add(page);
     logger.info({ filePath }, `Screenshot de diagnóstico salva: ${path.basename(filePath)}`);
@@ -203,7 +205,14 @@ async function captureDomHashAndArtifacts(page, name = 'tasks_drawer') {
 
   if (page) {
     try {
-      const rawHtml = await page.evaluate(() => document.documentElement.outerHTML).catch(() => '');
+      const evaluateWithTimeout = Promise.race([
+        page.evaluate(() => document.documentElement.outerHTML).catch(() => ''),
+        new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(''), 5000);
+          if (timer.unref) timer.unref();
+        })
+      ]);
+      const rawHtml = await evaluateWithTimeout;
       const normalizedHtml = rawHtml.replace(/\s+/g, ' ').trim();
       hash = crypto.createHash('sha256').update(normalizedHtml).digest('hex');
       hashFile = path.join(outDir, `dom-${timestamp}.hash.txt`);
@@ -233,7 +242,7 @@ async function captureDomHashAndArtifacts(page, name = 'tasks_drawer') {
 
     try {
       screenshotFile = path.join(outDir, `${name}_failed.png`);
-      await page.screenshot({ path: screenshotFile, ...getScreenshotOptions() });
+      await page.screenshot({ path: screenshotFile, timeout: 5000, ...getScreenshotOptions() });
       safeChmod600(screenshotFile);
     } catch (err) {
       logger.debug({ err: err.message }, 'Falha ao capturar screenshot de diagnóstico.');

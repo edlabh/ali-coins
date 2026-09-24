@@ -72,3 +72,39 @@ test('navigation.js - closeModals respeita seletores customizados e retorna fals
   assert.strictEqual(evaluateCalls.length, 1);
   assert.deepStrictEqual(evaluateCalls[0].arg, ['.meu-modal-close']);
 });
+
+test('navigation.js - closeModals não clica em botão textual fora de container de modal', async () => {
+  let clicked = false;
+  const mockButton = {
+    click: async () => {
+      clicked = true;
+    }
+  };
+
+  const page = {
+    evaluate: async (fn, arg) => {
+      // Se for a verificação CSS inicial de lote, retorna false (nenhum fechado)
+      if (Array.isArray(arg)) return false;
+      // Se for a verificação inDialog do elemento, simula que está fora do diálogo (retorna false)
+      if (arg === mockButton) {
+        if (fn.toString().includes('closest')) return false;
+        clicked = true;
+        return true;
+      }
+      return false;
+    },
+    $: async (sel) => {
+      if (sel.includes(':has-text(')) return mockButton;
+      return null;
+    },
+    waitForTimeout: async () => {}
+  };
+
+  const closed = await closeModals(page, ['button:has-text("OK")']);
+  assert.strictEqual(
+    closed,
+    false,
+    'botão fora de diálogo não deve ser considerado fechamento de modal'
+  );
+  assert.strictEqual(clicked, false, 'botão fora de diálogo não deve receber clique');
+});

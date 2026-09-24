@@ -11,6 +11,50 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.6.0] - 2026-09-24
+
+### Corrigido
+
+- **Tratamento defensivo de rotas no Playwright (`browser.js`):** interceptor de rotas
+  (`setupResourceBlocking`) agora anexa `.catch(() => {})` em todas as chamadas de
+  `route.abort()` e `route.continue()`, prevenindo _unhandled promise rejections_
+  (`Target closed` ou `Route is already handled`) durante navegações concorrentes ou
+  descarte de páginas/contextos.
+- **Refinamento do seletor de alavanca de Captcha (`libs/selectors.js`):** `sliderHandle`
+  substituiu o padrão genérico `div[id*="nocaptcha"] span` por alvos específicos com
+  a classe de controle (`div[id*="nocaptcha"] .btn_slide`), evitando falsos positivos
+  ao tentar arrastar elementos estáticos de carregamento (como `<span class="nc-lang-cnt">`).
+- **Polimorfismo de Handles e Locators na abertura de gaveta (`libs/tasks/verifier.js`):**
+  o fallback de clique em `taskBtn` passou a suportar `taskBtn.evaluate((el) => el.click())`
+  de forma transparente tanto para instâncias de `Locator` quanto de `ElementHandle`,
+  eliminando erros ao repassar Locators diretamente para `page.evaluate()`.
+- **Escopo contextual em botões de modais e diálogos (`libs/ui/navigation.js`):** seletores
+  textuais Playwright (`button:has-text(...)` como OK, Confirm, Fechar) em `closeModals`
+  agora verificam `el.closest(...)` para garantir que só sejam clicados se estiverem
+  contidos em um container legítimo de modal/diálogo/overlay, evitando cliques acidentais
+  em botões homônimos da página principal.
+- **Hardening de permissões em Playwright Traces (`libs/ui/diagnostics.js`):** arquivos
+  `.zip` de traces gerados no caminho de falha agora recebem permissão restrita `0600`
+  via `safeChmod600`, alinhando-se à política de segurança de dados de screenshots e hashes de DOM.
+- **Comparação de segredos em tempo constante sem vazamento de comprimento (`libs/session.js`):**
+  `secretsEqual` agora calcula digests SHA-256 de tamanho fixo (32 bytes) antes de invocar
+  `crypto.timingSafeEqual`, eliminando o retorno antecipado por discrepância de tamanho que
+  criava canal lateral de temporização (_timing attack_).
+- **Validação estrita de entropia e espaços em `SESSION_SECRET` (`security.js`, `export_session.js`, `import_session.js`):**
+  rejeita chaves compostas apenas por espaços em branco ou preenchimento artificial via `secret.trim().length < 32`.
+- **Sanitização de caminhos de token em multi-contas (`export_session.js`):** confina
+  estritamente o índice numérico da conta na geração do arquivo `session_token_${index}.txt`.
+- **Higienização de logs de webhook (`libs/notify.js`):** sanitiza respostas de erro HTTP
+  refletidas de gateways de notificação antes do registro no logger Pino.
+- **Graceful shutdown em modo standalone (`collect.js`, `do_tasks.js`):** encerra ativamente o processo filho do Chromium com timeout de 3s antes de liberar o lockfile quando interrompido via `SIGINT`/`SIGTERM`, prevenindo instâncias órfãs de ~180MB na memória.
+- **Bounded timeout na captura de diagnósticos (`libs/ui/diagnostics.js`):** limita explicitamente a 5000ms as operações de `page.screenshot()` e avaliação de hash do DOM no caminho de erro, impedindo travamento do processo durante desligamento de containers Docker.
+- **Fail-fast no workflow de auto-merge do Dependabot (`.github/workflows/dependabot-automerge.yml`):** valida alterações em `.github/workflows/**` no primeiro segundo de execução antes do polling de 20 minutos do CI, economizando cota de runners e fortalecendo o gate de supply-chain.
+- **Cache de binários do Chromium no CI multi-SO (`.github/workflows/ci.yml`, `.github/workflows/release.yml`):** armazena em cache os binários do Playwright por sistema operacional via `actions/cache@v4`, evitando download repetido de ~130MB por runner em cada push.
+
+### Testes
+
+- Testes de cobertura adicionados para `setupResourceBlocking` com tratamento de falhas em rotas, escopo de `closeModals`, polimorfismo de avaliação de botões em gaveta, rejeição de segredos em branco e comparação criptográfica em tempo constante; fechamento defensivo de página adicionado em `tests/selectors.test.js`; suíte ampliada para **396 testes (100% pass)**.
+
 ## [1.5.5] - 2026-09-24
 
 ### Corrigido

@@ -24,7 +24,7 @@ const SELECTORS = {
       'button[type="submit"], button.cosmos-btn-primary, button:has-text("Confirm"), button:has-text("Verify"), button:has-text("Confirmar")',
     loginPendingContainer: '.login-pending-container',
     sliderHandle:
-      '#nc_1_n1z, .btn_slide, span[class*="btn_slide"], #nc_1__scale_text .btn_slide, div[id*="nocaptcha"] span',
+      '#nc_1_n1z, .btn_slide, span[class*="btn_slide"], #nc_1__scale_text .btn_slide, div[id*="nocaptcha"] .btn_slide',
     sliderTrack: '#nc_1__scale_text, .nc_scale, div[id*="nocaptcha"]'
   },
 

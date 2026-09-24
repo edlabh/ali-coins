@@ -372,7 +372,7 @@ async function setupResourceBlocking(context, allowMedia = false) {
     // 1) Fast-path por TIPO: imagens/mídia/fontes são abortadas sem materializar a URL
     //    nem rodar regex (economiza IPC/CPU em cada requisição).
     if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font') {
-      return route.abort();
+      return route.abort().catch(() => {});
     }
 
     const url = req.url().toLowerCase();
@@ -384,7 +384,7 @@ async function setupResourceBlocking(context, allowMedia = false) {
       url.includes('googletagmanager.com') ||
       url.includes('doubleclick.net')
     ) {
-      return route.abort();
+      return route.abort().catch(() => {});
     }
 
     // 3) Regex de extensão apenas para tipos genéricos ('other'): document/script/
@@ -393,10 +393,10 @@ async function setupResourceBlocking(context, allowMedia = false) {
       resourceType === 'other' &&
       /\.(png|jpg|jpeg|webp|gif|svg|mp4|webm|woff2|woff|ttf)(\?.*)?$/i.test(url)
     ) {
-      return route.abort();
+      return route.abort().catch(() => {});
     }
 
-    return route.continue();
+    return route.continue().catch(() => {});
   });
 }
 

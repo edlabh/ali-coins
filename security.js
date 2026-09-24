@@ -409,7 +409,7 @@ function scryptAsync(secret, salt, keylen, params) {
  * @param {string} operation
  */
 function assertValidSecret(secret, operation) {
-  if (!secret || typeof secret !== 'string' || secret.length < 32) {
+  if (!secret || typeof secret !== 'string' || secret.trim().length < 32) {
     throw new Error(
       `SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para ${operation}.`
     );
@@ -521,7 +521,7 @@ async function encryptSessionAsync(payloadJson, secret, options = {}) {
  * Valida as entradas básicas da descriptografia (mensagens idênticas à versão síncrona).
  */
 function assertValidDecryptInputs(tokenString, secret) {
-  if (!secret || typeof secret !== 'string' || secret.length < 32) {
+  if (!secret || typeof secret !== 'string' || secret.trim().length < 32) {
     throw new Error(
       'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para descriptografia.'
     );

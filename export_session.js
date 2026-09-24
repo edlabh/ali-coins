@@ -73,15 +73,19 @@ async function exportSession(options = {}) {
     if (!options.sessionPath) sPath = target.sessionPath;
     if (!options.sessionMetaPath) mPath = target.sessionMetaPath;
     if (!options.sessionTokenPath) {
+      const safeIndex =
+        Number.isInteger(Number(target.index)) && Number(target.index) > 0
+          ? Math.floor(Number(target.index))
+          : 1;
       tPath =
-        target.index === 1
+        safeIndex === 1
           ? path.join(baseDir || __dirname, 'session_token.txt')
-          : path.join(baseDir || __dirname, `session_token_${target.index}.txt`);
+          : path.join(baseDir || __dirname, `session_token_${safeIndex}.txt`);
     }
   }
 
   const secret = options.secret || process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
+  if (!secret || secret.trim().length < 32) {
     throw new ExportSessionError(
       'SESSION_SECRET é obrigatório e deve ter no mínimo 32 caracteres para exportação segura.'
     );

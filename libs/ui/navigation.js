@@ -132,8 +132,28 @@ async function closeModals(page, customSelectors = null) {
     try {
       const modalBtn = await page.$(sel);
       if (modalBtn) {
-        await page.evaluate((el) => el.click(), modalBtn).catch(() => {});
-        closedAny = true;
+        // Só clica se o elemento estiver contido em um diálogo/modal/overlay legítimo
+        const inDialog =
+          typeof page.evaluate === 'function'
+            ? await page
+                .evaluate(
+                  (el) =>
+                    el.closest(
+                      '[role="dialog"], [class*="modal"], [class*="dialog"], [class*="popup"], [class*="toast"], [class*="overlay"], [class*="mask"]'
+                    ) !== null,
+                  modalBtn
+                )
+                .catch(() => true)
+            : true;
+
+        if (inDialog) {
+          if (typeof page.evaluate === 'function') {
+            await page.evaluate((el) => el.click(), modalBtn).catch(() => {});
+          } else if (typeof modalBtn.click === 'function') {
+            await modalBtn.click().catch(() => {});
+          }
+          closedAny = true;
+        }
       }
     } catch {
       // Continua checando próximos seletores
