@@ -385,6 +385,11 @@ Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Tri
     - No Prompt de Comando (CMD): `chcp 65001`
     - No PowerShell: `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 > $null`
   - Recomendamos também o uso do **Windows Terminal** (nativo no Windows 11 ou instalável via `winget install Microsoft.WindowsTerminal`), que possui suporte moderno e renderização completa de emojis por padrão.
+- **Arquivo de log com acentuação quebrada:** no **PowerShell 5.1**, redirecionar com `>`/`>>`
+  grava o arquivo em **UTF-16LE** (parece "quebrado" em ferramentas que esperam UTF-8). Prefira:
+  - **CMD (recomendado, gera UTF-8):** `run_all.bat >> coins_daily.log 2>&1`
+  - **PowerShell (força UTF-8):** `.\run_all.ps1 2>&1 | Out-File -FilePath coins_daily.log -Append -Encoding utf8`
+  - Para **visualizar** o log, use o Bloco de Notas ou o VS Code (detectam UTF-8). No CMD, `type coins_daily.log` pode exibir errado se a página de código não estiver em 65001.
 
 ### H. Otimização para Ambientes com Pouca Memória RAM (1 GB a 2 GB ou VMs Windows)
 

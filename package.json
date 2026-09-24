@@ -1,6 +1,6 @@
 {
   "name": "ali-coins",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Automação resiliente de check-in diário e tarefas de moedas do AliExpress com Playwright.",
   "main": "all.js",
   "engines": {

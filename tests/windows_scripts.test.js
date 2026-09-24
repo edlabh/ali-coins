@@ -77,6 +77,14 @@ test('Windows Scripts - PowerShell scripts UTF-8 encoding validation', () => {
       content.includes('$OutputEncoding = [System.Text.Encoding]::UTF8'),
       `${script} deve definir $OutputEncoding como UTF8 para comunicação correta com o Node.js`
     );
+
+    // Windows PowerShell 5.1 lê arquivos .ps1 SEM BOM como ANSI (página de código do
+    // sistema), quebrando acentuação no script; o BOM UTF-8 força a leitura correta.
+    const raw = fs.readFileSync(path.join(__dirname, '..', script));
+    assert.ok(
+      raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf,
+      `${script} deve ter BOM UTF-8 (compatibilidade com Windows PowerShell 5.1)`
+    );
   }
 });
 

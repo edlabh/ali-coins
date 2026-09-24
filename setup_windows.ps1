@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Script de instalacao e configuracao do AliExpress Coin Collector para Windows (PowerShell).
 .DESCRIPTION

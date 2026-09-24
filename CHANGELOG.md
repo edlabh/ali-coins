@@ -11,6 +11,31 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.5.5] - 2026-09-24
+
+### Corrigido
+
+- **Codificação dos logs no Windows (`run_all.ps1`, `run.ps1`, `run_tasks.ps1`,
+  `setup_windows.ps1`):** os scripts PowerShell agora são gravados com **BOM UTF-8** — o
+  Windows PowerShell 5.1 lê arquivos `.ps1` sem BOM como ANSI (página de código do
+  sistema) e quebrava a acentuação do script. Teste de regressão adicionado em
+  `tests/windows_scripts.test.js`.
+- **Cores no log apenas quando o terminal suporta (`logger.js`):** o `pino-pretty` deixa
+  de forçar `colorize: true` e passa a usar `process.stdout.hasColors()` (que também
+  respeita `NO_COLOR`/`FORCE_COLOR`) — evita códigos ANSI crus em consoles legados.
+
+### Documentação
+
+- `README.md`: nota de encoding para Windows ao rodar `npm start`/`node` diretamente
+  (`chcp 65001` antes, ou use os scripts fornecidos).
+- `INSTALL_WINDOWS.md` (seção G): no PowerShell 5.1 o redirecionamento `>`/`>>` grava
+  **UTF-16LE** (log "quebrado" em ferramentas que esperam UTF-8); documentadas as
+  alternativas (`Out-File -Encoding utf8` ou CMD) e como visualizar o log.
+
+### Testes
+
+- Suíte em **391/391**; lint/format limpos.
+
 ## [1.5.4] - 2026-09-23
 
 ### Corrigido

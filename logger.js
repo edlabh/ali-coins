@@ -182,10 +182,14 @@ if (isJsonMode) {
   destination = pino.destination(2);
 } else if (isDev) {
   try {
+    // Cores apenas quando o terminal realmente suporta (no Windows legado evita códigos
+    // ANSI crus no log); `hasColors()` também respeita NO_COLOR/FORCE_COLOR.
+    const supportsColors =
+      typeof process.stdout.hasColors === 'function' ? process.stdout.hasColors() : true;
     destination = pino.transport({
       target: 'pino-pretty',
       options: {
-        colorize: true,
+        colorize: supportsColors,
         translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
         ignore: 'pid,hostname'
       }

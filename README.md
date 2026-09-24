@@ -29,6 +29,11 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 | **Apenas Tarefas**          | Painel "Ganhe mais moedas"                        | `run_tasks.bat`         | `.\run_tasks.ps1`  | `./run_tasks.sh`         | `npm run tasks`          |
 | **Validação (Dry-Run)**     | Valida credenciais e ambiente sem abrir navegador | `run_all.bat --dry-run` | `.\run_all.ps1 -d` | `./run_all.sh --dry-run` | `npm start -- --dry-run` |
 
+> 💡 **Windows (encoding):** os scripts `run_all.bat`/`.\run_all.ps1` (e demais variantes)
+> já configuram o console para UTF-8. Se executar via `npm start`/`node` diretamente, rode
+> antes `chcp 65001` (CMD) ou `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; chcp 65001 > $null`
+> (PowerShell) para não ver acentos/emojis quebrados no log.
+
 ---
 
 ## Opções de Linha de Comando (CLI)
