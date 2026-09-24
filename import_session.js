@@ -310,6 +310,10 @@ async function importSession(options = {}) {
     savedAt: new Date().toISOString(),
     encrypted: shouldEncrypt
   };
+  // Sessão nova importada: o cooldown pós-captcha do host é descartado explicitamente —
+  // o bloqueio anti-bot não deve impedir a tentativa de login com a sessão importada
+  // (inclusive se um token futuro carregar `lastCaptchaAt`).
+  delete metaData.lastCaptchaAt;
 
   if (metaData.exportedAt) {
     const exportedTime = new Date(metaData.exportedAt).getTime();

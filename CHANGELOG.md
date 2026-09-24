@@ -30,11 +30,22 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   (o heartbeat continua sinalizando a falha para o monitoramento). Quando a janela expira,
   um aviso `captcha_cooldown_released` é enviado e o marcador é limpo (sem repetir o aviso).
 
+### Corrigido
+
+- **Importar uma sessão nova agora zera o cooldown pós-captcha (`import_session.js`):** o
+  meta gravado na importação descarta explicitamente `lastCaptchaAt` — um bloqueio
+  anti-bot anterior não impede a tentativa de login com a sessão recém-importada
+  (reforço defensivo também para tokens que venham a carregar o campo).
+- **Login novo bem-sucedido também zera o cooldown (`libs/session.js`):** em
+  `saveSession(..., { freshLogin: true })` o `lastCaptchaAt` é removido junto dos
+  marcadores de sessão importada — o desafio foi superado e a pausa deixa de existir.
+
 ### Testes
 
 - Novos testes em `tests/captcha_cooldown.test.js` (janela de cooldown, round-trip no meta,
-  dedupe das notificações e mensagens dos eventos) + caso de marcação do erro em
-  `tests/login_reauth.test.js`; suíte em **408/408**; lint/format limpos.
+  dedupe das notificações, mensagens dos eventos, login novo e importação zerando o
+  cooldown) + caso de marcação do erro em `tests/login_reauth.test.js`; suíte em
+  **410/410**; lint/format limpos.
 
 ## [1.6.1] - 2026-09-24
 

@@ -7,13 +7,16 @@ const {
   isCaptchaCooldownActive,
   recordCaptchaChallenge,
   getCaptchaCooldown,
-  clearCaptchaChallenge
+  clearCaptchaChallenge,
+  saveSession
 } = require('../libs/session');
 const {
   buildMessage,
   shouldNotifyCaptchaFailure,
   shouldSendConsolidatedCaptcha
 } = require('../libs/notify');
+const { exportSession } = require('../export_session');
+const { importSession } = require('../import_session');
 
 test('libs/session.js - isCaptchaCooldownActive respeita a janela de horas', () => {
   const now = new Date('2026-09-24T12:00:00Z');
@@ -196,4 +199,105 @@ test('libs/notify.js - evento captcha_required tem mensagem dedicada com ação'
   assert.ok(multi.includes('a***@example.com'));
   assert.ok(multi.includes('b***@example.com'));
   assert.ok(multi.includes('❌ Falha'));
+});
+
+test('libs/session.js - login novo (freshLogin) zera o cooldown pós-captcha', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ali-coins-fresh-'));
+  try {
+    const sessionPath = path.join(tmp, 'session_x.json');
+    const metaPath = path.join(tmp, 'session_meta_x.json');
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({
+        user: 'x@example.com',
+        lastStreakDays: 7,
+        lastCaptchaAt: '2026-09-24T10:00:00Z',
+        isImported: true,
+        importedAt: '2026-09-20T00:00:00Z'
+      }),
+      'utf-8'
+    );
+
+    await saveSession(
+      { cookies: [{ name: 'xman_us_t', value: 'abc' }], origins: [] },
+      'x@example.com',
+      {
+        baseDir: tmp,
+        sessionPath,
+        sessionMetaPath: metaPath,
+        encryptLocalSession: false,
+        freshLogin: true,
+        streakDays: 5
+      }
+    );
+
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    assert.strictEqual(meta.lastCaptchaAt, undefined, 'desafio superado: cooldown zerado');
+    assert.strictEqual(meta.isImported, undefined, 'marcadores de importação limpos');
+    assert.strictEqual(meta.importedAt, undefined);
+    assert.strictEqual(meta.lastStreakDays, 5, 'streak atualizado no login novo');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('import_session - importar sessão nova remove o cooldown do host', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ali-coins-import-'));
+  const SECRET = 'x'.repeat(64);
+  try {
+    const originSession = path.join(tmp, 'session_a.json');
+    const originMeta = path.join(tmp, 'session_meta_a.json');
+    const tokenPath = path.join(tmp, 'session_token.txt');
+    fs.writeFileSync(
+      originSession,
+      JSON.stringify({
+        cookies: [{ name: 'xman_us_t', value: 'abc', domain: '.aliexpress.com', path: '/' }],
+        origins: []
+      }),
+      'utf-8'
+    );
+    fs.writeFileSync(
+      originMeta,
+      JSON.stringify({ user: 'x@example.com', lastCaptchaAt: '2026-09-24T10:00:00Z' }),
+      'utf-8'
+    );
+
+    await exportSession({
+      baseDir: tmp,
+      sessionPath: originSession,
+      sessionMetaPath: originMeta,
+      sessionTokenPath: tokenPath,
+      secret: SECRET,
+      expectedUser: 'x@example.com'
+    });
+
+    const targetSession = path.join(tmp, 'session_b.json');
+    const targetMeta = path.join(tmp, 'session_meta_b.json');
+    fs.writeFileSync(
+      targetMeta,
+      JSON.stringify({ user: 'x@example.com', lastCaptchaAt: '2026-09-24T09:00:00Z' }),
+      'utf-8'
+    );
+
+    await importSession({
+      fromFile: tokenPath,
+      baseDir: tmp,
+      sessionPath: targetSession,
+      sessionMetaPath: targetMeta,
+      secret: SECRET,
+      encryptLocalSession: false
+    });
+
+    const meta = JSON.parse(fs.readFileSync(targetMeta, 'utf-8'));
+    assert.strictEqual(meta.lastCaptchaAt, undefined, 'import limpa o cooldown');
+    assert.strictEqual(meta.isImported, true, 'sessão importada marcada');
+
+    const cooldown = await getCaptchaCooldown(
+      { baseDir: tmp, sessionPath: targetSession, sessionMetaPath: targetMeta },
+      12
+    );
+    assert.strictEqual(cooldown.active, false, 'nova tentativa de login permitida');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

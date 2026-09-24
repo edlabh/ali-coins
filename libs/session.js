@@ -547,9 +547,12 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
 
   // Login novo (senha/2FA resolvidos neste host) deixa de ser uma "sessão importada":
   // limpa os marcadores para não emitir alertas falsos de sessão remota expirada.
+  // O desafio anti-bot foi superado: zera também o cooldown pós-captcha (se houver),
+  // permitindo novas tentativas de login sem a pausa antiga.
   if (options.freshLogin) {
     delete metaData.isImported;
     delete metaData.importedAt;
+    delete metaData.lastCaptchaAt;
   }
 
   if (
