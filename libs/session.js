@@ -679,6 +679,11 @@ async function recordCaptchaChallengeUnlocked(options = {}, when = new Date()) {
       meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8')) || {};
     }
     meta.lastCaptchaAt = when.toISOString();
+    // Preserva a identificação da conta no meta (ex.: após a limpeza da sessão, que
+    // remove o meta e deixaria só o marcador do captcha).
+    if (!meta.user && options.account && options.account.user) {
+      meta.user = options.account.user;
+    }
     await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8', { durable: false });
     safeChmod600(mPath);
     return meta;

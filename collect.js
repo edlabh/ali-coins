@@ -34,6 +34,19 @@ const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
 
 /**
+ * Verifica se o login deve ser bloqueado pelo cooldown pós-captcha (lê o meta da conta).
+ * Wrapper assíncrono testável: garante o `await` do lock de sessão usado por
+ * `getCaptchaCooldown` — sem isso o `active` vinha `undefined` e a pausa não bloqueava.
+ * @param {object} sessionOpts Opções da conta (sessionPath/sessionMetaPath/account)
+ * @param {number} hours Janela de cooldown em horas
+ * @returns {Promise<{blocked: boolean, cooldown: object}>}
+ */
+async function checkCaptchaCooldownForLogin(sessionOpts, hours) {
+  const cooldown = await getCaptchaCooldown(sessionOpts, hours);
+  return { blocked: cooldown.active === true, cooldown };
+}
+
+/**
  * Guarda-chuva de sessão inválida no check-in: indica se faltam dados frescos da
  * execução atual para considerar a sessão viva.
  *
@@ -265,8 +278,9 @@ async function runCheckin(options = {}) {
 
         // Cooldown pós-captcha: um desafio anti-bot recente pausa novas tentativas de
         // login — insistir escala o desafio e o risco de bloqueio da conta/IP.
-        const captchaCooldown = getCaptchaCooldown(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS);
-        if (captchaCooldown.active) {
+        const { blocked: captchaBlocked, cooldown: captchaCooldown } =
+          await checkCaptchaCooldownForLogin(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS);
+        if (captchaBlocked) {
           logger.warn(
             { lastCaptchaAt: captchaCooldown.lastCaptchaAt, until: captchaCooldown.until },
             'Login pausado pelo cooldown pós-captcha; nenhuma tentativa será feita nesta execução.'
@@ -830,4 +844,9 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runCheckin, isSessionDataMissing, shouldAttemptLogin };
+module.exports = {
+  runCheckin,
+  isSessionDataMissing,
+  shouldAttemptLogin,
+  checkCaptchaCooldownForLogin
+};

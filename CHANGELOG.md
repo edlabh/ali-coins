@@ -32,6 +32,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Corrigido
 
+- **Cooldown efetivo antes do login (`collect.js`):** o novo wrapper
+  `checkCaptchaCooldownForLogin` garante a leitura assíncrona do meta (`await`) — sem isso
+  o `active` vinha `undefined` e a janela de pausa **não bloqueava** a tentativa de login.
 - **Importar uma sessão nova agora zera o cooldown pós-captcha (`import_session.js`):** o
   meta gravado na importação descarta explicitamente `lastCaptchaAt` — um bloqueio
   anti-bot anterior não impede a tentativa de login com a sessão recém-importada

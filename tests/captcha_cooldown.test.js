@@ -17,6 +17,7 @@ const {
 } = require('../libs/notify');
 const { exportSession } = require('../export_session');
 const { importSession } = require('../import_session');
+const { checkCaptchaCooldownForLogin } = require('../collect');
 
 test('libs/session.js - isCaptchaCooldownActive respeita a janela de horas', () => {
   const now = new Date('2026-09-24T12:00:00Z');
@@ -127,6 +128,43 @@ test('libs/notify.js - dedupe: só o captcha inédito notifica; cooldown repetid
     true,
     'outros eventos não são silenciados'
   );
+});
+
+test('collect.js - checkCaptchaCooldownForLogin bloqueia o login dentro da janela', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ali-coins-block-'));
+  try {
+    const sessionPath = path.join(tmp, 'session_x.json');
+    const metaPath = path.join(tmp, 'session_meta_x.json');
+    const sessionOpts = {
+      baseDir: tmp,
+      sessionPath,
+      sessionMetaPath: metaPath,
+      account: { user: 'x@example.com' }
+    };
+
+    // Sem registro de captcha → não bloqueia
+    const none = await checkCaptchaCooldownForLogin(sessionOpts, 12);
+    assert.strictEqual(none.blocked, false);
+
+    // Registro recente → bloqueia (regressão: sem await, `active` vinha undefined e
+    // o login era tentado mesmo dentro da janela)
+    await recordCaptchaChallenge(sessionOpts, new Date());
+    const blocked = await checkCaptchaCooldownForLogin(sessionOpts, 12);
+    assert.strictEqual(blocked.blocked, true, 'cooldown ativo deve bloquear o login');
+    assert.ok(blocked.cooldown.until, 'deve informar quando a janela libera');
+
+    // Meta inexistente + account: cria o meta já com o user (após limpeza da sessão)
+    const freshMetaPath = path.join(tmp, 'session_meta_y.json');
+    const meta = await recordCaptchaChallenge({
+      baseDir: tmp,
+      sessionPath,
+      sessionMetaPath: freshMetaPath,
+      account: { user: 'y@example.com' }
+    });
+    assert.strictEqual(meta.user, 'y@example.com', 'user preservado/criado no meta');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('libs/session.js - clearCaptchaChallenge remove o marcador preservando o meta', async () => {
