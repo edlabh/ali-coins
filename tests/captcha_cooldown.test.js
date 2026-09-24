@@ -153,6 +153,12 @@ test('collect.js - checkCaptchaCooldownForLogin bloqueia o login dentro da janel
     assert.strictEqual(blocked.blocked, true, 'cooldown ativo deve bloquear o login');
     assert.ok(blocked.cooldown.until, 'deve informar quando a janela libera');
 
+    // --force ignora a pausa e permite a tentativa (execução forçada)
+    const forced = await checkCaptchaCooldownForLogin(sessionOpts, 12, { force: true });
+    assert.strictEqual(forced.blocked, false, '--force deve ignorar o cooldown');
+    assert.strictEqual(forced.forced, true);
+    assert.ok(forced.cooldown.active, 'o cooldown continua existindo (apenas ignorado)');
+
     // Meta inexistente + account: cria o meta já com o user (após limpeza da sessão)
     const freshMetaPath = path.join(tmp, 'session_meta_y.json');
     const meta = await recordCaptchaChallenge({

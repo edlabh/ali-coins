@@ -29,6 +29,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   notifica uma vez; os runs seguintes bloqueados pelo cooldown **não repetem** a mensagem
   (o heartbeat continua sinalizando a falha para o monitoramento). Quando a janela expira,
   um aviso `captcha_cooldown_released` é enviado e o marcador é limpo (sem repetir o aviso).
+- **Coleta a força ignorando o cooldown (`--force`/`-f`):** a flag já usada para sobrescrever
+  lockfile ativo agora também **ignora o cooldown pós-captcha**, permitindo a tentativa de
+  login mesmo dentro da janela de pausa (log `--force: cooldown pós-captcha ignorado`).
+  Documentado no `--help` e na tabela de flags do README.
 
 ### Corrigido
 

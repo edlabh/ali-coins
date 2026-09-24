@@ -385,7 +385,10 @@ function createCliProgram() {
     .description('AliExpress Coin Collector & Task Runner com Playwright')
     .version(pkg.version)
     .option('-d, --dry-run', 'Valida credenciais e ambiente sem abrir navegador')
-    .option('-f, --force', 'Ignora e sobrescreve lockfile ativo existente')
+    .option(
+      '-f, --force',
+      'Força a execução: sobrescreve lockfile ativo e ignora o cooldown pós-captcha (tenta o login)'
+    )
     .option('--json', 'Formata a saída de status e relatórios em JSON')
     .option('--notify', 'Ativa notificações via Telegram (sobrescreve TELEGRAM_ENABLED)')
     .option('--no-notify', 'Desativa notificações via Telegram')

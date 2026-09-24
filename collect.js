@@ -37,13 +37,15 @@ const logger = require('./logger');
  * Verifica se o login deve ser bloqueado pelo cooldown pós-captcha (lê o meta da conta).
  * Wrapper assíncrono testável: garante o `await` do lock de sessão usado por
  * `getCaptchaCooldown` — sem isso o `active` vinha `undefined` e a pausa não bloqueava.
+ * `force: true` (flag `--force`) ignora a pausa e permite a tentativa de login.
  * @param {object} sessionOpts Opções da conta (sessionPath/sessionMetaPath/account)
  * @param {number} hours Janela de cooldown em horas
- * @returns {Promise<{blocked: boolean, cooldown: object}>}
+ * @param {{force?: boolean}} [options]
+ * @returns {Promise<{blocked: boolean, forced: boolean, cooldown: object}>}
  */
-async function checkCaptchaCooldownForLogin(sessionOpts, hours) {
+async function checkCaptchaCooldownForLogin(sessionOpts, hours, { force = false } = {}) {
   const cooldown = await getCaptchaCooldown(sessionOpts, hours);
-  return { blocked: cooldown.active === true, cooldown };
+  return { blocked: !force && cooldown.active === true, forced: Boolean(force), cooldown };
 }
 
 /**
@@ -278,8 +280,20 @@ async function runCheckin(options = {}) {
 
         // Cooldown pós-captcha: um desafio anti-bot recente pausa novas tentativas de
         // login — insistir escala o desafio e o risco de bloqueio da conta/IP.
-        const { blocked: captchaBlocked, cooldown: captchaCooldown } =
-          await checkCaptchaCooldownForLogin(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS);
+        // A flag `--force` ignora a pausa (execução forçada a pedido do operador).
+        const {
+          blocked: captchaBlocked,
+          forced: captchaForced,
+          cooldown: captchaCooldown
+        } = await checkCaptchaCooldownForLogin(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS, {
+          force: isForce()
+        });
+        if (captchaForced && captchaCooldown.active) {
+          logger.warn(
+            { until: captchaCooldown.until },
+            '--force: cooldown pós-captcha ignorado; tentando autenticar mesmo assim.'
+          );
+        }
         if (captchaBlocked) {
           logger.warn(
             { lastCaptchaAt: captchaCooldown.lastCaptchaAt, until: captchaCooldown.until },
