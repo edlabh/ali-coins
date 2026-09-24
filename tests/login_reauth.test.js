@@ -181,6 +181,50 @@ test('libs/ui/login.js - login somente-senha (prompt in-page) autentica sem camp
   }
 });
 
+test('libs/ui/login.js - falha por captcha marca isCaptchaChallenge no erro', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ali-coins-captcha-flag-'));
+  const prevOut = process.env.PW_OUTPUT_DIR;
+  process.env.PW_OUTPUT_DIR = tmp;
+  try {
+    const page = makePage({ withUsername: false, withPassword: true });
+    // Sem cookie de autenticação → desafio anti-bot não superado
+    const context = {
+      async cookies() {
+        return [];
+      },
+      async storageState() {
+        return { cookies: [], origins: [] };
+      }
+    };
+
+    await assert.rejects(
+      () =>
+        performMobileLogin(
+          page,
+          context,
+          { SELECTOR_TIMEOUT: 50 },
+          {
+            account: { user: 'x@example.com', password: 'pw' },
+            baseDir: tmp,
+            sessionPath: path.join(tmp, 'session_x.json'),
+            sessionMetaPath: path.join(tmp, 'session_meta_x.json')
+          }
+        ),
+      (err) => {
+        assert.strictEqual(err.isCaptchaChallenge, true, 'erro deve sinalizar captcha');
+        assert.match(err.message, /desafio de segurança/);
+        return true;
+      }
+    );
+  } finally {
+    if (prevOut === undefined) delete process.env.PW_OUTPUT_DIR;
+    else process.env.PW_OUTPUT_DIR = prevOut;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/ui/login.js - sem campo de usuário nem senha mantém o erro original', async () => {
   const page = makePage({ withUsername: false, withPassword: false });
   await assert.rejects(

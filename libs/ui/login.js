@@ -173,7 +173,13 @@ async function performMobileLogin(page, context, config, options = {}) {
       { user: maskUser(username), screenshot: errScreenshot },
       'Falha ao autenticar conta no AliExpress (desafio de segurança não superado).'
     );
-    throw new Error('Falha de autenticação no AliExpress (desafio de segurança não superado).');
+    const authErr = new Error(
+      'Falha de autenticação no AliExpress (desafio de segurança não superado).'
+    );
+    // Marca o desafio anti-bot (captcha) para o chamador registrar o cooldown e
+    // notificar com o evento `captcha_required` em vez de uma falha genérica.
+    authErr.isCaptchaChallenge = true;
+    throw authErr;
   }
 
   const rawStorage = await context.storageState();

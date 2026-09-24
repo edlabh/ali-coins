@@ -18,7 +18,13 @@ const {
   buildMultiAccountReportPayload,
   isStreakBreak
 } = require('./libs/report');
-const { sendTelegram, shouldSkipAccountNotification } = require('./libs/notify');
+const {
+  sendTelegram,
+  shouldSkipAccountNotification,
+  shouldNotifyCaptchaFailure,
+  shouldSendConsolidatedCaptcha
+} = require('./libs/notify');
+const { getCaptchaCooldown, clearCaptchaChallenge } = require('./libs/session');
 const { closeCachedDesktopContext } = require('./libs/ui');
 const { sendHeartbeat } = require('./libs/heartbeat');
 const { startAccountTimer } = require('./libs/timing');
@@ -28,6 +34,41 @@ const logger = require('./logger');
 
 let currentConfig = null;
 let currentAccount = null;
+
+/**
+ * Notifica (uma única vez) que o cooldown pós-captcha expirou e o login voltará a ser
+ * tentado, limpando o marcador para não repetir o aviso nos runs seguintes.
+ * @param {{account?: object, config: object}} params
+ */
+async function notifyCaptchaCooldownReleased({ account, config }) {
+  const sessionOpts = {
+    sessionPath: account?.sessionPath,
+    sessionMetaPath: account?.sessionMetaPath
+  };
+  let cooldown;
+  try {
+    cooldown = await getCaptchaCooldown(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS);
+  } catch {
+    return;
+  }
+  if (!cooldown.lastCaptchaAt || cooldown.active) return;
+
+  logger.info(
+    { lastCaptchaAt: cooldown.lastCaptchaAt },
+    'Cooldown pós-captcha expirado; login será tentado normalmente nesta execução.'
+  );
+  try {
+    await sendTelegram({
+      config,
+      chatId: account?.telegramChatId,
+      report: { type: 'unified_report', user: account?.maskedUser },
+      event: 'captcha_cooldown_released'
+    });
+  } catch (tgErr) {
+    logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação de cooldown liberado.');
+  }
+  await clearCaptchaChallenge(sessionOpts).catch(() => {});
+}
 
 setupGlobalCrashHandler(() => ({
   config: currentConfig,
@@ -172,6 +213,9 @@ async function main() {
       const account = accounts[0] || null;
       currentAccount = account;
 
+      // Cooldown pós-captcha expirado? Avisa (uma vez) e limpa o marcador.
+      await notifyCaptchaCooldownReleased({ account, config });
+
       // ETAPA 1: Check-in diário
       const step1StartTime = new Date();
       logger.info('>>> [ETAPA 1/2] Iniciando Check-in Diário...');
@@ -214,12 +258,15 @@ async function main() {
         );
         await sendHeartbeat('fail', { config, error: err });
         try {
-          await sendTelegram({
-            config,
-            chatId: account?.telegramChatId,
-            event: 'failure',
-            error: err
-          });
+          // Dedupe: bloqueios repetidos pelo cooldown já foram notificados na 1ª ocorrência.
+          if (!(err && err.isCaptchaCooldown)) {
+            await sendTelegram({
+              config,
+              chatId: account?.telegramChatId,
+              event: shouldNotifyCaptchaFailure(err) ? 'captcha_required' : 'failure',
+              error: err
+            });
+          }
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
         }
@@ -393,6 +440,8 @@ async function main() {
       let anyAccountSuccess = false;
       let anyAccountStreakBroken = false;
       let anyAccount2FARequired = false;
+      let anyAccountCaptchaRequired = false;
+      let anyAccountCaptchaFirstTime = false;
       // Distingue "todas as contas com lock ativo" (exit 3) de falha genérica de lock (exit 1)
       let lockActiveCount = 0;
       let nonLockFailureCount = 0;
@@ -484,10 +533,15 @@ async function main() {
         let accError = null;
         let accImportedExpired = false;
         let accIs2FARequired = false;
+        let accIsCaptchaRequired = false;
+        let accIsCaptchaCooldown = false;
         let accStreakBroken = false;
         let pendingBackoffMs = 0;
 
         try {
+          // Cooldown pós-captcha expirado? Avisa (uma vez) e limpa o marcador.
+          await notifyCaptchaCooldownReleased({ account, config });
+
           // Etapa 1: Check-in
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Check-in Diário...`);
           const step1Timer = startAccountTimer();
@@ -576,6 +630,16 @@ async function main() {
               '[2FA Não-Interativo] O AliExpress exigiu verificação 2FA sem terminal interativo (cron/CI). Finalizando conta rapidamente.'
             );
           }
+          if (accErr.isCaptchaChallenge) {
+            accIsCaptchaRequired = true;
+            anyAccountCaptchaRequired = true;
+            accIsCaptchaCooldown = Boolean(accErr.isCaptchaCooldown);
+            if (!accIsCaptchaCooldown) anyAccountCaptchaFirstTime = true;
+            logger.error(
+              { account: account.maskedUser },
+              '[Anti-bot] Captcha/desafio de segurança no login; novas tentativas ficam pausadas pelo cooldown configurado.'
+            );
+          }
           if (accImportedExpired) {
             logger.error(
               { account: account.maskedUser },
@@ -624,7 +688,7 @@ async function main() {
           config.TELEGRAM_CHAT_ID,
           { perAccountEnabled: config.TELEGRAM_PER_ACCOUNT === true }
         );
-        if (account.telegramChatId && !skipAccountNotify) {
+        if (account.telegramChatId && !skipAccountNotify && !accIsCaptchaCooldown) {
           try {
             const accPayload = buildUnifiedReportPayload(accCheckin, accTasks, {
               user: account.maskedUser,
@@ -639,14 +703,16 @@ async function main() {
               ? '2fa_required'
               : accStreakBroken
                 ? 'streak_break'
-                : accError
-                  ? 'failure'
-                  : (accCheckin &&
-                        (!accCheckin.alreadyCollected ||
-                          accCheckin.checkinCoinsFromLedger === true)) ||
-                      (accTasks && accTasks.totalActions > 0)
-                    ? 'success'
-                    : 'already_collected';
+                : accIsCaptchaRequired
+                  ? 'captcha_required'
+                  : accError
+                    ? 'failure'
+                    : (accCheckin &&
+                          (!accCheckin.alreadyCollected ||
+                            accCheckin.checkinCoinsFromLedger === true)) ||
+                        (accTasks && accTasks.totalActions > 0)
+                      ? 'success'
+                      : 'already_collected';
             const msSinceLastNotify = Date.now() - lastNotifyAt;
             if (lastNotifyAt && msSinceLastNotify < NOTIFY_MIN_SPACING_MS) {
               await new Promise((resolve) =>
@@ -719,6 +785,7 @@ async function main() {
       if (allAccountsLocked) multiEvent = 'lock_active';
       else if (anyAccountStreakBroken) multiEvent = 'streak_break';
       else if (anyAccount2FARequired && !anyAccountSuccess) multiEvent = '2fa_required';
+      else if (anyAccountCaptchaRequired && !anyAccountSuccess) multiEvent = 'captcha_required';
       else if (!anyAccountSuccess || anyAccountFailed) multiEvent = 'failure';
       else if (!anyAccountHadNewAction) multiEvent = 'already_collected';
 
@@ -730,11 +797,22 @@ async function main() {
           setTimeout(resolve, NOTIFY_MIN_SPACING_MS - msSinceLastNotify)
         );
       }
-      try {
-        await sendTelegram({ config, report: multiPayload, event: multiEvent });
-        lastNotifyAt = Date.now();
-      } catch (tgErr) {
-        logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram consolidada.');
+      if (
+        shouldSendConsolidatedCaptcha({
+          multiEvent,
+          anyCaptchaFirstTime: anyAccountCaptchaFirstTime
+        })
+      ) {
+        try {
+          await sendTelegram({ config, report: multiPayload, event: multiEvent });
+          lastNotifyAt = Date.now();
+        } catch (tgErr) {
+          logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram consolidada.');
+        }
+      } else {
+        logger.info(
+          'Consolidado silenciado: falhas por captcha em cooldown (já notificadas na primeira ocorrência).'
+        );
       }
 
       if (allAccountsLocked) {

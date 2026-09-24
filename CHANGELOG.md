@@ -11,6 +11,31 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.6.2] - 2026-09-24
+
+### Adicionado
+
+- **Cooldown pós-captcha (`collect.js`, `libs/session.js`):** quando o login encontra um
+  desafio anti-bot (captcha), o instante é gravado no meta da conta (`lastCaptchaAt`) e
+  novas tentativas de login ficam **pausadas por `CAPTCHA_COOLDOWN_HOURS`** (padrão 12h;
+  `0` desliga). Insistir no login escala o desafio e o risco de bloqueio — o cooldown é
+  checado antes de qualquer tentativa.
+- **Evento `captcha_required` nas notificações (`libs/notify.js`, `all.js`):** falhas por
+  captcha deixam de ser "falha genérica" e ganham mensagem dedicada (individual e
+  consolidada multi-conta, com a lista de contas) com a ação recomendada — renovar a
+  sessão localmente (rede residencial) e importar com `import_session.js`. O
+  `libs/ui/login.js` marca o erro com `isCaptchaChallenge`.
+- **Dedupe das notificações de captcha (`all.js`, `libs/notify.js`):** o captcha **inédito**
+  notifica uma vez; os runs seguintes bloqueados pelo cooldown **não repetem** a mensagem
+  (o heartbeat continua sinalizando a falha para o monitoramento). Quando a janela expira,
+  um aviso `captcha_cooldown_released` é enviado e o marcador é limpo (sem repetir o aviso).
+
+### Testes
+
+- Novos testes em `tests/captcha_cooldown.test.js` (janela de cooldown, round-trip no meta,
+  dedupe das notificações e mensagens dos eventos) + caso de marcação do erro em
+  `tests/login_reauth.test.js`; suíte em **408/408**; lint/format limpos.
+
 ## [1.6.1] - 2026-09-24
 
 ### Corrigido

@@ -11,7 +11,13 @@ const { formatDateTime, formatDuration } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const { flushAndExit } = require('./libs/exit');
-const { validateAndRefresh, saveSession, updateSessionStreak } = require('./libs/session');
+const {
+  validateAndRefresh,
+  saveSession,
+  updateSessionStreak,
+  getCaptchaCooldown,
+  recordCaptchaChallenge
+} = require('./libs/session');
 const { SELECTORS } = require('./libs/selectors');
 const {
   gotoWithRetry,
@@ -256,6 +262,23 @@ async function runCheckin(options = {}) {
           'Login necessário: acionando autenticação.'
         );
         attemptedLogin = true;
+
+        // Cooldown pós-captcha: um desafio anti-bot recente pausa novas tentativas de
+        // login — insistir escala o desafio e o risco de bloqueio da conta/IP.
+        const captchaCooldown = getCaptchaCooldown(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS);
+        if (captchaCooldown.active) {
+          logger.warn(
+            { lastCaptchaAt: captchaCooldown.lastCaptchaAt, until: captchaCooldown.until },
+            'Login pausado pelo cooldown pós-captcha; nenhuma tentativa será feita nesta execução.'
+          );
+          const cooldownErr = new Error(
+            `Login pausado pelo cooldown pós-captcha (desafio em ${captchaCooldown.lastCaptchaAt}; libera em ${captchaCooldown.until}).`
+          );
+          cooldownErr.isCaptchaChallenge = true;
+          cooldownErr.isCaptchaCooldown = true;
+          throw cooldownErr;
+        }
+
         if (isImportedSession) {
           logger.warn(
             '[Sessão Remota] Autenticação necessária com sessão importada. Em servidores remotos (VPS/nuvem), desafios de segurança anti-bot podem impedir o login automático.'
@@ -264,6 +287,11 @@ async function runCheckin(options = {}) {
         try {
           sessionData = await performMobileLogin(page, context, config, sessionOpts);
         } catch (loginErr) {
+          // Desafio anti-bot (captcha): registra o instante para o cooldown das próximas
+          // execuções (não re-registra quando a falha É o próprio cooldown).
+          if (loginErr.isCaptchaChallenge && !loginErr.isCaptchaCooldown) {
+            await recordCaptchaChallenge(sessionOpts).catch(() => {});
+          }
           if (isImportedSession) {
             logger.error(
               '[Sessão Remota Expirada] Falha ao autenticar no AliExpress. A sessão importada de outro host expirou ou foi invalidada. ' +

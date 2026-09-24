@@ -646,6 +646,93 @@ async function updateSessionStreakUnlocked(streakDays, options = {}) {
 }
 
 /**
+ * Indica se `lastCaptchaAt` ainda está dentro da janela de cooldown pós-captcha.
+ * Função pura (testável sem I/O).
+ * @param {string|Date|null|undefined} lastCaptchaAt
+ * @param {number} hours Janela em horas (0 desliga)
+ * @param {Date} [now=new Date()]
+ * @returns {boolean}
+ */
+function isCaptchaCooldownActive(lastCaptchaAt, hours, now = new Date()) {
+  if (!lastCaptchaAt || !hours || hours <= 0) return false;
+  const t =
+    lastCaptchaAt instanceof Date ? lastCaptchaAt.getTime() : new Date(lastCaptchaAt).getTime();
+  if (isNaN(t)) return false;
+  return now.getTime() - t < hours * 60 * 60 * 1000;
+}
+
+/**
+ * Registra um desafio anti-bot (captcha) no meta da conta (`lastCaptchaAt`), preservando
+ * os demais campos. Usado pelo cooldown que evita novas tentativas de login.
+ * @param {object} [options={}] Opções de caminho de sessão
+ * @param {Date} [when=new Date()]
+ * @returns {Promise<object|null>} Meta atualizado ou null em falha
+ */
+async function recordCaptchaChallengeUnlocked(options = {}, when = new Date()) {
+  const { mPath } = resolveSessionPaths(options);
+  try {
+    let meta = {};
+    if (fs.existsSync(mPath)) {
+      meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8')) || {};
+    }
+    meta.lastCaptchaAt = when.toISOString();
+    await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8', { durable: false });
+    safeChmod600(mPath);
+    return meta;
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Falha ao registrar captcha em session_meta.json');
+    return null;
+  }
+}
+
+/**
+ * Lê o cooldown pós-captcha da conta.
+ * @param {object} [options={}] Opções de caminho de sessão
+ * @param {number} [hours=12]
+ * @param {Date} [now=new Date()]
+ * @returns {{active: boolean, hours: number, lastCaptchaAt: string|null, until: string|null}}
+ */
+function getCaptchaCooldownUnlocked(options = {}, hours = 12, now = new Date()) {
+  const { mPath } = resolveSessionPaths(options);
+  let lastCaptchaAt = null;
+  try {
+    if (fs.existsSync(mPath)) {
+      const meta = JSON.parse(fs.readFileSync(mPath, 'utf-8'));
+      if (meta && typeof meta.lastCaptchaAt === 'string') lastCaptchaAt = meta.lastCaptchaAt;
+    }
+  } catch {
+    // Meta ilegível: sem cooldown (o login segue o fluxo normal)
+  }
+  const active = isCaptchaCooldownActive(lastCaptchaAt, hours, now);
+  const until = active
+    ? new Date(new Date(lastCaptchaAt).getTime() + hours * 60 * 60 * 1000).toISOString()
+    : null;
+  return { active, hours, lastCaptchaAt, until };
+}
+
+/**
+ * Remove o marcador de captcha do meta (após a janela de cooldown expirar), preservando
+ * os demais campos — evita repetir o aviso de "cooldown liberado" em runs futuros.
+ * @param {object} [options={}] Opções de caminho de sessão
+ * @returns {Promise<object|null>} Meta atualizado ou null em falha
+ */
+async function clearCaptchaChallengeUnlocked(options = {}) {
+  const { mPath } = resolveSessionPaths(options);
+  try {
+    if (!fs.existsSync(mPath)) return null;
+    const meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8')) || {};
+    if (meta.lastCaptchaAt === undefined) return meta;
+    delete meta.lastCaptchaAt;
+    await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8', { durable: false });
+    safeChmod600(mPath);
+    return meta;
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Falha ao limpar marcador de captcha em session_meta.json');
+    return null;
+  }
+}
+
+/**
  * Determina se um arquivo em scratch/ é elegível para expiração/remoção por antiguidade.
  * NUNCA remove sessões ativas (session.json*), metadados de sessão ou cron.log.
  * @param {string} file Nome do arquivo (basename)
@@ -1082,6 +1169,21 @@ function updateSessionStreak(streakDays, options = {}) {
   return withSessionLock(sPath, () => updateSessionStreakUnlocked(streakDays, options));
 }
 
+function recordCaptchaChallenge(options = {}, when = new Date()) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => recordCaptchaChallengeUnlocked(options, when));
+}
+
+function getCaptchaCooldown(options = {}, hours = 12, now = new Date()) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => getCaptchaCooldownUnlocked(options, hours, now));
+}
+
+function clearCaptchaChallenge(options = {}) {
+  const { sPath } = resolveSessionPaths(options);
+  return withSessionLock(sPath, () => clearCaptchaChallengeUnlocked(options));
+}
+
 function rotateSessionSecret(options = {}) {
   const { sPath } = resolveSessionPaths(options);
   return withSessionLock(sPath, () => rotateSessionSecretUnlocked(options));
@@ -1099,6 +1201,10 @@ module.exports = {
   pruneSessionBackups,
   rotateSessionSecret,
   updateSessionStreak,
+  recordCaptchaChallenge,
+  getCaptchaCooldown,
+  clearCaptchaChallenge,
+  isCaptchaCooldownActive,
   migrateLegacySession,
   SessionMigrationError,
   secretsEqual

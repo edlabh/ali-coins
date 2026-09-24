@@ -298,7 +298,8 @@ function buildMultiAccountMessage({ report, event, error = null, safeHost, now }
   const statusByEvent = {
     success: { emoji: '✅', desc: 'Sucesso' },
     already_collected: { emoji: 'ℹ️', desc: 'Já Coletado' },
-    failure: { emoji: '🔴', desc: 'Falha' }
+    failure: { emoji: '🔴', desc: 'Falha' },
+    captcha_required: { emoji: '🤖', desc: 'Captcha Solicitado' }
   };
   const status = statusByEvent[event] || statusByEvent.success;
   const reportDate = formatDate(new Date());
@@ -450,9 +451,41 @@ function buildMessage({
   if (
     report &&
     report.type === 'multi_account_report' &&
-    (event === 'success' || event === 'already_collected' || event === 'failure')
+    (event === 'success' ||
+      event === 'already_collected' ||
+      event === 'failure' ||
+      event === 'captcha_required')
   ) {
     return buildMultiAccountMessage({ report, event, error, safeHost, now });
+  }
+
+  // Desafio anti-bot (captcha) no login: mensagem dedicada com a ação recomendada.
+  if (event === 'captcha_required') {
+    const errorSnippet = sanitizeSensitiveQueryParams(extractRelevantErrorMessage(error));
+    const userDisplay = resolveUser(report);
+    return [
+      `🤖 ali-coins — ${now}`,
+      '⚠️ <b>Desafio anti-bot (captcha) detectado no login</b>',
+      ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
+      '',
+      `ℹ️ <i>${escapeHtml(errorSnippet)}</i>`,
+      '',
+      '💡 <b>Ação:</b> renove a sessão localmente (rede residencial) e importe com <code>node import_session.js</code>. Novas tentativas de login ficam pausadas pelo cooldown (<code>CAPTCHA_COOLDOWN_HOURS</code>).'
+    ].join('\n');
+  }
+
+  // Cooldown pós-captcha expirado: avisa que o login voltará a ser tentado.
+  if (event === 'captcha_cooldown_released') {
+    const userDisplay = resolveUser(report);
+    return [
+      `🤖 ali-coins — ${now}`,
+      '✅ <b>Cooldown pós-captcha liberado</b>',
+      ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
+      `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
+      '',
+      'A janela de pausa expirou; a automação voltará a tentar o login normalmente.'
+    ].join('\n');
   }
 
   // 3. Lockfile ativo
@@ -955,6 +988,27 @@ async function test(customConfig = null) {
   return res.ok;
 }
 
+/**
+ * Decide se uma falha por captcha deve gerar notificação: apenas o captcha INÉDITO.
+ * O bloqueio repetido pelo cooldown já foi notificado na primeira ocorrência — silenciar
+ * evita uma mensagem por run enquanto a pausa estiver ativa (o heartbeat segue sinalizando).
+ * @param {Error|object|null} error
+ * @returns {boolean}
+ */
+function shouldNotifyCaptchaFailure(error) {
+  return Boolean(error && error.isCaptchaChallenge && !error.isCaptchaCooldown);
+}
+
+/**
+ * Decide se a notificação consolidada multi-conta deve ser enviada quando o evento é de
+ * captcha: silencia quando TODAS as falhas de captcha foram bloqueios de cooldown.
+ * @param {{multiEvent?: string, anyCaptchaFirstTime?: boolean}} [params]
+ * @returns {boolean}
+ */
+function shouldSendConsolidatedCaptcha({ multiEvent, anyCaptchaFirstTime } = {}) {
+  return !(multiEvent === 'captcha_required' && !anyCaptchaFirstTime);
+}
+
 module.exports = {
   sendTelegram,
   buildMessage,
@@ -965,6 +1019,8 @@ module.exports = {
   truncateMessageIfNeeded,
   checkIfImportedSessionExpired,
   shouldSkipAccountNotification,
+  shouldNotifyCaptchaFailure,
+  shouldSendConsolidatedCaptcha,
   postToTelegramWithRetry,
   TELEGRAM_MAX_ATTEMPTS,
   test

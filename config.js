@@ -129,6 +129,16 @@ const configSchema = z
     SCROLL_WAIT_SECONDS: positiveInt(10),
     LOCK_STALE_TIMEOUT_MS: positiveInt(30 * 60 * 1000),
 
+    // Cooldown pós-captcha: após um desafio anti-bot no login, novas tentativas ficam
+    // pausadas por N horas (0 desliga). Evita insistência que escala o desafio/risco.
+    CAPTCHA_COOLDOWN_HOURS: z
+      .preprocess((val) => {
+        if (val === undefined || val === null || val === '') return 12;
+        const parsed = typeof val === 'number' ? val : Number(String(val).trim());
+        return Number.isInteger(parsed) && parsed >= 0 ? parsed : 12;
+      }, z.number().int().min(0))
+      .default(12),
+
     // Tentativas ADICIONAIS (segunda passada) para tarefas que não concluíram nenhuma
     // rodada ou concluíram parcialmente. Cada passada foca somente nas tarefas
     // incompletas, respeita o teto global de ações e não repete claims/rodadas já feitas.
@@ -908,6 +918,7 @@ async function handleDryRun() {
         allowMedia: cfg.ALLOW_MEDIA,
         headless: cfg.HEADLESS,
         logLevel: cfg.LOG_LEVEL,
+        captchaCooldownHours: cfg.CAPTCHA_COOLDOWN_HOURS,
         noSandbox: cfg.NO_SANDBOX,
         navTimeout: cfg.NAV_TIMEOUT,
         taskMaxActions: cfg.TASK_MAX_ACTIONS,
@@ -953,6 +964,11 @@ async function handleDryRun() {
       logger.info(` • Bloqueio de mídia (ALLOW_MEDIA): ${cfg.ALLOW_MEDIA}`);
       logger.info(` • Modo Headless: ${cfg.HEADLESS}`);
       logger.info(` • Nível de Log: ${cfg.LOG_LEVEL}`);
+      logger.info(
+        ` • Cooldown pós-captcha (CAPTCHA_COOLDOWN_HOURS): ${
+          cfg.CAPTCHA_COOLDOWN_HOURS > 0 ? `${cfg.CAPTCHA_COOLDOWN_HOURS}h` : 'desligado'
+        }`
+      );
       logger.info(
         ` • Sandbox Chromium: ${cfg.NO_SANDBOX ? 'Desativado (--no-sandbox)' : 'Ativado'}`
       );
