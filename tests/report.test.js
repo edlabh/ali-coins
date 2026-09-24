@@ -1,4 +1,4 @@
-const test = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   unifiedReportSchema,
@@ -13,7 +13,13 @@ const {
   computeCheckinCoinsGained,
   computeTasksCoinsGained
 } = require('../libs/report');
-const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
+const { snapshotRealFiles, assertRealFilesUntouched, stubDnsLookup } = require('./test_helper');
+
+// Os testes de webhook mockam o `fetch`, mas o guard SSRF resolve o hostname com DNS
+// real antes do envio: um DNS lento no runner derrubava os testes por timeout (flake
+// do macOS no CI). O stub mantém o guard ativo (validação de IP privado) sem tocar a rede.
+const restoreDnsLookup = stubDnsLookup();
+after(restoreDnsLookup);
 
 test('libs/report.js - buildUnifiedReportPayload e validação de contrato Zod', () => {
   const realFilesSnapshot = snapshotRealFiles();

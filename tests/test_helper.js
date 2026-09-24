@@ -130,9 +130,33 @@ function cleanupIsolatedTestDir(tmpDir) {
   }
 }
 
+/**
+ * Substitui o resolver de DNS usado pelo guard SSRF (`libs/url_guard.js`) por um
+ * resultado determinístico e local.
+ *
+ * O guard resolve o hostname do webhook antes de enviar; nos testes o `fetch` é
+ * mockado, mas a resolução continuava indo para a rede — um DNS lento/indisponível
+ * no runner derrubava os testes por timeout (flake real no macOS do CI). Com o stub,
+ * o fluxo completo do guard continua ativo (checagem de IP privado etc.); apenas a
+ * resolução do hostname vira instantânea.
+ *
+ * @param {string} [address='8.8.8.8'] IP público devolvido para qualquer hostname
+ * @returns {() => void} Função para restaurar o resolver original
+ */
+function stubDnsLookup(address = '8.8.8.8') {
+  const dnsPromises = require('node:dns').promises;
+  const original = dnsPromises.lookup;
+  dnsPromises.lookup = async (_hostname, options) =>
+    options && options.all ? [{ address, family: 4 }] : { address, family: 4 };
+  return () => {
+    dnsPromises.lookup = original;
+  };
+}
+
 module.exports = {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
   snapshotRealFiles,
-  assertRealFilesUntouched
+  assertRealFilesUntouched,
+  stubDnsLookup
 };

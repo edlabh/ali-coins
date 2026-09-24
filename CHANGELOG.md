@@ -52,7 +52,12 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - Novos testes em `tests/captcha_cooldown.test.js` (janela de cooldown, round-trip no meta,
   dedupe das notificações, mensagens dos eventos, login novo e importação zerando o
   cooldown) + caso de marcação do erro em `tests/login_reauth.test.js`; suíte em
-  **410/410**; lint/format limpos.
+  **412/412**; lint/format limpos.
+- **Testes independentes de DNS real (`tests/report.test.js`, `tests/test_helper.js`):**
+  os testes de webhook mockam o `fetch`, mas o guard SSRF resolvia o hostname na rede —
+  um DNS lento no runner do macOS derrubou 2 testes no CI (`Tempo esgotado ao resolver o
+DNS do destino`). O novo helper `stubDnsLookup()` troca a resolução por um IP público
+  determinístico (o guard segue ativo), eliminando o flake.
 
 ## [1.6.1] - 2026-09-24
 
