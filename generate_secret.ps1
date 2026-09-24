@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Gerador de chaves criptograficas AES-256 (SESSION_SECRET) para Windows PowerShell.
 .DESCRIPTION

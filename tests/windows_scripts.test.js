@@ -60,7 +60,13 @@ test('Windows Scripts - run_*.bat execution scripts validation', () => {
 });
 
 test('Windows Scripts - PowerShell scripts UTF-8 encoding validation', () => {
-  const psScripts = ['setup_windows.ps1', 'run_all.ps1', 'run.ps1', 'run_tasks.ps1'];
+  const psScripts = [
+    'setup_windows.ps1',
+    'run_all.ps1',
+    'run.ps1',
+    'run_tasks.ps1',
+    'generate_secret.ps1'
+  ];
 
   for (const script of psScripts) {
     const content = fs.readFileSync(path.join(__dirname, '..', script), 'utf8');
