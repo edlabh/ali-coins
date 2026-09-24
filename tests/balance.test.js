@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const {
   extractStreakFromText,
   getStreakFromCheckinCoins,
@@ -231,7 +234,49 @@ test('libs/ui/balance.js - getBalanceDesktop calcula desktopStreak via históric
     assert.strictEqual(result.todayCheckinCoins, '40');
     assert.strictEqual(result.hasAppCheckinToday, true);
     assert.strictEqual(typeof result.desktopStreak, 'number');
+    assert.strictEqual(result.loginPromptDetected, false, 'página normal não é prompt de login');
   } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - getBalanceDesktop sinaliza prompt de login/reautenticação', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ali-coins-balance-'));
+  const prevOut = process.env.PW_OUTPUT_DIR;
+  process.env.PW_OUTPUT_DIR = tmp;
+  try {
+    // Texto exato do prompt in-page reportado na issue #17 (só senha, mesma URL).
+    const loginText =
+      'COINS\nLog in\nNome\nma***@example.com\nPassword\nForgot password\n' +
+      'Sign in with email code\nSign in\nSwitch account';
+
+    const mockContext = {
+      newPage: async () => ({
+        goto: async () => {},
+        waitForSelector: async () => {},
+        innerText: async () => loginText,
+        screenshot: async () => {},
+        close: async () => {}
+      }),
+      route: async () => {},
+      tracing: { start: async () => {}, stop: async () => {} },
+      close: async () => {}
+    };
+    const mockBrowser = { newContext: async () => mockContext };
+
+    const result = await getBalanceDesktop(mockBrowser, { cookies: [] });
+
+    assert.strictEqual(result.totalBalance, 'N/D');
+    assert.strictEqual(
+      result.loginPromptDetected,
+      true,
+      'prompt de login deve ser sinalizado (sessão inválida, não layout)'
+    );
+  } finally {
+    if (prevOut === undefined) delete process.env.PW_OUTPUT_DIR;
+    else process.env.PW_OUTPUT_DIR = prevOut;
+    fs.rmSync(tmp, { recursive: true, force: true });
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });

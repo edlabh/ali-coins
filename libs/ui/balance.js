@@ -20,6 +20,24 @@ const STREAK_PATTERNS = [
 ];
 
 /**
+ * Indica se o texto da página é um prompt de login/reautenticação do AliExpress —
+ * inclusive o fluxo in-page que reconhece a conta e pede APENAS a senha sem mudar a URL.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isLoginPromptText(text) {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.toLowerCase();
+  return (
+    t.includes('sign in with email code') ||
+    t.includes('switch account') ||
+    t.includes('trocar de conta') ||
+    ((t.includes('forgot password') || t.includes('esqueci minha senha')) &&
+      (t.includes('password') || t.includes('senha')))
+  );
+}
+
+/**
  * Extrai número de dias de sequência a partir de uma string de texto qualquer
  * @param {string} text
  * @returns {number|null}
@@ -439,6 +457,23 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
 
     const desktopText = await desktopPage.innerText('body').catch(() => '');
 
+    // Distingue "layout mudou" de "caímos numa tela/prompt de login": o AliExpress pode
+    // exibir reautenticação in-page (só senha) na MESMA URL — nesse caso o saldo está
+    // indisponível por sessão inválida, não por parsing. Sinal dual: texto do prompt OU
+    // campo de senha visível na página desktop.
+    const loginPromptText = isLoginPromptText(desktopText);
+    const loginPromptField = Boolean(
+      await desktopPage
+        .waitForSelector(SELECTORS.login.passwordInput, { state: 'visible', timeout: 1200 })
+        .catch(() => null)
+    );
+    const loginPromptDetected = loginPromptText || loginPromptField;
+    if (loginPromptDetected) {
+      logger.warn(
+        '[Sessão] Prompt de login/reautenticação detectado no desktop; saldo indisponível nesta leitura.'
+      );
+    }
+
     // Saldo total bilíngue ("My coins" ou "Minhas moedas"), com separador de milhar
     // (ex.: "1,234" / "2.917"). Capturar só [0-9]+ truncava para "1"/"2".
     const balMatch =
@@ -513,6 +548,9 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
       totalBalance,
       todayCheckinCoins,
       hasAppCheckinToday: hasCheckinToday,
+      // Sinaliza que a leitura caiu numa tela/prompt de login (sessão inválida), para o
+      // chamador diferenciar de "saldo não encontrado por mudança de layout".
+      loginPromptDetected,
       // Campos adicionais (fonte de verdade do extrato):
       todayBonusCoins: todayLedger.bonusCoins, // check-in real do dia (ex.: +1, +40)
       todayMissionsCoins, // soma dos ganhos de tarefas do dia
@@ -536,5 +574,6 @@ module.exports = {
   extractTodayLedger,
   getStreakFromCheckinCoins,
   getCheckinCoinsFromStreak,
-  getStreakFromDesktopHistory
+  getStreakFromDesktopHistory,
+  isLoginPromptText
 };

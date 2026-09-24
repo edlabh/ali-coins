@@ -46,6 +46,62 @@ function isSessionDataMissing(checkinData = {}) {
 }
 
 /**
+ * Decide se o fluxo deve tentar autenticar nesta execução.
+ *
+ * Regras:
+ *  - **Campo de senha visível → true** (prompt de reautenticação in-page do AliExpress,
+ *    que pede só a senha na MESMA URL do coin-index — sem isso o login nunca era tentado);
+ *  - Sem sessão válida → true (fluxo completo);
+ *  - URL de login/passport + campo de usuário ou textos clássicos → true (comportamento
+ *    histórico, preservado);
+ *  - Caso contrário → false (sessão válida em página normal: evita re-login desnecessário).
+ *
+ * @param {object} [params]
+ * @param {boolean} [params.hasValidSession]
+ * @param {boolean} [params.passwordVisible]
+ * @param {boolean} [params.loginUrl]
+ * @param {boolean} [params.usernameVisible]
+ * @param {string} [params.bodyText]
+ * @returns {boolean}
+ */
+function shouldAttemptLogin({
+  hasValidSession = false,
+  passwordVisible = false,
+  loginUrl = false,
+  usernameVisible = false,
+  bodyText = ''
+} = {}) {
+  if (passwordVisible) return true;
+  if (!hasValidSession) return true;
+  if (loginUrl && usernameVisible) return true;
+  if (
+    loginUrl &&
+    (bodyText.includes('Email or phone number') ||
+      bodyText.includes('Sign in') ||
+      bodyText.includes('Entrar'))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Verifica se um seletor está visível na página (nunca lança).
+ * @param {import('playwright').Page} page
+ * @param {string} selector
+ * @param {number} [timeout=1500]
+ * @returns {Promise<boolean>}
+ */
+async function isSelectorVisible(page, selector, timeout = 1500) {
+  try {
+    const el = await page.waitForSelector(selector, { state: 'visible', timeout });
+    return el !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Executa o fluxo completo de check-in diário de moedas do AliExpress
  * @param {object} [options={}]
  * @param {import('playwright').Browser} [options.browser] Instância compartilhada de navegador
@@ -172,20 +228,33 @@ async function runCheckin(options = {}) {
 
       // Verificar se precisa autenticar.
       // Com sessão válida, indícios textuais ("Sign in"/"Entrar" em rodapé/menu) E a
-      // presença do campo de login só contam quando a URL confirma login/passport —
+      // presença do campo de usuário só contam quando a URL confirma login/passport —
       // evita re-login desnecessário (e risco de ban) por inputs da própria página.
+      // EXCEÇÃO (v1.6.1): campo de SENHA visível é sinal forte de prompt de
+      // reautenticação in-page — o AliExpress pede só a senha na MESMA URL do
+      // coin-index (SPA) e antes isso passava batido (login nunca era tentado).
       const loginInput = await page.$(SELECTORS.login.usernameInput).catch(() => null);
+      const passwordVisible = await isSelectorVisible(page, SELECTORS.login.passwordInput);
       const bodyText = await page.innerText('body').catch(() => '');
       const loginUrl = /login|sign-?in|passport/i.test(page.url());
-      const needsLogin =
-        !hasValidSession ||
-        (loginUrl && loginInput !== null) ||
-        (loginUrl &&
-          (bodyText.includes('Email or phone number') ||
-            bodyText.includes('Sign in') ||
-            bodyText.includes('Entrar')));
+      const needsLogin = shouldAttemptLogin({
+        hasValidSession,
+        passwordVisible,
+        loginUrl,
+        usernameVisible: loginInput !== null,
+        bodyText
+      });
 
       if (needsLogin) {
+        logger.info(
+          {
+            hasValidSession,
+            loginUrl,
+            passwordVisible,
+            usernameVisible: loginInput !== null
+          },
+          'Login necessário: acionando autenticação.'
+        );
         attemptedLogin = true;
         if (isImportedSession) {
           logger.warn(
@@ -519,10 +588,16 @@ async function runCheckin(options = {}) {
             streakDays,
             totalBalance,
             coinsGainedToday,
-            attemptedLogin
+            attemptedLogin,
+            loginPromptDetected: Boolean(desktopResult?.loginPromptDetected)
           },
           'Erro ao efetuar o login: não foi possível obter streak e saldo.'
         );
+        if (desktopResult?.loginPromptDetected) {
+          logger.error(
+            'A página desktop exibiu um prompt de login/reautenticação (sessão inválida) — não é apenas mudança de layout.'
+          );
+        }
         // Sessão preservada intencionalmente: a falha pode ser apenas de parsing do DOM
         // (mudança de layout), não de autenticação. A limpeza ocorre em validateAndRefresh
         // somente quando há evidência de cookie de autenticação expirado.
@@ -727,4 +802,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runCheckin, isSessionDataMissing };
+module.exports = { runCheckin, isSessionDataMissing, shouldAttemptLogin };

@@ -7,6 +7,23 @@ const { maskUser } = require('../../config');
 const logger = require('../../logger');
 
 /**
+ * Retorna o ElementHandle de um seletor quando ele está VISÍVEL dentro do timeout.
+ * Nunca lança: ausência/erro → null.
+ * @param {import('playwright').Page} page
+ * @param {string} selector
+ * @param {number} [timeout=1200]
+ * @returns {Promise<import('playwright').ElementHandle|null>}
+ */
+async function visibleElement(page, selector, timeout = 1200) {
+  try {
+    const el = await page.waitForSelector(selector, { state: 'visible', timeout });
+    return el || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Executa o fluxo completo de autenticação e superação de desafios no contexto mobile
  * @param {import('playwright').Page} page
  * @param {import('playwright').BrowserContext} context
@@ -18,55 +35,73 @@ async function performMobileLogin(page, context, config, options = {}) {
   const password = (options.account && options.account.password) || config.ALI_PASSWORD;
   logger.info(`[Login] Autenticando com credenciais de "${maskUser(username)}"...`);
 
-  let loginInput = await page
-    .waitForSelector(SELECTORS.login.usernameInput, { timeout: config.SELECTOR_TIMEOUT })
-    .catch(() => null);
-
-  if (!loginInput) {
-    // Fallback: `waitForSelector` já filtra por visibilidade; o `$` direto não.
-    // Um input oculto matching causaria "element is not visible" cru no fill.
-    const fallback = await page.$(SELECTORS.login.usernameInput);
-    const visible =
-      fallback && typeof fallback.isVisible === 'function'
-        ? await fallback.isVisible().catch(() => false)
-        : Boolean(fallback);
-    loginInput = visible ? fallback : null;
+  // Prompt de reautenticação in-page (SPA): o AliExpress reconhece a conta e pede
+  // APENAS a senha, na mesma URL do coin-index. Nesse caso não existe campo de usuário —
+  // detectamos a senha visível primeiro para não esperar (nem falhar) pelo e-mail.
+  let passwordInput = await visibleElement(page, SELECTORS.login.passwordInput, 1200);
+  const passwordOnly = passwordInput !== null;
+  if (passwordOnly) {
+    logger.info('[Login] Prompt de reautenticação in-page detectado (somente senha).');
   }
 
-  if (!loginInput) {
+  let loginInput = null;
+  if (!passwordOnly) {
+    loginInput = await page
+      .waitForSelector(SELECTORS.login.usernameInput, { timeout: config.SELECTOR_TIMEOUT })
+      .catch(() => null);
+
+    if (!loginInput) {
+      // Fallback: `waitForSelector` já filtra por visibilidade; o `$` direto não.
+      // Um input oculto matching causaria "element is not visible" cru no fill.
+      const fallback = await page.$(SELECTORS.login.usernameInput);
+      const visible =
+        fallback && typeof fallback.isVisible === 'function'
+          ? await fallback.isVisible().catch(() => false)
+          : Boolean(fallback);
+      loginInput = visible ? fallback : null;
+    }
+  }
+
+  if (loginInput) {
+    await loginInput.fill(username);
+    await loginInput.press('Enter');
+    await page
+      .waitForSelector(
+        'input[type="password"], #fm-login-password, button.cosmos-btn-primary, #nc_1_n1z',
+        { timeout: 2000 }
+      )
+      .catch(() => {});
+    await page.waitForTimeout(500);
+
+    await trySolveSlider(page);
+
+    passwordInput = await page.$(SELECTORS.login.passwordInput);
+    if (!passwordInput) {
+      const continueClicked = await waitAndClick(page, SELECTORS.login.continueBtn, {
+        timeout: 2000
+      });
+      if (continueClicked) {
+        await page
+          .waitForSelector('input[type="password"], #fm-login-password, #nc_1_n1z', {
+            timeout: 2000
+          })
+          .catch(() => {});
+        await page.waitForTimeout(500);
+        await trySolveSlider(page);
+        passwordInput = await page.$(SELECTORS.login.passwordInput);
+      }
+    }
+  }
+
+  if (!loginInput && !passwordInput) {
     throw new Error(
       'Campo de identificador de usuário (e-mail/telefone) não encontrado na página.'
     );
   }
 
-  await loginInput.fill(username);
-  await loginInput.press('Enter');
-  await page
-    .waitForSelector(
-      'input[type="password"], #fm-login-password, button.cosmos-btn-primary, #nc_1_n1z',
-      { timeout: 2000 }
-    )
-    .catch(() => {});
-  await page.waitForTimeout(500);
-
-  await trySolveSlider(page);
-
-  let passwordInput = await page.$(SELECTORS.login.passwordInput);
-  if (!passwordInput) {
-    const continueClicked = await waitAndClick(page, SELECTORS.login.continueBtn, {
-      timeout: 2000
-    });
-    if (continueClicked) {
-      await page
-        .waitForSelector('input[type="password"], #fm-login-password, #nc_1_n1z', { timeout: 2000 })
-        .catch(() => {});
-      await page.waitForTimeout(500);
-      await trySolveSlider(page);
-      passwordInput = await page.$(SELECTORS.login.passwordInput);
-    }
-  }
-
   if (passwordInput) {
+    // No modo somente-senha o captcha pode estar visível junto do prompt antes do envio.
+    if (!loginInput) await trySolveSlider(page);
     await passwordInput.fill(password);
     const signInBtn = await page.$(SELECTORS.login.signInBtn);
     if (signInBtn) {
@@ -150,5 +185,6 @@ async function performMobileLogin(page, context, config, options = {}) {
 
 module.exports = {
   performMobileLogin,
+  visibleElement,
   TwoFactorRequiredNonInteractive
 };

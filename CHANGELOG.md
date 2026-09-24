@@ -11,6 +11,30 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.6.1] - 2026-09-24
+
+### Corrigido
+
+- **Detecção do prompt de reautenticação in-page (`collect.js`, `libs/ui/login.js`, issue
+  #17):** o AliExpress passou a exibir um prompt que pede **apenas a senha** (conta
+  reconhecida) na **mesma URL** do coin-index (SPA). Como `needsLogin` era condicionado à
+  URL de login/passport, o login automático **nunca era tentado**
+  (`attemptedLogin: false`) e a execução falhava com saldo `N/D`. Agora um **campo de
+  senha visível** aciona a autenticação independentemente da URL, e
+  `performMobileLogin` ganhou um fluxo **somente-senha** (sem campo de usuário), com a
+  mesma validação de 2FA/cookies e gravação da sessão (`freshLogin`). A decisão foi
+  extraída para o helper puro `shouldAttemptLogin` (exportado e testado).
+- **Diagnóstico de tela de login no desktop (`libs/ui/balance.js`):** a leitura do saldo
+  agora detecta o prompt de login/reautenticação (texto do prompt ou campo de senha
+  visível) e devolve `loginPromptDetected`, diferenciando "sessão inválida" de "mudança
+  de layout"; o guarda de sessão do `collect.js` registra o sinal no contexto do erro.
+
+### Testes
+
+- Novos testes em `tests/login_reauth.test.js` (decisão `shouldAttemptLogin`, detecção do
+  prompt e fluxo somente-senha com stubs) e em `tests/balance.test.js` (sinalização do
+  prompt). Suíte em **401/401**; lint/format limpos.
+
 ## [1.6.0] - 2026-09-24
 
 ### Corrigido

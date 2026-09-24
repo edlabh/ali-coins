@@ -215,6 +215,13 @@ rsync -a --delete \
 > 1. Execute `node export_session.js` na máquina de origem.
 > 2. Importe o token atualizado no servidor remoto com `node import_session.js < session_token.txt`.
 
+> [!NOTE]
+> **Prompt de reautenticação in-page (a partir da 1.6.1):** se o AliExpress pedir **apenas
+> a senha** na mesma página (sem redirecionar para uma URL de login), a automação detecta
+> o prompt pelo campo de senha visível e tenta a autenticação automaticamente — inclusive
+> em execuções via cron. Em IPs de nuvem, o desafio de slider/captcha pode impedir o
+> login; nesse caso, renove localmente (rede residencial) e importe a sessão.
+
 ---
 
 ## 6. Troca de Contas na Nuvem
