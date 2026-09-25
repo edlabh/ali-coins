@@ -86,6 +86,35 @@ function shouldConfirmCheckinByLedger({
 }
 
 /**
+ * Decide se vale confirmar a quebra de streak com o extrato desktop antes de alertar.
+ *
+ * Só quando a tela lê 1, há histórico anterior > 1, o check-in não constava coletado
+ * antes e o extrato disponível ainda não desmentiu (<= 1 ou ausente) — "se necessário".
+ *
+ * @param {{detectedStreak?: number|string|null, previousStreakDays?: number|null, statementStreak?: number|null, alreadyCollected?: boolean}} [params]
+ * @returns {boolean} true quando é preciso reler o extrato para confirmar a quebra
+ */
+function shouldConfirmStreakByStatement({
+  detectedStreak = null,
+  previousStreakDays = null,
+  statementStreak = null,
+  alreadyCollected = false
+} = {}) {
+  const parsed =
+    typeof detectedStreak === 'number'
+      ? detectedStreak
+      : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+  const base = typeof previousStreakDays === 'number' ? previousStreakDays : null;
+  const statement = typeof statementStreak === 'number' ? statementStreak : null;
+
+  if (alreadyCollected === true) return false;
+  if (parsed !== 1) return false;
+  if (!(typeof base === 'number' && base > 1)) return false;
+  // Extrato já disponível (confirma ou desmente a quebra) -> não precisa de nova leitura.
+  return statement === null;
+}
+
+/**
  * Decide se o fluxo deve tentar autenticar nesta execução.
  *
  * Regras:
@@ -530,6 +559,55 @@ async function runCheckin(options = {}) {
               ? earlyDesktopStreak
               : null;
 
+      // Validação da quebra pelo extrato ("se necessário"): quando a tela lê 1 com histórico
+      // anterior > 1, confirma com a sequência do extrato desktop antes de tratar como
+      // quebra — a UI pode mostrar 1 transitoriamente na virada do dia (falso positivo).
+      let statementStreakDays =
+        typeof desktopResult.desktopStreak === 'number' ? desktopResult.desktopStreak : null;
+      if (
+        shouldConfirmStreakByStatement({
+          detectedStreak,
+          previousStreakDays,
+          statementStreak: statementStreakDays,
+          alreadyCollected: alreadyCollected || wasAlreadyCollectedToday
+        })
+      ) {
+        logger.warn(
+          {
+            account: maskUser(userEmail),
+            detectedStreak,
+            previousStreakDays
+          },
+          'Leitura de streak = 1 com histórico anterior > 1; confirmando a quebra pelo extrato desktop...'
+        );
+        try {
+          const confirmRead = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
+            allowMedia: config.ALLOW_MEDIA,
+            timeout: config.NAV_TIMEOUT_SHORT,
+            reuseContext: shouldReuseDesktopContext()
+          });
+          if (typeof confirmRead.desktopStreak === 'number') {
+            statementStreakDays = confirmRead.desktopStreak;
+          }
+          if (statementStreakDays !== null && statementStreakDays > 1) {
+            logger.info(
+              { account: maskUser(userEmail), statementStreak: statementStreakDays },
+              'Extrato desmente a quebra (sequência do extrato > 1); preservando o streak real.'
+            );
+          } else {
+            logger.warn(
+              { account: maskUser(userEmail), statementStreak: statementStreakDays },
+              'Extrato não desmente a quebra (sequência do extrato <= 1 ou indisponível).'
+            );
+          }
+        } catch (confirmErr) {
+          logger.warn(
+            { err: confirmErr.message },
+            'Falha ao confirmar a quebra de streak pelo extrato; mantendo a leitura da tela.'
+          );
+        }
+      }
+
       // Segunda verificação (fallback): a UI pode não confirmar o clique, mas o extrato
       // desktop de HOJE com a linha "Bônus diário" creditada prova que o check-in
       // funcionou. Nesse caso a sequência pode ser incrementada — a leitura dinâmica da
@@ -557,7 +635,8 @@ async function runCheckin(options = {}) {
             : parseInt(String(earlyDesktopStreak).replace(/[^0-9]/g, ''), 10) || null,
         justCollected,
         alreadyCollected: alreadyCollected || wasAlreadyCollectedToday,
-        confirmedByLedger
+        confirmedByLedger,
+        statementStreak: statementStreakDays
       });
 
       const isCollected =
@@ -724,6 +803,9 @@ async function runCheckin(options = {}) {
         // Nesse caso o relatório contabiliza o valor mesmo com `alreadyCollected=true`,
         // pois o crédito ocorreu no dia (possivelmente via app/usuário).
         checkinCoinsFromLedger: hasBonusFromLedger,
+        // Sequência lida no extrato desktop (quando disponível) — usada para confirmar/desmentir
+        // a quebra quando a tela lê 1 na virada do dia.
+        statementStreakDays,
         totalBalance,
         streakDays,
         previousStreakDays,
@@ -894,6 +976,7 @@ module.exports = {
   runCheckin,
   isSessionDataMissing,
   shouldConfirmCheckinByLedger,
+  shouldConfirmStreakByStatement,
   shouldAttemptLogin,
   checkCaptchaCooldownForLogin
 };

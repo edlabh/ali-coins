@@ -49,6 +49,12 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   acompanhava os ajustes de timeout para páginas lentas; agora usa o mesmo `timeout` da
   leitura do extrato (20 s por padrão, configurável). Contribuição de
   [@reefbluesky](https://github.com/reefbluesky) via PR #19.
+- **Quebra de streak confirmada pelo extrato antes do alerta (`collect.js`, `libs/report.js`):**
+  quando a tela lê `1` com histórico anterior > 1, a sequência do extrato desktop é
+  consultada (com re-leitura sob demanda quando indisponível) antes de tratar como quebra —
+  evita falso positivo na virada do dia (observado em 25/09: `221 → 1` na tela com a
+  sequência real preservada no extrato). Sem extrato disponível, mantém o alerta
+  conservador; o alerta registra `statementStreak` para diagnóstico.
 
 ### Testes
 
@@ -56,7 +62,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
   incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
   confirmação a base é preservada, e as linhas do relatório não anunciam mais
-  "Coletado com sucesso (+0)". Suíte em **424/424**; lint/format limpos.
+  "Coletado com sucesso (+0)". Suíte em **427/427**; lint/format limpos.
 - Teste de regressão do PR #19 em `tests/balance.test.js`: a espera do marcador do
   check-in no extrato deve usar o `timeout` configurado (falha com o valor fixo de 6 s).
 - Testes do PR #18 (`tests/time_utils.test.js`, `tests/config.test.js`): `pickPauseMs`
@@ -67,7 +73,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   faixa, `MAX < MIN`), `composeAccountWaitMs` (maior espera, nunca soma),
   `getReportTimeZoneLabel`, linha "Próxima conta/última" nas notificações e agenda
   (início/fim/próxima) no payload e no render multi-conta.
-  834ebe5b85f5a2ba7ae4c4a9d2aea85f
+- Testes da confirmação de quebra pelo extrato (`tests/streak_break.test.js`,
+  `tests/collect_guard.test.js`): leitura de `1` desmentida pelo extrato não quebra;
+  extrato confirmando (`1`) ou indisponível mantém o alerta; leituras diferentes de `1`
+  não são afetadas.
 
 ## [1.6.2] - 2026-09-24
 

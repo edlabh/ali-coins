@@ -457,6 +457,59 @@ test('libs/report.js - resolveStreakDays mantém comportamento em uni e multi (f
   assert.strictEqual(str, 8);
 });
 
+test('libs/report.js - resolveStreakDays confirma a leitura de 1 pelo extrato (anti-falso-positivo)', () => {
+  const { resolveStreakDays } = require('../libs/report');
+
+  // Tela mostra 1 (virada do dia), mas o extrato mostra a sequência real -> não é quebra
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      justCollected: false,
+      alreadyCollected: false,
+      statementStreak: 222
+    }).streakDays,
+    222,
+    'leitura de 1 deve ser desmentida pelo extrato quando ele mostra sequência maior'
+  );
+
+  // Extrato também mostra 1 -> quebra confirmada (mantém 1)
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      justCollected: false,
+      alreadyCollected: false,
+      statementStreak: 1
+    }).streakDays,
+    1,
+    'extrato confirmando 1 mantém a quebra'
+  );
+
+  // Extrato indisponível -> comportamento anterior (mantém 1, alerta conservador)
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      justCollected: false,
+      alreadyCollected: false,
+      statementStreak: null
+    }).streakDays,
+    1,
+    'sem extrato, mantém a leitura da tela'
+  );
+
+  // Leituras diferentes de 1 não são afetadas pelo extrato (sem regressão)
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: 15,
+      previousStreakDays: 14,
+      statementStreak: 222
+    }).streakDays,
+    15
+  );
+});
+
 test('libs/report.js - resolveStreakDays confirma pelo extrato quando a UI falha (fallback)', () => {
   const { resolveStreakDays } = require('../libs/report');
 

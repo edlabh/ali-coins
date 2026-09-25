@@ -393,6 +393,7 @@ async function main() {
           {
             previousStreak,
             currentStreak,
+            statementStreak: checkinResult?.statementStreakDays,
             totalBalance: checkinResult?.totalBalance
           },
           '🚨 ALERTA CRÍTICO: Streak quebrado! A sequência diária de check-in foi interrompida ou resetada.'
@@ -586,7 +587,8 @@ async function main() {
               {
                 account: account.maskedUser,
                 previousStreak: accPreviousStreak,
-                currentStreak: accCurrentStreak
+                currentStreak: accCurrentStreak,
+                statementStreak: accCheckin?.statementStreakDays
               },
               `🚨 ALERTA CRÍTICO: Streak quebrado para a conta ${account.maskedUser}!`
             );

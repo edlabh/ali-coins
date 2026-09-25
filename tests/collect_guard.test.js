@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isSessionDataMissing, shouldConfirmCheckinByLedger } = require('../collect');
+const {
+  isSessionDataMissing,
+  shouldConfirmCheckinByLedger,
+  shouldConfirmStreakByStatement
+} = require('../collect');
 
 test('collect.js - segunda verificação do check-in pelo extrato ("Bônus diário" de hoje)', () => {
   // UI não confirmou o clique, nada constava coletado antes, mas o extrato tem o crédito
@@ -44,6 +48,63 @@ test('collect.js - segunda verificação do check-in pelo extrato ("Bônus diár
     false
   );
   assert.strictEqual(shouldConfirmCheckinByLedger({}), false);
+});
+
+test('collect.js - confirmação da quebra de streak pelo extrato (somente quando necessário)', () => {
+  // Tela lê 1, histórico anterior > 1 e extrato ainda não disponível -> precisa confirmar
+  assert.strictEqual(
+    shouldConfirmStreakByStatement({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      statementStreak: null,
+      alreadyCollected: false
+    }),
+    true
+  );
+
+  // Extrato já desmente (mostra sequência > 1) -> não precisa de nova leitura
+  assert.strictEqual(
+    shouldConfirmStreakByStatement({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      statementStreak: 222
+    }),
+    false
+  );
+
+  // Extrato também mostra 1 (quebra confirmada) -> não precisa reler
+  assert.strictEqual(
+    shouldConfirmStreakByStatement({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      statementStreak: 1
+    }),
+    false
+  );
+
+  // Histórico anterior <= 1 -> não é cenário de quebra
+  assert.strictEqual(
+    shouldConfirmStreakByStatement({ detectedStreak: 1, previousStreakDays: 1 }),
+    false
+  );
+
+  // Já constava coletado -> sem alerta de quebra
+  assert.strictEqual(
+    shouldConfirmStreakByStatement({
+      detectedStreak: 1,
+      previousStreakDays: 221,
+      statementStreak: null,
+      alreadyCollected: true
+    }),
+    false
+  );
+
+  // Leitura diferente de 1 -> fora do escopo
+  assert.strictEqual(
+    shouldConfirmStreakByStatement({ detectedStreak: 7, previousStreakDays: 221 }),
+    false
+  );
+  assert.strictEqual(shouldConfirmStreakByStatement({}), false);
 });
 
 test('collect.js - sessão inválida: saldo N/D falha mesmo com streak herdado (regressão)', () => {

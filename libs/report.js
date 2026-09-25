@@ -174,6 +174,8 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
  * @param {boolean} [params.justCollected=false] Check-in recém-realizado nesta execução
  * @param {boolean} [params.alreadyCollected=false] Check-in já constava como feito hoje
  * @param {boolean} [params.confirmedByLedger=false] Extrato confirma o "Bônus diário" de hoje
+ * @param {number|null} [params.statementStreak=null] Sequência lida no extrato desktop
+ *   (usada para desmentir leituras de 1 na virada do dia)
  * @returns {{ streakDays: number|string, baseStreak: number|null }}
  */
 function resolveStreakDays({
@@ -182,7 +184,8 @@ function resolveStreakDays({
   earlyDesktopStreak = null,
   justCollected = false,
   alreadyCollected = false,
-  confirmedByLedger = false
+  confirmedByLedger = false,
+  statementStreak = null
 }) {
   const numericCandidates = [previousStreakDays, earlyDesktopStreak].filter(
     (v) => typeof v === 'number' && v > 0
@@ -193,6 +196,10 @@ function resolveStreakDays({
     typeof detectedStreak === 'number'
       ? detectedStreak
       : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+  const parsedStatement =
+    typeof statementStreak === 'number'
+      ? statementStreak
+      : parseInt(String(statementStreak).replace(/[^0-9]/g, ''), 10);
 
   let streakDays = detectedStreak !== null && detectedStreak !== undefined ? detectedStreak : 'N/D';
 
@@ -224,6 +231,16 @@ function resolveStreakDays({
       } else {
         streakDays = parsedDetected;
       }
+    } else if (
+      // Leitura de 1 na tela com histórico anterior > 1: candidata a quebra. Quando o
+      // extrato desktop está disponível e mostra sequência > 1, ele desmente a quebra
+      // (falso positivo observado na virada do dia) e o valor dinâmico do extrato prevalece.
+      parsedDetected === 1 &&
+      baseStreak > 1 &&
+      !isNaN(parsedStatement) &&
+      parsedStatement > 1
+    ) {
+      streakDays = parsedStatement;
     } else {
       streakDays = !isNaN(parsedDetected) ? parsedDetected : baseStreak;
     }
