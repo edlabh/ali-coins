@@ -337,7 +337,7 @@ Adicione a linha para execução diária (exemplo: todos os dias às 04:15 da ma
 > **Evite a janela de virada do dia (`00:00–01:30` em `America/Los_Angeles`):** nessa
 > faixa a central de moedas fica instável — o clique do check-in pode não ser confirmado
 > pela UI e a tarefa "Browse surprise items" costuma falhar sem progresso. Prefira agendar
-> ~3h depois da virada (ex.: `10:00–11:30 UTC` = `07:00–08:30` em `America/Sao_Paulo`,
+> ~3h depois da virada (ex.: `09:30–11:00 UTC` = `06:30–08:00` em `America/Sao_Paulo`,
 > com atraso aleatório para anti-detecção).
 
 > [!TIP]

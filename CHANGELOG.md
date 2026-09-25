@@ -11,6 +11,27 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.6.3] - 2026-09-25
+
+### Adicionado
+
+- **Check-in confirmado pelo extrato — segunda verificação (`collect.js`, `libs/report.js`):**
+  quando o marcador da UI não confirma o clique, o crédito de HOJE na linha "Bônus diário"
+  do extrato desktop passa a valer como prova de que o check-in funcionou: a sequência é
+  incrementada (`confirmedByLedger` no `resolveStreakDays`) e a leitura dinâmica da página
+  continua tendo prioridade quando confiável. O fallback só age se nada constava coletado
+  antes da execução (sem incremento duplo em re-execuções). O relatório deixa de anunciar
+  "Coletado com sucesso (+0 moedas)" quando não houve coleta nem crédito no extrato: passa
+  a exibir "não confirmado nesta execução".
+
+### Testes
+
+- Novos testes da segunda verificação do check-in (`tests/collect_guard.test.js`,
+  `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
+  incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
+  confirmação a base é preservada, e as linhas do relatório não anunciam mais
+  "Coletado com sucesso (+0)". Suíte em **415/415**; lint/format limpos.
+
 ## [1.6.2] - 2026-09-24
 
 ### Adicionado
@@ -33,17 +54,6 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   lockfile ativo agora também **ignora o cooldown pós-captcha**, permitindo a tentativa de
   login mesmo dentro da janela de pausa (log `--force: cooldown pós-captcha ignorado`).
   Documentado no `--help` e na tabela de flags do README.
-- **Check-in confirmado pelo extrato — segunda verificação (`collect.js`, `libs/report.js`):**
-  quando o marcador da UI não confirma o clique, o crédito de HOJE na linha "Bônus diário"
-  do extrato desktop passa a valer como prova de que o check-in funcionou: a sequência é
-  incrementada (`confirmedByLedger` no `resolveStreakDays`) e a leitura dinâmica da página
-  continua tendo prioridade quando confiável. O fallback só age se nada constava coletado
-  antes da execução (sem incremento duplo em re-execuções). O relatório deixa de anunciar
-  "Coletado com sucesso (+0 moedas)" quando não houve coleta nem crédito no extrato: passa
-  a exibir "não confirmado nesta execução". Investigação de 25/09 (streak 221 → 1): o cron
-  rodava logo após a virada do dia (00:20–01:10 PT), janela em que o clique não confirma —
-  a recomendação operacional (10:00–11:30 UTC = 07:00–08:30 BRT) ficou documentada no
-  `CLOUD_SESSIONS.md`.
 
 ### Corrigido
 
@@ -63,12 +73,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - Novos testes em `tests/captcha_cooldown.test.js` (janela de cooldown, round-trip no meta,
   dedupe das notificações, mensagens dos eventos, login novo e importação zerando o
   cooldown) + caso de marcação do erro em `tests/login_reauth.test.js`; suíte em
-  **415/415**; lint/format limpos.
-- Novos testes da segunda verificação do check-in (`tests/collect_guard.test.js`,
-  `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
-  incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
-  confirmação a base é preservada, e as linhas do relatório não anunciam mais
-  "Coletado com sucesso (+0)".
+  **412/412**; lint/format limpos.
 - **Testes independentes de DNS real (`tests/report.test.js`, `tests/test_helper.js`):**
   os testes de webhook mockam o `fetch`, mas o guard SSRF resolvia o hostname na rede —
   um DNS lento no runner do macOS derrubou 2 testes no CI (`Tempo esgotado ao resolver o
