@@ -11,6 +11,16 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+### Adicionado
+
+- **Pausa aleatória opcional antes de cada tarefa (`TASK_PAUSE_MIN_MS` / `TASK_PAUSE_MAX_MS`, padrão `0`/`0` = desligada):**
+  hoje as tarefas do painel rodam encadeadas, com esperas fixas de 1–2,5 s e sem intervalo entre o check-in e a
+  1ª tarefa, num ritmo idêntico todos os dias. As duas variáveis sorteiam uma pausa uniforme entre MIN e MAX (ms)
+  antes de cada tarefa, inclusive a primeira. A pausa fica depois de escolher a tarefa e antes de executá-la, então
+  não sobra pausa no fim. Com o padrão o comportamento é exatamente o anterior. O schema valida `MAX >= MIN`, o
+  `--dry-run` exibe a configuração (texto e JSON) e o sorteio é a função pura `pickPauseMs` (`time_utils.js`), coberta
+  por testes. Documentado em `credentials.env.example` e no `README.md`.
+
 ## [1.6.2] - 2026-09-24
 
 ### Adicionado
