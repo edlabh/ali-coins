@@ -24,13 +24,23 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   "Coletado com sucesso (+0 moedas)" quando não houve coleta nem crédito no extrato: passa
   a exibir "não confirmado nesta execução".
 
+### Corrigido
+
+- **Espera do marcador do check-in no extrato respeita o `NAV_TIMEOUT_SHORT`
+  (`libs/ui/balance.js`):** a espera por `text=App daily check-in` usava 6 s fixos e não
+  acompanhava os ajustes de timeout para páginas lentas; agora usa o mesmo `timeout` da
+  leitura do extrato (20 s por padrão, configurável). Contribuição de
+  [@reefbluesky](https://github.com/reefbluesky) via PR #19.
+
 ### Testes
 
 - Novos testes da segunda verificação do check-in (`tests/collect_guard.test.js`,
   `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
   incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
   confirmação a base é preservada, e as linhas do relatório não anunciam mais
-  "Coletado com sucesso (+0)". Suíte em **415/415**; lint/format limpos.
+  "Coletado com sucesso (+0)". Suíte em **416/416**; lint/format limpos.
+- Teste de regressão do PR #19 em `tests/balance.test.js`: a espera do marcador do
+  check-in no extrato deve usar o `timeout` configurado (falha com o valor fixo de 6 s).
 
 ## [1.6.2] - 2026-09-24
 
