@@ -64,6 +64,13 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   evita falso positivo na virada do dia (observado em 25/09: `221 → 1` na tela com a
   sequência real preservada no extrato). Sem extrato disponível, mantém o alerta
   conservador; o alerta registra `statementStreak` para diagnóstico.
+- **Documentação alinhada às novas opções (`README.md`, `CLOUD_SESSIONS.md`,
+  `docker-run.example.sh`):** a tabela de flags do README passa a listar `--no-delay`; o
+  guia de heartbeat registra que a tolerância (Grace Time) deve ser **≥ ao teto do
+  `START_DELAY_MAX_MS`** (o ping de início só sai após a espera); o guia de nuvem passa a
+  recomendar **hora fixa** no agendador + atraso aleatório do próprio app (portátil entre
+  cron/launchd/Agendador/Docker); e o exemplo de execução via Docker cita o atraso e o
+  repasse de `--no-delay`.
 
 ### Testes
 

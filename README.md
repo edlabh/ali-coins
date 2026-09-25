@@ -44,6 +44,7 @@ A CLI suporta as seguintes flags unificadas (via `commander`):
 | :---------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
 | `-d, --dry-run`         | Executa a validação completa de credenciais e ambiente sem inicializar o Chromium.                                           |
 | `-f, --force`           | Força a execução: sobrescreve um lockfile ativo **e ignora o cooldown pós-captcha** (tenta o login mesmo com a pausa ativa). |
+| `--no-delay`            | Não aplica o atraso inicial aleatório (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS`) nesta execução (manuais/retentativas).     |
 | `--json`                | Emite o relatório de execução, diagnósticos e validação em formato JSON puro.                                                |
 | `--notify`              | Força o envio de notificações via Telegram para a execução atual.                                                            |
 | `--no-notify`           | Desativa o envio de notificações via Telegram para a execução atual.                                                         |
@@ -321,6 +322,7 @@ Se a sua VPS cair, faltar energia no datacenter ou o `cron` travar, **nenhum log
 1. Crie um check gratuito no [Healthchecks.io](https://healthchecks.io) (ou monitor Push no [Uptime Kuma](https://github.com/louislam/uptime-kuma)) configurado com:
    - **Period:** `24 hours`
    - **Grace Time:** `1 hour` (alerta após ~25h sem ping do job).
+   - Com `START_DELAY_MAX_MS > 0`, a tolerância (**Grace Time**) deve ser **≥ ao teto do atraso** — o ping de início só é enviado após a espera.
 2. Configure no seu `credentials.env`:
    ```env
    HEARTBEAT_URL="https://hc-ping.com/seu-uuid-aqui"

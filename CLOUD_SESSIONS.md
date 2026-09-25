@@ -337,8 +337,11 @@ Adicione a linha para execução diária (exemplo: todos os dias às 04:15 da ma
 > **Evite a janela de virada do dia (`00:00–01:30` em `America/Los_Angeles`):** nessa
 > faixa a central de moedas fica instável — o clique do check-in pode não ser confirmado
 > pela UI e a tarefa "Browse surprise items" costuma falhar sem progresso. Prefira agendar
-> ~3h depois da virada (ex.: `09:30–11:00 UTC` = `06:30–08:00` em `America/Sao_Paulo`,
-> com atraso aleatório para anti-detecção).
+> ~3h depois da virada (ex.: `09:30–11:00 UTC` = `06:30–08:00` em `America/Sao_Paulo`).
+> Agende em **hora fixa** e deixe a randomização com o próprio app
+> (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS` no `credentials.env`; ex.: `0` e `5400000`
+> para até 90 min) — é portátil entre cron/launchd/Agendador/Docker, não atrasa no
+> `--dry-run` e pode ser pulado com `--no-delay`.
 
 > [!TIP]
 >
