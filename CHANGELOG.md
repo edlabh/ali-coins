@@ -11,7 +11,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
-## [1.6.3] - 2026-09-25
+## [1.7.0] - 2026-09-25
 
 ### Adicionado
 
@@ -30,7 +30,8 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   antes de cada tarefa, inclusive a primeira. A pausa fica depois de escolher a tarefa e antes de executá-la, então
   não sobra pausa no fim. Com o padrão o comportamento é exatamente o anterior. O schema valida `MAX >= MIN`, o
   `--dry-run` exibe a configuração (texto e JSON) e o sorteio é a função pura `pickPauseMs` (`time_utils.js`), coberta
-  por testes. Documentado em `credentials.env.example` e no `README.md`.
+  por testes. Documentado em `credentials.env.example` e no `README.md`. Contribuição de
+  [@reefbluesky](https://github.com/reefbluesky) via PR #18.
 
 ### Corrigido
 
@@ -46,9 +47,12 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
   incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
   confirmação a base é preservada, e as linhas do relatório não anunciam mais
-  "Coletado com sucesso (+0)". Suíte em **416/416**; lint/format limpos.
+  "Coletado com sucesso (+0)". Suíte em **418/418**; lint/format limpos.
 - Teste de regressão do PR #19 em `tests/balance.test.js`: a espera do marcador do
   check-in no extrato deve usar o `timeout` configurado (falha com o valor fixo de 6 s).
+- Testes do PR #18 (`tests/time_utils.test.js`, `tests/config.test.js`): `pickPauseMs`
+  (extremos, valores inválidos, `max < min`) e configuração (`TASK_PAUSE_*`: padrão
+  desligado, faixa válida e rejeição de `MAX < MIN`).
   834ebe5b85f5a2ba7ae4c4a9d2aea85f
 
 ## [1.6.2] - 2026-09-24
