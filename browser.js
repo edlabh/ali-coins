@@ -92,7 +92,13 @@ const BACKGROUND_CPU_SAVING_ARGS = [
   // gasta menos CPU em composição (as tarefas não dependem de animação).
   '--disable-animations',
   '--disable-smooth-scrolling',
-  '--disable-features=Translate,AcceptCHFrame,MediaRouter,OptimizationHints'
+  '--disable-features=Translate,AcceptCHFrame,MediaRouter,OptimizationHints',
+  // Sem pings de rastreio, sem extensões/notificações e sem prerender de páginas:
+  // menos rede/CPU/disco em background durante a automação (nada disso é usado pelo bot).
+  '--no-pings',
+  '--disable-extensions',
+  '--disable-notifications',
+  '--prerender=disabled'
 ];
 
 // Service workers rodam em background e podem escapar do context.route (bloqueio de mídia),
@@ -377,12 +383,18 @@ async function setupResourceBlocking(context, allowMedia = false) {
 
     const url = req.url().toLowerCase();
 
-    // 2) Telemetria conhecida: substring barata, aplicada a qualquer tipo.
+    // 2) Telemetria conhecida e trackers publicitários: substring barata, aplicada a
+    //    qualquer tipo. Redes de anúncios (Facebook/TikTok/Criteo/Bing Ads) carregam
+    //    scripts pesados que não têm qualquer uso para a automação de moedas.
     if (
       url.includes('umeng.com') ||
       url.includes('google-analytics.com') ||
       url.includes('googletagmanager.com') ||
-      url.includes('doubleclick.net')
+      url.includes('doubleclick.net') ||
+      url.includes('facebook.net') ||
+      url.includes('tiktok.com') ||
+      url.includes('criteo.net') ||
+      url.includes('bing.com')
     ) {
       return route.abort().catch(() => {});
     }

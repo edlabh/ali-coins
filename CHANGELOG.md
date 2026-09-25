@@ -11,6 +11,41 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.7.1] - 2026-09-25
+
+### Performance
+
+- **Atalho da leitura desktop no check-in (`collect.js`):** quando nada foi coletado na
+  execução (`!justCollected`) e a checagem inicial trouxe saldo válido, o encerramento da
+  etapa 1 reutiliza a leitura inicial — elimina a 2ª leitura desktop redundante (~18s na
+  baseline). Após uma coleta nova, a leitura continua obrigatória (crédito/streak).
+- **Reúso da página mobile entre check-in e tarefas (`collect.js`, `do_tasks.js`, `all.js`):**
+  `runCheckin({ keepPage: true })` entrega a página/contexto já na central de moedas via
+  `onMobilePageKept`; `runTasks` recebe `page`/`context`, pula a recriação do contexto, a
+  navegação e o pré-aguardo de 8s (vai direto ao painel) e fecha o contexto no `finally`.
+  Comandos avulsos (`node collect.js`, `node do_tasks.js`) seguem autônomos — o reúso só
+  ocorre quando o handle é repassado.
+- **`pino-pretty` movido para `devDependencies` (`package.json`, `logger.js`):** o container
+  de produção (`npm ci --omit=dev`) deixa de instalar o pretty-printer e suas dependências
+  transitivas; o logger resolve o módulo antes de criar o transporte e degrada para
+  stdout/JSON sem quebrar quando ele não existe.
+- **Build Docker mais enxuto (`.dockerignore`, `Dockerfile`):** scripts de host/setup
+  (`setup_*.sh`, `push_to_github.sh`, `run*.sh`, `docker-run*.sh`) ficam fora da imagem,
+  eliminando a camada `RUN chmod +x`; o Chromium é instalado pelo binário local
+  (`./node_modules/.bin/playwright`), sem `npx`/caches transitórios.
+- **Trackers de anúncios e flags de eficiência (`browser.js`):** Facebook/TikTok/Criteo/Bing
+  Ads são abortados no `setupResourceBlocking`, e o Chromium recebe `--no-pings`,
+  `--disable-extensions`, `--disable-notifications` e `--prerender=disabled`. A cadência
+  anti-bot (1000ms no clique, 1500ms no scroll) permanece intacta.
+
+### Testes
+
+- Novos testes de regressão: reúso da leitura desktop (`tests/collect_guard.test.js`), reúso
+  da página mobile (`tests/do_tasks_reuse.test.js`), trackers/flags do Chromium
+  (`tests/browser_retry.test.js`), fallback sem `pino-pretty` e dependência
+  (`tests/logger.test.js`) e scripts de host fora do Docker (`tests/dockerignore.test.js`);
+  suíte em **441/441**; lint/format limpos.
+
 ## [1.7.0] - 2026-09-25
 
 ### Adicionado

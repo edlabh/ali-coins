@@ -42,11 +42,23 @@ const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
 
 /**
+ * Verifica se a URL corresponde à central de moedas mobile (usada para decidir o reúso da
+ * página deixada pelo check-in — sem nova navegação/recarga do SPA).
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isCoinCenterUrl(url) {
+  return typeof url === 'string' && url.includes('coin-index');
+}
+
+/**
  * Executa as tarefas diárias do painel "Ganhe mais moedas"
  * @param {object} [options={}]
  * @param {import('playwright').Browser} [options.browser] Navegador compartilhado
  * @param {object} [options.sessionData] Sessão em cache
  * @param {boolean} [options.skipAutoLogin=false] Se true, evita chamada recursiva a runCheckin
+ * @param {import('playwright').Page} [options.page] Página mobile já aberta na central (keepPage)
+ * @param {import('playwright').BrowserContext} [options.context] Contexto da página entregue
  * @returns {Promise<object>}
  */
 async function runTasks(options = {}) {
@@ -129,14 +141,25 @@ async function runTasks(options = {}) {
   }
 
   try {
-    const context = await newMobileContext(browser, sessionData || currentSessionPath, {
-      allowMedia: config.ALLOW_MEDIA
-    });
+    // Reúso coordenado com o check-in (keepPage/onMobilePageKept): a página entregue já
+    // está na central de moedas; não recriamos o contexto nem recarregamos o SPA (~54s).
+    const providedPage =
+      options.page && typeof options.page.url === 'function' ? options.page : null;
+    const providedContext =
+      options.context ||
+      (providedPage && typeof providedPage.context === 'function' ? providedPage.context() : null);
+    const reuseMobilePage = Boolean(providedPage) && isCoinCenterUrl(providedPage.url());
+
+    const context =
+      providedContext ||
+      (await newMobileContext(browser, sessionData || currentSessionPath, {
+        allowMedia: config.ALLOW_MEDIA
+      }));
 
     const mobileCoinUrl =
       'https://m.aliexpress.com/p/coin-index/index.html?_immersiveMode=true&from=pc302';
 
-    let page = await context.newPage();
+    let page = providedPage || (await context.newPage());
     let newPageOpened = null;
     let isRecreatingPage = false;
     const openedPages = new Set();
@@ -177,28 +200,34 @@ async function runTasks(options = {}) {
     }
 
     try {
-      logger.info('Acessando central de moedas...');
-      await gotoWithRetry(page, mobileCoinUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: config.NAV_TIMEOUT
-      });
-      await page.waitForLoadState('domcontentloaded');
-
-      if (page.url().includes('coin-pc-index')) {
-        await page.setViewportSize({ width: 412, height: 915 });
+      if (reuseMobilePage) {
+        logger.info(
+          'Reutilizando a página mobile do check-in (sem recarregar a central de moedas).'
+        );
+      } else {
+        logger.info('Acessando central de moedas...');
         await gotoWithRetry(page, mobileCoinUrl, {
           waitUntil: 'domcontentloaded',
-          timeout: config.NAV_TIMEOUT_SHORT
+          timeout: config.NAV_TIMEOUT
         });
-      }
+        await page.waitForLoadState('domcontentloaded');
 
-      // Pré-aguardo de estabilização do DOM mobile
-      await page
-        .waitForSelector(
-          'button[class*="aecoin-signButton"], [class*="signButtonWrapper"], #signButton, [class*="today-checked"], [class*="task"]',
-          { timeout: 8000 }
-        )
-        .catch(() => {});
+        if (page.url().includes('coin-pc-index')) {
+          await page.setViewportSize({ width: 412, height: 915 });
+          await gotoWithRetry(page, mobileCoinUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: config.NAV_TIMEOUT_SHORT
+          });
+        }
+
+        // Pré-aguardo de estabilização do DOM mobile
+        await page
+          .waitForSelector(
+            'button[class*="aecoin-signButton"], [class*="signButtonWrapper"], #signButton, [class*="today-checked"], [class*="task"]',
+            { timeout: 8000 }
+          )
+          .catch(() => {});
+      }
 
       const loginInput = await page.$(SELECTORS.login.usernameInput).catch(() => null);
       const bodyText = await page.innerText('body').catch(() => '');
@@ -806,6 +835,7 @@ if (require.main === module) {
 
 module.exports = {
   runTasks,
+  isCoinCenterUrl,
   ensureMainPage: ensureMainPageFn,
   getDrawerTasksWithRetry: getDrawerTasksWithRetryFn
 };

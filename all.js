@@ -277,8 +277,18 @@ async function main() {
       logger.info(`    Dia e Hora de Início: ${formatDateTime(step1StartTime)}`);
 
       let checkinResult = null;
+      let keptMobileHandle = null;
       try {
-        checkinResult = await runCheckin({ browser, account, config, skipReport: true });
+        checkinResult = await runCheckin({
+          browser,
+          account,
+          config,
+          skipReport: true,
+          keepPage: true,
+          onMobilePageKept: (handle) => {
+            keptMobileHandle = handle;
+          }
+        });
       } catch (err) {
         const step1EndTime = new Date();
         const step1Duration = formatDuration(step1EndTime - step1StartTime);
@@ -369,7 +379,9 @@ async function main() {
           sessionData: checkinResult.sessionData,
           initialBalance: checkinResult.totalBalance,
           skipAutoLogin: true,
-          skipReport: true
+          skipReport: true,
+          page: keptMobileHandle?.page || null,
+          context: keptMobileHandle?.context || null
         });
       } catch (err) {
         // Falha da etapa de tarefas não invalida o check-in, mas precisa ficar visível
@@ -521,6 +533,8 @@ async function main() {
         const accTimer = startAccountTimer();
         let accStep1Duration = '0s';
         let accStep2Duration = '0s';
+        // Handle da página mobile preservada pelo check-in (keepPage) para a etapa de tarefas.
+        let accKeptMobile = null;
 
         // Garante isolamento estrito de cookies e storage fechando contextos remanescentes
         if (browser && typeof browser.contexts === 'function') {
@@ -606,7 +620,16 @@ async function main() {
           // Etapa 1: Check-in
           logger.info(`>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Check-in Diário...`);
           const step1Timer = startAccountTimer();
-          accCheckin = await runCheckin({ browser, account, config, skipReport: true });
+          accCheckin = await runCheckin({
+            browser,
+            account,
+            config,
+            skipReport: true,
+            keepPage: true,
+            onMobilePageKept: (handle) => {
+              accKeptMobile = handle;
+            }
+          });
           const step1Timing = step1Timer.end('step1');
           accStep1Duration = step1Timing.duration;
           logger.info(
@@ -652,7 +675,9 @@ async function main() {
               sessionData: accCheckin?.sessionData,
               initialBalance: accCheckin?.totalBalance,
               skipAutoLogin: true,
-              skipReport: true
+              skipReport: true,
+              page: accKeptMobile?.page || null,
+              context: accKeptMobile?.context || null
             });
           } catch (taskErr) {
             accTasksError = taskErr.message;

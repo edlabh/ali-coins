@@ -182,6 +182,10 @@ if (isJsonMode) {
   destination = pino.destination(2);
 } else if (isDev) {
   try {
+    // pino-pretty é devDependency: em produção (npm ci --omit=dev) o módulo não existe e o
+    // transporte falharia. Resolve ANTES de criar o transport para cair no fallback sem
+    // quebrar o logger (o guard também cobre ambientes com instalação incompleta).
+    require.resolve('pino-pretty');
     // Cores apenas quando o terminal realmente suporta (no Windows legado evita códigos
     // ANSI crus no log); `hasColors()` também respeita NO_COLOR/FORCE_COLOR.
     const supportsColors =

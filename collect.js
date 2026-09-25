@@ -115,6 +115,22 @@ function shouldConfirmStreakByStatement({
 }
 
 /**
+ * Decide se a leitura desktop do encerramento da etapa 1 pode reutilizar a checagem inicial.
+ * Só quando NADA foi coletado nesta execução (saldo/streak não mudaram) e a leitura inicial
+ * trouxe saldo válido — evita reabrir o contexto desktop (~18s na baseline).
+ * @param {{justCollected?: boolean, earlyDesktop?: object|null}} [params]
+ * @returns {boolean}
+ */
+function shouldReuseEarlyDesktop({ justCollected = false, earlyDesktop = null } = {}) {
+  if (justCollected === true) return false;
+  if (!earlyDesktop || typeof earlyDesktop !== 'object') return false;
+  const balance = earlyDesktop.totalBalance;
+  if (balance === null || balance === undefined) return false;
+  const text = String(balance).trim();
+  return text !== '' && text !== 'N/D';
+}
+
+/**
  * Decide se o fluxo deve tentar autenticar nesta execução.
  *
  * Regras:
@@ -210,6 +226,9 @@ async function runCheckin(options = {}) {
 
   let wasAlreadyCollectedToday = false;
   let sessionData = options.sessionData || null;
+  // Reúso coordenado com a etapa de tarefas: quando keepPage=true, a página/contexto mobile
+  // é repassada (onMobilePageKept) em vez de fechada — evita recarregar o SPA nas tarefas.
+  const keepPage = options.keepPage === true;
 
   try {
     // 1. Carregar e validar sessão existente
@@ -227,6 +246,7 @@ async function runCheckin(options = {}) {
     // 2. Checagem prévia rápida no desktop se já foi coletado hoje
     let earlyDesktopStreak = null;
     let earlyTotalBalance = null;
+    let earlyDesktopCheck = null;
     if (hasValidSession) {
       try {
         const desktopCheck = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
@@ -234,6 +254,7 @@ async function runCheckin(options = {}) {
           timeout: config.NAV_TIMEOUT_SHORT,
           reuseContext: shouldReuseDesktopContext()
         });
+        earlyDesktopCheck = desktopCheck;
         if (desktopCheck.hasAppCheckinToday) {
           wasAlreadyCollectedToday = true;
         }
@@ -537,14 +558,41 @@ async function runCheckin(options = {}) {
         );
       }
 
-      await closeContextWithDiagnostics(context, { failed: false, name: 'checkin-mobile' });
+      // Hand-off opcional para a etapa de tarefas (keepPage): entrega página/contexto já
+      // posicionados na central de moedas para evitar recarregar o SPA (~54s). Sem callback
+      // (ou em caso de falha ao repassar), fecha o contexto como sempre.
+      let mobileHandedOff = false;
+      if (keepPage && page && context && typeof options.onMobilePageKept === 'function') {
+        try {
+          options.onMobilePageKept({ page, context });
+          mobileHandedOff = true;
+          logger.info('Página mobile preservada para a etapa de tarefas (sem recarregar o SPA).');
+        } catch (handoffErr) {
+          logger.warn(
+            { err: handoffErr.message },
+            'Falha ao repassar a página mobile para as tarefas; fechando o contexto.'
+          );
+        }
+      }
+      if (!mobileHandedOff) {
+        await closeContextWithDiagnostics(context, { failed: false, name: 'checkin-mobile' });
+      }
 
       // 5. Confirmar resultado e saldo no desktop
-      const desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
-        allowMedia: config.ALLOW_MEDIA,
-        timeout: config.NAV_TIMEOUT_SHORT,
-        reuseContext: shouldReuseDesktopContext()
-      });
+      // Atalho de performance: quando nada foi coletado nesta execução, a checagem inicial
+      // continua válida (saldo/streak não mudaram) — reutilizá-la evita reabrir o contexto
+      // desktop (~18s na baseline). Após uma coleta nova, a leitura é obrigatória (crédito/streak).
+      let desktopResult;
+      if (shouldReuseEarlyDesktop({ justCollected, earlyDesktop: earlyDesktopCheck })) {
+        desktopResult = earlyDesktopCheck;
+        logger.info('Saldo/streak reutilizados da checagem inicial do desktop (sem nova leitura).');
+      } else {
+        desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
+          allowMedia: config.ALLOW_MEDIA,
+          timeout: config.NAV_TIMEOUT_SHORT,
+          reuseContext: shouldReuseDesktopContext()
+        });
+      }
 
       if (desktopResult.hasAppCheckinToday) {
         wasAlreadyCollectedToday = true;
@@ -977,6 +1025,7 @@ module.exports = {
   isSessionDataMissing,
   shouldConfirmCheckinByLedger,
   shouldConfirmStreakByStatement,
+  shouldReuseEarlyDesktop,
   shouldAttemptLogin,
   checkCaptchaCooldownForLogin
 };

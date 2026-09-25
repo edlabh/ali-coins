@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const {
   isSessionDataMissing,
   shouldConfirmCheckinByLedger,
-  shouldConfirmStreakByStatement
+  shouldConfirmStreakByStatement,
+  shouldReuseEarlyDesktop
 } = require('../collect');
 
 test('collect.js - segunda verificação do check-in pelo extrato ("Bônus diário" de hoje)', () => {
@@ -105,6 +106,33 @@ test('collect.js - confirmação da quebra de streak pelo extrato (somente quand
     false
   );
   assert.strictEqual(shouldConfirmStreakByStatement({}), false);
+});
+
+test('collect.js - reúso da leitura desktop inicial (evita 2ª leitura redundante)', () => {
+  // Check-in recém-feito -> o saldo/streak mudaram: NÃO reutilizar (relê o desktop)
+  assert.strictEqual(
+    shouldReuseEarlyDesktop({ justCollected: true, earlyDesktop: { totalBalance: '2531' } }),
+    false
+  );
+
+  // Nada coletado nesta execução e leitura inicial válida -> reutiliza (economiza ~18s)
+  assert.strictEqual(
+    shouldReuseEarlyDesktop({ justCollected: false, earlyDesktop: { totalBalance: '2531' } }),
+    true
+  );
+
+  // Leitura inicial ausente ou sem saldo válido -> relê
+  assert.strictEqual(shouldReuseEarlyDesktop({ justCollected: false, earlyDesktop: null }), false);
+  assert.strictEqual(
+    shouldReuseEarlyDesktop({ justCollected: false, earlyDesktop: { totalBalance: 'N/D' } }),
+    false
+  );
+  assert.strictEqual(shouldReuseEarlyDesktop({ justCollected: false, earlyDesktop: {} }), false);
+  assert.strictEqual(
+    shouldReuseEarlyDesktop({ justCollected: false, earlyDesktop: { totalBalance: '' } }),
+    false
+  );
+  assert.strictEqual(shouldReuseEarlyDesktop({}), false);
 });
 
 test('collect.js - sessão inválida: saldo N/D falha mesmo com streak herdado (regressão)', () => {

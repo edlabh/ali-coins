@@ -39,6 +39,13 @@ tests/
 setup_windows.*
 generate_secret.*
 
+# Scripts de host/setup (a imagem executa apenas `node all.js`; sem utilitários de instalação)
+setup_linux.sh
+setup_macos.sh
+push_to_github.sh
+run*.sh
+docker-run*.sh
+
 # Documentação extensa (mantida no repositório, dispensável na imagem)
 INSTALL_*.md
 TELEGRAM.md

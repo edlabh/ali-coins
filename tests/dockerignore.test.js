@@ -88,3 +88,40 @@ test('.dockerignore - não exclui arquivos necessários em runtime', () => {
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('.dockerignore - scripts de host/setup ficam fora da imagem (não exigem chmod no Dockerfile)', () => {
+  const patterns = ignoredPatterns();
+  const required = [
+    'setup_linux.sh',
+    'setup_macos.sh',
+    'push_to_github.sh',
+    'run*.sh',
+    'docker-run*.sh'
+  ];
+  for (const pattern of required) {
+    assert.ok(
+      patterns.includes(pattern),
+      `Script de host ausente no .dockerignore: ${pattern} (a imagem roda apenas ` +
+        '`node all.js`' +
+        `)`
+    );
+  }
+});
+
+test('Dockerfile - sem camada de chmod e com playwright invocado direto (sem npx)', () => {
+  const dockerfile = fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf-8');
+  assert.strictEqual(
+    /chmod \+x/.test(dockerfile),
+    false,
+    'a camada RUN chmod +x não deve existir (scripts de host fora da imagem)'
+  );
+  assert.ok(
+    dockerfile.includes('./node_modules/.bin/playwright install --only-shell chromium'),
+    'o install do Chromium deve usar o binário local (sem npx)'
+  );
+  assert.strictEqual(
+    /npx playwright install/.test(dockerfile),
+    false,
+    'npx playwright install não deve ser usado (camadas/caches transitórios em /root/.cache)'
+  );
+});

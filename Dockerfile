@@ -68,20 +68,17 @@ RUN groupadd -g 10001 appuser && \
 # O app sempre roda headless (a imagem não tem Xvfb): com 'headless: true' o Playwright usa
 # chrome-headless-shell, então o Chromium completo (~390 MB) seria peso morto.
 # Nota BuildKit: Para compilações mais velozes com cache local de navegadores, pode-se usar:
-# RUN --mount=type=cache,target=/ms-playwright npx playwright install --only-shell chromium
+# RUN --mount=type=cache,target=/ms-playwright ./node_modules/.bin/playwright install --only-shell chromium
 COPY package*.json ./
 # Cache mount do npm: o cache de pacotes fica fora da imagem e acelera reconstruções.
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev --ignore-scripts && \
-    npx playwright install --only-shell chromium && \
+    ./node_modules/.bin/playwright install --only-shell chromium && \
     rm -rf /root/.cache /tmp/* && \
     chown -R appuser:appuser /ms-playwright /app
 
-# Copiar código-fonte da aplicação
+# Copiar código-fonte da aplicação (scripts de host/setup ficam fora via .dockerignore)
 COPY --chown=appuser:appuser . .
-
-# Permissões de execução dos scripts
-RUN chmod +x run_*.sh setup_*.sh push_to_github.sh 2>/dev/null || true
 
 # Executar como usuário não-root dedicado para máxima segurança em containers
 USER appuser

@@ -227,3 +227,46 @@ test('logger.js - cookie multivalorado é redigido por inteiro (A8)', () => {
   const out2 = sanitizeSensitiveQueryParams('set-cookie: session=ABC; Path=/; HttpOnly');
   assert.ok(!out2.includes('ABC'), 'set-cookie também deve ser redigido');
 });
+
+test('logger.js - modo pretty degrada para stdout quando pino-pretty não está instalado', () => {
+  const path = require('path');
+  const loggerPath = path.join(__dirname, '..', 'logger.js');
+  const script = `
+    const Module = require('module');
+    const orig = Module._resolveFilename;
+    Module._resolveFilename = function (request, ...args) {
+      if (request === 'pino-pretty') {
+        const err = new Error("Cannot find module 'pino-pretty'");
+        err.code = 'MODULE_NOT_FOUND';
+        throw err;
+      }
+      return orig.apply(this, [request, ...args]);
+    };
+    Object.defineProperty(process.stdout, 'isTTY', { value: true });
+    const logger = require(${JSON.stringify(loggerPath)});
+    logger.info('fallback-sem-pino-pretty-ok');
+  `;
+  const out = spawnSync(process.execPath, ['-e', script], {
+    encoding: 'utf8',
+    env: { ...process.env, NODE_ENV: 'development', CI: '', NODE_TEST_CONTEXT: '' }
+  });
+
+  assert.strictEqual(out.status, 0, `processo filho falhou: ${out.stderr}`);
+  assert.ok(
+    `${out.stdout}${out.stderr}`.includes('fallback-sem-pino-pretty-ok'),
+    'log deve continuar funcionando (fallback para stdout) sem o pino-pretty'
+  );
+});
+
+test('package.json - pino-pretty é dependência de desenvolvimento (não vai para o container)', () => {
+  const pkg = require('../package.json');
+  assert.strictEqual(
+    Object.prototype.hasOwnProperty.call(pkg.dependencies || {}, 'pino-pretty'),
+    false,
+    'pino-pretty não pode estar em dependencies (npm ci --omit=dev instala no container)'
+  );
+  assert.ok(
+    Object.prototype.hasOwnProperty.call(pkg.devDependencies || {}, 'pino-pretty'),
+    'pino-pretty deve estar em devDependencies'
+  );
+});

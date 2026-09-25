@@ -763,3 +763,62 @@ test('browser.js - setupResourceBlocking intercepta assets e trata erros de abor
     assertRealFilesUntouched(realFilesSnapshot);
   }
 });
+
+test('browser.js - setupResourceBlocking bloqueia trackers de anúncios de terceiros', async () => {
+  const { setupResourceBlocking } = require('../browser');
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let routeHandler = null;
+    const mockContext = {
+      route: async (_pattern, handler) => {
+        routeHandler = handler;
+      }
+    };
+    await setupResourceBlocking(mockContext, false);
+
+    const aborted = [];
+    const continued = [];
+    const makeRoute = (url, type = 'script') => ({
+      request: () => ({ resourceType: () => type, url: () => url }),
+      abort: async () => {
+        aborted.push(url);
+      },
+      continue: async () => {
+        continued.push(url);
+      }
+    });
+
+    const adUrls = [
+      'https://connect.facebook.net/en_US/sdk.js',
+      'https://analytics.tiktok.com/i18n/pixel/events.js',
+      'https://static.criteo.net/js/ld/publishertag.js',
+      'https://bat.bing.com/bat.js'
+    ];
+    for (const url of adUrls) {
+      await routeHandler(makeRoute(url));
+    }
+    await routeHandler(makeRoute('https://ae01.alicdn.com/app.js'));
+    await routeHandler(makeRoute('https://m.aliexpress.com/p/coin-index/index.js'));
+
+    assert.deepStrictEqual(aborted, adUrls, 'trackers de anúncios devem ser abortados');
+    assert.deepStrictEqual(
+      continued,
+      ['https://ae01.alicdn.com/app.js', 'https://m.aliexpress.com/p/coin-index/index.js'],
+      'scripts legítimos da AliExpress continuam carregando'
+    );
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('browser.js - flags de eficiência incluem no-pings, extensões, notificações e prerender', () => {
+  const args = buildChromiumArgs({ lowMemory: false });
+  for (const flag of [
+    '--no-pings',
+    '--disable-extensions',
+    '--disable-notifications',
+    '--prerender=disabled'
+  ]) {
+    assert.ok(args.includes(flag), `flag de eficiência ausente: ${flag}`);
+  }
+});
