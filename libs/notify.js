@@ -1,7 +1,13 @@
 const fs = require('fs');
 const os = require('os');
 const { version: APP_VERSION } = require('../package.json');
-const { formatDate, formatDateTime, formatDuration } = require('../time_utils');
+const {
+  formatDate,
+  formatDateTime,
+  formatDuration,
+  formatTime,
+  getReportTimeZoneLabel
+} = require('../time_utils');
 const { maskUser } = require('../config');
 const { computeCheckinCoinsGained, computeTasksCoinsGained } = require('./report');
 const logger = require('../logger');
@@ -358,6 +364,24 @@ function buildMultiAccountMessage({ report, event, error = null, safeHost, now }
     });
   }
 
+  const agenda = Array.isArray(report.accounts)
+    ? report.accounts.filter((acc) => acc && (acc.startTime || acc.nextAccountAt))
+    : [];
+  if (agenda.length > 0) {
+    lines.push('');
+    lines.push('📅 <b>Agenda:</b>');
+    agenda.forEach((acc, idx) => {
+      const inicio = acc.startTime ? formatTime(new Date(acc.startTime)) : 'N/D';
+      const fim = acc.endTime ? formatTime(new Date(acc.endTime)) : 'N/D';
+      const proxima = acc.nextAccountAt
+        ? `próxima: ${formatTime(new Date(acc.nextAccountAt))} ${getReportTimeZoneLabel(new Date(acc.nextAccountAt))}`
+        : 'última';
+      lines.push(
+        `[${idx + 1}] <code>${escapeHtml(acc.user)}</code>: ${inicio} → ${fim} (${proxima})`
+      );
+    });
+  }
+
   lines.push('');
   let multiTotalDuration = report.meta?.totalDuration;
   if (!multiTotalDuration || multiTotalDuration === '0s') {
@@ -384,6 +408,33 @@ function buildMultiAccountMessage({ report, event, error = null, safeHost, now }
   lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
 
   return truncateMessageIfNeeded(lines.join('\n'));
+}
+
+/**
+ * Linha informativa do horário previsto da próxima conta (pausa entre contas habilitada).
+ * Retorna null quando o relatório não traz o campo (recurso desligado), preservando o
+ * formato anterior das mensagens.
+ * @param {object} report
+ * @returns {string|null}
+ */
+function buildNextAccountLine(report) {
+  if (!report || typeof report !== 'object') return null;
+  if (!Object.prototype.hasOwnProperty.call(report, 'nextAccountAt')) return null;
+  if (report.nextAccountAt) {
+    const when = new Date(report.nextAccountAt);
+    if (isNaN(when.getTime())) return '⏰ <b>Última conta desta execução.</b>';
+    const tz = getReportTimeZoneLabel(when);
+    const who = report.nextAccountUser
+      ? ` (<code>${escapeHtml(report.nextAccountUser)}</code>)`
+      : '';
+    // Tempo restante em minutos: o horário está no fuso do relatório, que pode diferir do
+    // host do destinatário — "em ~N min" elimina a ambiguidade.
+    const remainingMs = when.getTime() - Date.now();
+    const remaining =
+      remainingMs < 60000 ? 'em menos de 1 min' : `em ~${Math.round(remainingMs / 60000)} min`;
+    return `⏰ <b>Próxima conta:</b> ${formatTime(when)} ${tz}${who} — ${remaining}`;
+  }
+  return '⏰ <b>Última conta desta execução.</b>';
 }
 
 /**
@@ -463,7 +514,7 @@ function buildMessage({
   if (event === 'captcha_required') {
     const errorSnippet = sanitizeSensitiveQueryParams(extractRelevantErrorMessage(error));
     const userDisplay = resolveUser(report);
-    return [
+    const captchaLines = [
       `🤖 ali-coins — ${now}`,
       '⚠️ <b>Desafio anti-bot (captcha) detectado no login</b>',
       ...(userDisplay ? [`👤 <b>Conta:</b> <code>${escapeHtml(userDisplay)}</code>`] : []),
@@ -472,7 +523,10 @@ function buildMessage({
       `ℹ️ <i>${escapeHtml(errorSnippet)}</i>`,
       '',
       '💡 <b>Ação:</b> renove a sessão localmente (rede residencial) e importe com <code>node import_session.js</code>. Novas tentativas de login ficam pausadas pelo cooldown (<code>CAPTCHA_COOLDOWN_HOURS</code>).'
-    ].join('\n');
+    ];
+    const nextAccountLine = buildNextAccountLine(report);
+    if (nextAccountLine) captchaLines.push(nextAccountLine);
+    return captchaLines.join('\n');
   }
 
   // Cooldown pós-captcha expirado: avisa que o login voltará a ser tentado.
@@ -533,6 +587,8 @@ function buildMessage({
     }
 
     lines.push(`🖥️ <b>Host:</b> <code>${safeHost}</code>`);
+    const nextAccountLine = buildNextAccountLine(report);
+    if (nextAccountLine) lines.push(nextAccountLine);
     return lines.join('\n');
   }
 
@@ -559,6 +615,8 @@ function buildMessage({
       `📉 <b>Ontem:</b> ${escapeHtml(toSafeStreak(yesterdayStreak))} ➔ <b>Hoje:</b> ${escapeHtml(toSafeStreak(todayStreak))}`,
       `💰 <b>Saldo Atual:</b> ${escapeHtml(balance)}`
     ];
+    const nextAccountLine = buildNextAccountLine(report);
+    if (nextAccountLine) lines.push(nextAccountLine);
 
     return lines.join('\n');
   }
@@ -581,6 +639,9 @@ function buildMessage({
       '3. Exporte a nova sessão gerada: <code>node export_session.js</code>',
       '4. Importe a sessão no servidor: <code>node import_session.js &lt; session_token.txt</code>'
     ];
+
+    const nextAccountLine = buildNextAccountLine(report);
+    if (nextAccountLine) lines.push(nextAccountLine);
 
     return lines.join('\n');
   }
@@ -684,6 +745,8 @@ function buildMessage({
       `💰 Saldo: ${escapeHtml(saldoDisplay)}`,
       `⏱️ Duração: ${escapeHtml(totalDuration)}`
     ];
+    const nextAccountLine = buildNextAccountLine(report);
+    if (nextAccountLine) lines.push(nextAccountLine);
 
     return lines.join('\n');
   }

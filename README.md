@@ -143,6 +143,8 @@ LOG_LEVEL=info
 # TASK_RETRY_DELAY_MS=5000
 # TASK_PAUSE_MIN_MS=0           # pausa aleatória antes de cada tarefa, entre MIN e MAX em ms (padrão: 0/0 = desligada)
 # TASK_PAUSE_MAX_MS=0           # ex.: 15000 e 60000 -> 15s a 60s entre tarefas (MAX deve ser >= MIN)
+# ACCOUNT_DELAY_MIN_MS=0        # pausa aleatória entre contas no modo multi-conta, entre MIN e MAX em ms (padrão: 0/0 = desligada)
+# ACCOUNT_DELAY_MAX_MS=0        # ex.: 60000 e 180000 -> 1 a 3 min entre contas (MAX deve ser >= MIN)
 
 # Telegram por conta (opcional): enviar também o resultado individual de cada conta (padrão: false)
 # TELEGRAM_PER_ACCOUNT=false

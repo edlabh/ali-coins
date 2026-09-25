@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { formatDate, formatTime, formatDuration } = require('../time_utils');
+const { formatDate, formatTime, formatDuration, getReportTimeZoneLabel } = require('../time_utils');
 const { maskUser } = require('../config');
 const { getCheckinCoinsFromStreak } = require('./ui/balance');
 const { validateExternalUrl, safeFetch } = require('./url_guard');
@@ -98,6 +98,11 @@ const multiAccountReportSchema = z.object({
       tasksError: z.string().optional(),
       isImportedSessionExpired: z.boolean().optional(),
       duration: z.string().optional(),
+      // Agenda da execução (pausa entre contas habilitada): janela da conta e próxima conta.
+      startTime: z.string().optional(),
+      endTime: z.string().optional(),
+      nextAccountAt: z.string().nullable().optional(),
+      nextAccountUser: z.string().nullable().optional(),
       meta: z.object({
         finalBalance: z.string(),
         totalCoinsGained: z.union([z.number(), z.string()]).optional(),
@@ -943,6 +948,17 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
       tasksError: item.tasksError || undefined,
       // Preserva o sinal de sessão importada expirada para o alerta consolidado do Telegram
       isImportedSessionExpired: Boolean(item.isImportedSessionExpired),
+      // Agenda da execução (preenchida pelo fluxo multi-conta quando a pausa entre contas
+      // está habilitada): janela da conta e horário previsto da próxima conta.
+      startTime: item.startTime ? new Date(item.startTime).toISOString() : undefined,
+      endTime: item.endTime ? new Date(item.endTime).toISOString() : undefined,
+      nextAccountAt:
+        item.nextAccountAt === null
+          ? null
+          : item.nextAccountAt
+            ? new Date(item.nextAccountAt).toISOString()
+            : undefined,
+      nextAccountUser: item.nextAccountUser || undefined,
       duration: accountDuration,
       meta: {
         finalBalance,
@@ -1055,6 +1071,17 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
     if (accMeta) {
       logger.info(
         `  • Moedas Ganhas Hoje: +${accMeta.totalCoinsGained || 0} moedas (check-in +${accMeta.checkinCoinsGained || 0} / tarefas +${accMeta.tasksCoinsGained || 0})`
+      );
+    }
+
+    // Agenda da execução: exibida apenas quando a pausa entre contas está habilitada
+    // (os campos de agenda são preenchidos nesse caso; 0/0 mantém o relatório anterior).
+    if ('nextAccountAt' in res && res.startTime && res.endTime) {
+      const proxima = res.nextAccountAt
+        ? `próxima conta às ${formatTime(res.nextAccountAt)} ${getReportTimeZoneLabel(res.nextAccountAt)}`
+        : 'última conta';
+      logger.info(
+        `  • Janela: ${formatTime(res.startTime)} → ${formatTime(res.endTime)} (${proxima})`
       );
     }
   });

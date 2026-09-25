@@ -417,3 +417,42 @@ test('config.js - TASK_PAUSE_MIN_MS/MAX_MS: padrão desligado, aceita faixa vál
     /TASK_PAUSE_MAX_MS deve ser >= TASK_PAUSE_MIN_MS/
   );
 });
+
+test('config.js - ACCOUNT_DELAY_MIN_MS/MAX_MS: padrão desligado, faixa válida e rejeita max < min', () => {
+  const base = {
+    ALI_USER: 'test@example.com',
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
+
+  // Padrão: 0/0 (pausa entre contas desligada, comportamento anterior preservado)
+  const padrao = configSchema.parse(base);
+  assert.strictEqual(padrao.ACCOUNT_DELAY_MIN_MS, 0);
+  assert.strictEqual(padrao.ACCOUNT_DELAY_MAX_MS, 0);
+
+  // Faixa válida vinda de string de ambiente
+  const ok = configSchema.parse({
+    ...base,
+    ACCOUNT_DELAY_MIN_MS: '60000',
+    ACCOUNT_DELAY_MAX_MS: '180000'
+  });
+  assert.strictEqual(ok.ACCOUNT_DELAY_MIN_MS, 60000);
+  assert.strictEqual(ok.ACCOUNT_DELAY_MAX_MS, 180000);
+
+  // Valor inválido cai no padrão 0
+  assert.strictEqual(
+    configSchema.parse({ ...base, ACCOUNT_DELAY_MAX_MS: 'abc' }).ACCOUNT_DELAY_MAX_MS,
+    0
+  );
+
+  // max < min é erro de configuração acionável
+  assert.throws(
+    () =>
+      configSchema.parse({
+        ...base,
+        ACCOUNT_DELAY_MIN_MS: '180000',
+        ACCOUNT_DELAY_MAX_MS: '60000'
+      }),
+    /ACCOUNT_DELAY_MAX_MS deve ser >= ACCOUNT_DELAY_MIN_MS/
+  );
+});

@@ -118,6 +118,37 @@ function calculateAccountBackoff(
 }
 
 /**
+ * Combina a espera de backoff por falha com a pausa aleatória entre contas SEM somar:
+ * devolve a MAIOR espera válida (>= 0). Valores inválidos/negativos são ignorados.
+ * @param {number} [backoffMs=0]
+ * @param {number} [delayMs=0]
+ * @returns {number}
+ */
+function composeAccountWaitMs(backoffMs = 0, delayMs = 0) {
+  const safe = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+  return Math.max(safe(backoffMs), safe(delayMs));
+}
+
+/**
+ * Rótulo curto do fuso do relatório (ex.: "PDT", "GMT-3") para rotular horários em
+ * logs/notificações. Deriva de REPORT_TIMEZONE (America/Los_Angeles por padrão).
+ * @param {Date} [date=new Date()]
+ * @returns {string}
+ */
+function getReportTimeZoneLabel(date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: REPORT_TIMEZONE,
+      timeZoneName: 'short'
+    }).formatToParts(date);
+    const found = parts.find((p) => p.type === 'timeZoneName');
+    return (found && found.value) || REPORT_TIMEZONE;
+  } catch {
+    return REPORT_TIMEZONE;
+  }
+}
+
+/**
  * Sorteia uma pausa (ms) uniforme e inclusiva entre `minMs` e `maxMs`.
  * Valores inválidos/negativos viram 0; se `maxMs < minMs`, usa `minMs`. Com `maxMs` 0 retorna 0
  * (pausa desligada). `random` é injetável para testes determinísticos.
@@ -139,5 +170,7 @@ module.exports = {
   formatDateTime,
   formatDuration,
   calculateAccountBackoff,
-  pickPauseMs
+  pickPauseMs,
+  composeAccountWaitMs,
+  getReportTimeZoneLabel
 };

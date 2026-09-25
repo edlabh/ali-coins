@@ -89,3 +89,24 @@ test('time_utils.js - pickPauseMs sorteia dentro de [min, max] e desliga com max
   // Sempre inteiro
   assert.ok(Number.isInteger(pickPauseMs(1, 1000, () => 0.123456)));
 });
+
+test('time_utils.js - composeAccountWaitMs usa a maior espera (nunca soma backoff + pausa)', () => {
+  const { composeAccountWaitMs } = require('../time_utils');
+
+  assert.strictEqual(composeAccountWaitMs(3000, 0), 3000, 'só backoff');
+  assert.strictEqual(composeAccountWaitMs(0, 9000), 9000, 'só pausa');
+  assert.strictEqual(composeAccountWaitMs(3000, 9000), 9000, 'maior espera vence');
+  assert.strictEqual(composeAccountWaitMs(9000, 3000), 9000, 'ordem não importa');
+  assert.ok(composeAccountWaitMs(3000, 9000) < 12000, 'nunca soma as duas esperas');
+  assert.strictEqual(composeAccountWaitMs(NaN, 5000), 5000, 'NaN é ignorado');
+  assert.strictEqual(composeAccountWaitMs(-100, 5000), 5000, 'negativo é ignorado');
+  assert.strictEqual(composeAccountWaitMs(undefined, undefined), 0);
+  assert.strictEqual(composeAccountWaitMs(0, 0), 0);
+});
+
+test('time_utils.js - getReportTimeZoneLabel devolve rótulo curto do fuso do relatório', () => {
+  const { getReportTimeZoneLabel } = require('../time_utils');
+  const label = getReportTimeZoneLabel(new Date('2026-09-25T15:00:00Z'));
+  assert.strictEqual(typeof label, 'string');
+  assert.ok(label.trim().length > 0, 'rótulo do fuso não pode ser vazio');
+});

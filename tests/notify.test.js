@@ -1327,3 +1327,165 @@ test('libs/notify.js - buildMessage redige token/code do erro e escapa valores d
   });
   assert.strictEqual(msgStreak.includes('<a href'), false, 'não deve injetar tag HTML');
 });
+
+test('libs/notify.js - mensagem da conta informa o horário da próxima conta (ou a última)', () => {
+  const baseReport = {
+    type: 'unified_report',
+    user: 'ag***@gmail.com',
+    checkin: {
+      alreadyCollected: false,
+      coinsGainedToday: '40',
+      streakDays: 221,
+      totalBalance: '2531',
+      duration: '1m'
+    },
+    tasks: { results: [], coinsGained: 5, finalCoins: '2536 moedas', duration: '2m' },
+    meta: { finalBalance: '2536 moedas', totalCoinsGained: 45, totalDuration: '3m' }
+  };
+
+  // Com próxima conta: mostra o horário previsto, a conta seguinte e quanto falta (min)
+  const comProxima = buildMessage({
+    event: 'success',
+    report: {
+      ...baseReport,
+      nextAccountAt: new Date(Date.now() + 2 * 60000).toISOString(),
+      nextAccountUser: 'ed***@gmail.com'
+    }
+  });
+  assert.match(
+    comProxima,
+    /⏰ <b>Próxima conta:<\/b> \d{2}:\d{2}:\d{2} \S+ \(<code>ed\*\*\*@gmail\.com<\/code>\) — em ~2 min/
+  );
+
+  // Espera curta (< 1 min): não mostrar "0 min"
+  const comProximaCurta = buildMessage({
+    event: 'success',
+    report: {
+      ...baseReport,
+      nextAccountAt: new Date(Date.now() + 30 * 1000).toISOString(),
+      nextAccountUser: 'ed***@gmail.com'
+    }
+  });
+  assert.ok(comProximaCurta.includes('em menos de 1 min'));
+
+  // Última conta: informa que não há próxima
+  const ultima = buildMessage({
+    event: 'success',
+    report: { ...baseReport, nextAccountAt: null, nextAccountUser: null }
+  });
+  assert.ok(ultima.includes('Última conta desta execução'));
+
+  // Recurso desligado (campos ausentes): mensagem permanece como antes
+  const semCampo = buildMessage({ event: 'success', report: baseReport });
+  assert.strictEqual(semCampo.includes('Próxima conta:'), false);
+  assert.strictEqual(semCampo.includes('Última conta desta execução'), false);
+});
+
+test('libs/notify.js - consolidado multi-conta inclui a agenda de execução por conta', () => {
+  const report = {
+    type: 'multi_account_report',
+    accounts: [
+      {
+        user: 'co1***@example.com',
+        checkin: {
+          alreadyCollected: false,
+          coinsGainedToday: '40',
+          streakDays: 10,
+          totalBalance: '1500',
+          duration: '1m'
+        },
+        tasks: { results: [], coinsGained: 5, finalCoins: '1505 moedas', duration: '1m' },
+        startTime: '2026-09-25T15:31:00.000Z',
+        endTime: '2026-09-25T15:35:00.000Z',
+        nextAccountAt: '2026-09-25T15:37:00.000Z',
+        nextAccountUser: 'co2***@example.com',
+        meta: {
+          finalBalance: '1505 moedas',
+          totalCoinsGained: 45,
+          checkinCoinsGained: 40,
+          tasksCoinsGained: 5
+        }
+      },
+      {
+        user: 'co2***@example.com',
+        checkin: {
+          alreadyCollected: true,
+          coinsGainedToday: '0',
+          streakDays: 11,
+          totalBalance: '1600',
+          duration: '1m'
+        },
+        tasks: { results: [], coinsGained: 5, finalCoins: '1605 moedas', duration: '1m' },
+        startTime: '2026-09-25T15:37:00.000Z',
+        endTime: '2026-09-25T15:41:00.000Z',
+        nextAccountAt: null,
+        nextAccountUser: null,
+        meta: {
+          finalBalance: '1605 moedas',
+          totalCoinsGained: 5,
+          checkinCoinsGained: 0,
+          tasksCoinsGained: 5
+        }
+      }
+    ],
+    meta: {
+      startTime: '2026-09-25T15:30:00.000Z',
+      endTime: '2026-09-25T15:41:00.000Z',
+      totalDuration: '11m',
+      totalAccounts: 2,
+      successfulAccounts: 2
+    }
+  };
+
+  const msg = buildMessage({ event: 'success', report });
+  assert.ok(msg.includes('📅 <b>Agenda:</b>'));
+  assert.match(
+    msg,
+    /\[1\] <code>co1\*\*\*@example\.com<\/code>: \d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2} \(próxima: \d{2}:\d{2}:\d{2}/
+  );
+  assert.match(
+    msg,
+    /\[2\] <code>co2\*\*\*@example\.com<\/code>: \d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2} \(última\)/
+  );
+});
+
+test('libs/notify.js - mensagens de captcha/2FA também informam a próxima conta (ou a última)', () => {
+  // Captcha na última conta: avisa que não há próxima
+  const captchaUltima = buildMessage({
+    event: 'captcha_required',
+    error: 'desafio de segurança não superado',
+    report: {
+      type: 'unified_report',
+      user: 'ed***@gmail.com',
+      nextAccountAt: null,
+      nextAccountUser: null
+    }
+  });
+  assert.ok(captchaUltima.includes('Última conta desta execução'));
+
+  // Captcha com próxima conta: mostra o horário + conta seguinte
+  const captchaProxima = buildMessage({
+    event: 'captcha_required',
+    error: 'desafio de segurança não superado',
+    report: {
+      type: 'unified_report',
+      user: 'ed***@gmail.com',
+      nextAccountAt: '2026-09-25T15:37:12.000Z',
+      nextAccountUser: 'ag***@gmail.com'
+    }
+  });
+  assert.match(captchaProxima, /⏰ <b>Próxima conta:<\/b> \d{2}:\d{2}:\d{2} \S+/);
+  assert.ok(captchaProxima.includes('ag***@gmail.com'));
+
+  // 2FA na última conta
+  const tfaUltima = buildMessage({
+    event: '2fa_required',
+    report: {
+      type: 'unified_report',
+      user: 'ed***@gmail.com',
+      nextAccountAt: null,
+      nextAccountUser: null
+    }
+  });
+  assert.ok(tfaUltima.includes('Última conta desta execução'));
+});

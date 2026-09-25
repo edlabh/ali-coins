@@ -32,6 +32,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `--dry-run` exibe a configuração (texto e JSON) e o sorteio é a função pura `pickPauseMs` (`time_utils.js`), coberta
   por testes. Documentado em `credentials.env.example` e no `README.md`. Contribuição de
   [@reefbluesky](https://github.com/reefbluesky) via PR #18.
+- **Pausa aleatória entre contas no modo multi-conta (`ACCOUNT_DELAY_MIN_MS` / `ACCOUNT_DELAY_MAX_MS`):**
+  com mais de uma conta, sorteia uniformemente uma pausa entre MIN e MAX (ms) depois do
+  check-in+tarefas de cada conta e antes de iniciar a próxima, randomizando o início de cada
+  conta. Padrão `0`/`0` = desligada; compõe com o backoff de falha **sem somar esperas** (usa
+  a maior). O log e a notificação da conta informam o horário previsto da próxima conta (ou
+  que é a última) e, na notificação, também quantos minutos faltam para a próxima execução
+  (o horário está no fuso do relatório e pode diferir do host do destinatário). O consolidado
+  traz a agenda por conta (início/fim/próxima). Documentado em `credentials.env.example` e
+  no `README.md`.
 
 ### Corrigido
 
@@ -47,12 +56,17 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
   incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
   confirmação a base é preservada, e as linhas do relatório não anunciam mais
-  "Coletado com sucesso (+0)". Suíte em **418/418**; lint/format limpos.
+  "Coletado com sucesso (+0)". Suíte em **424/424**; lint/format limpos.
 - Teste de regressão do PR #19 em `tests/balance.test.js`: a espera do marcador do
   check-in no extrato deve usar o `timeout` configurado (falha com o valor fixo de 6 s).
 - Testes do PR #18 (`tests/time_utils.test.js`, `tests/config.test.js`): `pickPauseMs`
   (extremos, valores inválidos, `max < min`) e configuração (`TASK_PAUSE_*`: padrão
   desligado, faixa válida e rejeição de `MAX < MIN`).
+- Testes da pausa entre contas (`tests/config.test.js`, `tests/time_utils.test.js`,
+  `tests/notify.test.js`, `tests/report.test.js`): validação `ACCOUNT_DELAY_*` (padrão,
+  faixa, `MAX < MIN`), `composeAccountWaitMs` (maior espera, nunca soma),
+  `getReportTimeZoneLabel`, linha "Próxima conta/última" nas notificações e agenda
+  (início/fim/próxima) no payload e no render multi-conta.
   834ebe5b85f5a2ba7ae4c4a9d2aea85f
 
 ## [1.6.2] - 2026-09-24

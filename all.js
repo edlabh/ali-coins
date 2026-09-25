@@ -8,7 +8,15 @@ const {
   syncAccountSessions,
   maskUser
 } = require('./config');
-const { formatDateTime, formatDuration, calculateAccountBackoff } = require('./time_utils');
+const {
+  formatDateTime,
+  formatTime,
+  formatDuration,
+  calculateAccountBackoff,
+  pickPauseMs,
+  composeAccountWaitMs,
+  getReportTimeZoneLabel
+} = require('./time_utils');
 const { version: APP_VERSION } = require('./package.json');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const {
@@ -449,6 +457,11 @@ async function main() {
       // Espaçamento mínimo entre envios ao Telegram no mesmo run (anti-rajada)
       const NOTIFY_MIN_SPACING_MS = 3000;
       let lastNotifyAt = 0;
+      // Pausa aleatória entre contas (anti-detecção): desligada por padrão (0/0) e só age
+      // quando há próxima conta. Randomiza o início de cada conta após a 1ª.
+      const accountDelayMinMs = config.ACCOUNT_DELAY_MIN_MS ?? 0;
+      const accountDelayMaxMs = config.ACCOUNT_DELAY_MAX_MS ?? 0;
+      const accountDelayEnabled = accountDelayMaxMs > 0;
 
       for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
@@ -673,13 +686,33 @@ async function main() {
           await closeCachedDesktopContext().catch(() => {});
         }
 
+        const failureBackoffMs = pendingBackoffMs;
+        pendingBackoffMs = 0;
+        const hasNextAccount = i < accounts.length - 1;
+        // Pausa aleatória entre contas (anti-detecção): só com o recurso ligado e havendo
+        // próxima conta. Compõe com o backoff de falha SEM somar: usa a MAIOR espera.
+        const accountDelayMs =
+          hasNextAccount && accountDelayEnabled
+            ? pickPauseMs(accountDelayMinMs, accountDelayMaxMs)
+            : 0;
+        const effectiveWaitMs = hasNextAccount
+          ? composeAccountWaitMs(failureBackoffMs, accountDelayMs)
+          : 0;
+
         // Backoff FORA do finally: o lock da conta já foi liberado antes de dormir.
-        if (pendingBackoffMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, pendingBackoffMs));
-          pendingBackoffMs = 0;
+        // Recurso desligado (0/0): preserva o comportamento anterior — dorme o backoff
+        // de falha ANTES de notificar.
+        if (!accountDelayEnabled && failureBackoffMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, failureBackoffMs));
         }
 
         const accTiming = accTimer.end();
+        // ETA da próxima conta: a pausa conta a partir do FIM da conta (não do envio da
+        // notificação) — um envio lento não desloca o início além da janela sorteada.
+        const nextAccountAt =
+          accountDelayEnabled && hasNextAccount
+            ? new Date(accTiming.endTime.getTime() + effectiveWaitMs)
+            : null;
         // Envio individual por conta é OPCIONAL (TELEGRAM_PER_ACCOUNT, padrão desligado).
         // Quando desligado e a conta usa o mesmo chat do consolidado, a mensagem individual
         // é suprimida para evitar rajada ao mesmo destino. O consolidado é sempre enviado.
@@ -699,6 +732,12 @@ async function main() {
               step2Duration: accStep2Duration,
               tasksError: accTasksError
             });
+            // Agenda: com a pausa entre contas ligada, a notificação informa o horário
+            // previsto da próxima conta (ou que esta é a última).
+            if (accountDelayEnabled) {
+              accPayload.nextAccountAt = nextAccountAt ? nextAccountAt.toISOString() : null;
+              accPayload.nextAccountUser = hasNextAccount ? accounts[i + 1].maskedUser : null;
+            }
             const accEvent = accIs2FARequired
               ? '2fa_required'
               : accStreakBroken
@@ -735,6 +774,40 @@ async function main() {
           }
         }
 
+        // Pausa entre contas APÓS o envio da notificação: o usuário recebe o horário
+        // previsto da próxima conta antes da espera. A espera restante é medida até o ETA
+        // ancorado no fim da conta (envio lento não soma à janela). Não soma com o backoff.
+        if (accountDelayEnabled && hasNextAccount && effectiveWaitMs > 0 && nextAccountAt) {
+          const remainingMs = nextAccountAt.getTime() - Date.now();
+          logger.info(
+            {
+              event: 'account_delay',
+              account: account.maskedUser,
+              nextAccount: accounts[i + 1].maskedUser,
+              delayMs: accountDelayMs,
+              backoffMs: failureBackoffMs,
+              waitMs: effectiveWaitMs,
+              accountEndedAt: accTiming.endTime.toISOString(),
+              nextAccountAt: nextAccountAt.toISOString(),
+              remainingMs: Math.round(remainingMs)
+            },
+            `Pausa entre contas: ${Math.round(effectiveWaitMs / 1000)}s ` +
+              `(próxima conta às ${formatTime(nextAccountAt)} ${getReportTimeZoneLabel(nextAccountAt)})`
+          );
+          if (remainingMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, remainingMs));
+          } else {
+            logger.info(
+              {
+                event: 'account_delay_consumed',
+                account: account.maskedUser,
+                waitMs: effectiveWaitMs
+              },
+              'Envio da notificação consumiu a pausa entre contas; iniciando a próxima conta.'
+            );
+          }
+        }
+
         accountReports.push({
           account,
           user: account.maskedUser,
@@ -747,7 +820,14 @@ async function main() {
           streakBroken: accStreakBroken,
           startTime: accTiming.startTime,
           endTime: accTiming.endTime,
-          duration: accTiming.duration
+          duration: accTiming.duration,
+          // Agenda (só quando a pausa entre contas está habilitada; 0/0 mantém o payload anterior)
+          ...(accountDelayEnabled
+            ? {
+                nextAccountAt: nextAccountAt || null,
+                nextAccountUser: hasNextAccount ? accounts[i + 1].maskedUser : null
+              }
+            : {})
         });
       }
 

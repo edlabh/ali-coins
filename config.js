@@ -171,6 +171,12 @@ const configSchema = z
     TASK_PAUSE_MIN_MS: nonNegativeInt(0),
     TASK_PAUSE_MAX_MS: nonNegativeInt(0),
 
+    // Pausa ALEATÓRIA entre contas no fluxo multi-conta, em ms, sorteada uniformemente
+    // entre MIN e MAX. Padrão 0/0 = desligada (sem espera entre contas em sucesso).
+    // Deixa o ritmo entre contas menos mecânico e randomiza o início de cada conta.
+    ACCOUNT_DELAY_MIN_MS: nonNegativeInt(0),
+    ACCOUNT_DELAY_MAX_MS: nonNegativeInt(0),
+
     // Tarefas que exigem o app nativo (Prize Land/regar, minigames como Merge Boss,
     // quizzes e avaliações de pedidos) nunca concluem via web e consomem tentativas.
     // Por padrão são desligadas (ignoradas no loop e marcadas no relatório).
@@ -279,6 +285,13 @@ const configSchema = z
         code: z.ZodIssueCode.custom,
         message: 'TASK_PAUSE_MAX_MS deve ser >= TASK_PAUSE_MIN_MS.',
         path: ['TASK_PAUSE_MAX_MS']
+      });
+    }
+    if (data.ACCOUNT_DELAY_MAX_MS < data.ACCOUNT_DELAY_MIN_MS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ACCOUNT_DELAY_MAX_MS deve ser >= ACCOUNT_DELAY_MIN_MS.',
+        path: ['ACCOUNT_DELAY_MAX_MS']
       });
     }
     if (data.TELEGRAM_ENABLED) {
@@ -598,6 +611,8 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TASK_RETRY_DELAY_MS: process.env.TASK_RETRY_DELAY_MS,
     TASK_PAUSE_MIN_MS: process.env.TASK_PAUSE_MIN_MS,
     TASK_PAUSE_MAX_MS: process.env.TASK_PAUSE_MAX_MS,
+    ACCOUNT_DELAY_MIN_MS: process.env.ACCOUNT_DELAY_MIN_MS,
+    ACCOUNT_DELAY_MAX_MS: process.env.ACCOUNT_DELAY_MAX_MS,
     PW_TRACE: process.env.PW_TRACE,
     PW_SCREENSHOT: process.env.PW_SCREENSHOT,
     PW_VIDEO: process.env.PW_VIDEO,
@@ -956,6 +971,8 @@ async function handleDryRun() {
         taskScrollMaxMs: cfg.TASK_SCROLL_MAX_MS,
         taskPauseMinMs: cfg.TASK_PAUSE_MIN_MS,
         taskPauseMaxMs: cfg.TASK_PAUSE_MAX_MS,
+        accountDelayMinMs: cfg.ACCOUNT_DELAY_MIN_MS,
+        accountDelayMaxMs: cfg.ACCOUNT_DELAY_MAX_MS,
         telegram: {
           enabled: cfg.TELEGRAM_ENABLED,
           botTokenConfigured: Boolean(cfg.TELEGRAM_BOT_TOKEN),
@@ -1009,6 +1026,9 @@ async function handleDryRun() {
       logger.info(` • Teto de Scroll (TASK_SCROLL_MAX_MS): ${cfg.TASK_SCROLL_MAX_MS}ms`);
       logger.info(
         ` • Pausa entre tarefas (TASK_PAUSE_MIN_MS..MAX_MS): ${cfg.TASK_PAUSE_MAX_MS > 0 ? `${cfg.TASK_PAUSE_MIN_MS}-${cfg.TASK_PAUSE_MAX_MS}ms` : 'Desligada'}`
+      );
+      logger.info(
+        ` • Pausa entre contas (ACCOUNT_DELAY_MIN_MS..MAX_MS): ${cfg.ACCOUNT_DELAY_MAX_MS > 0 ? `${cfg.ACCOUNT_DELAY_MIN_MS}-${cfg.ACCOUNT_DELAY_MAX_MS}ms` : 'Desligada'}`
       );
       logger.info(
         ` • Tarefas exclusivas do app (SKIP_APP_ONLY_TASKS): ${cfg.SKIP_APP_ONLY_TASKS ? 'Desligadas' : 'Ativas'}`

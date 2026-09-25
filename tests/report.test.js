@@ -1876,3 +1876,88 @@ test('libs/report.js - payload de webhook Discord neutraliza menções e markdow
     delete process.env.ALLOW_PRIVATE_WEBHOOKS;
   }
 });
+
+test('libs/report.js - multi-conta inclui a agenda (início/fim/próxima conta) no payload e no render', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    const accountResults = [
+      {
+        account: { maskedUser: 'co1***@example.com' },
+        checkinResult: {
+          alreadyCollected: false,
+          coinsGainedToday: '40',
+          streakDays: 10,
+          totalBalance: '1500',
+          duration: '1m'
+        },
+        tasksResult: {
+          results: [{ title: 'Explore item', status: 'Concluída', coins: '+5' }],
+          finalCoins: '1505 moedas',
+          duration: '1m'
+        },
+        startTime: new Date('2026-09-25T15:31:00Z'),
+        endTime: new Date('2026-09-25T15:35:00Z'),
+        nextAccountAt: new Date('2026-09-25T15:37:00Z'),
+        nextAccountUser: 'co2***@example.com'
+      },
+      {
+        account: { maskedUser: 'co2***@example.com' },
+        checkinResult: {
+          alreadyCollected: true,
+          coinsGainedToday: '0',
+          streakDays: 11,
+          totalBalance: '1600',
+          duration: '1m'
+        },
+        tasksResult: {
+          results: [{ title: 'Explore item', status: 'Concluída', coins: '+5' }],
+          finalCoins: '1605 moedas',
+          duration: '1m'
+        },
+        startTime: new Date('2026-09-25T15:37:00Z'),
+        endTime: new Date('2026-09-25T15:41:00Z'),
+        nextAccountAt: null,
+        nextAccountUser: null
+      }
+    ];
+
+    const payload = buildMultiAccountReportPayload(accountResults, {
+      mainStartTime: new Date('2026-09-25T15:30:00Z'),
+      mainEndTime: new Date('2026-09-25T15:41:00Z'),
+      totalDuration: '11m'
+    });
+
+    assert.strictEqual(payload.accounts[0].startTime, '2026-09-25T15:31:00.000Z');
+    assert.strictEqual(payload.accounts[0].endTime, '2026-09-25T15:35:00.000Z');
+    assert.strictEqual(payload.accounts[0].nextAccountAt, '2026-09-25T15:37:00.000Z');
+    assert.strictEqual(payload.accounts[0].nextAccountUser, 'co2***@example.com');
+    assert.strictEqual(payload.accounts[1].nextAccountAt, null);
+    assert.doesNotThrow(() => multiAccountReportSchema.parse(payload));
+
+    logger.info = (...args) => {
+      messages.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    renderMultiAccountReport(accountResults, {
+      mainStartTime: new Date('2026-09-25T15:30:00Z'),
+      mainEndTime: new Date('2026-09-25T15:41:00Z'),
+      totalDuration: '11m'
+    });
+
+    const out = messages.join('\n');
+    assert.match(
+      out,
+      /Janela: \d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2} \(próxima conta às \d{2}:\d{2}:\d{2} \S+\)/
+    );
+    assert.match(out, /Janela: \d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2} \(última conta\)/);
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
