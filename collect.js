@@ -67,6 +67,25 @@ function isSessionDataMissing(checkinData = {}) {
 }
 
 /**
+ * Segunda verificação do check-in pelo extrato desktop ("Bônus diário" de hoje).
+ *
+ * A confirmação primária é o marcador da UI após o clique. Quando ele não aparece,
+ * o crédito do dia no extrato é prova de que o check-in funcionou — desde que NADA
+ * constasse coletado antes desta execução (evita incremento duplo em re-execuções no
+ * mesmo dia). A leitura dinâmica da página continua tendo prioridade no streak.
+ *
+ * @param {{justCollected?: boolean, alreadyCollected?: boolean, hasBonusFromLedger?: boolean}} [params]
+ * @returns {boolean} true quando o extrato confirma o check-in desta execução
+ */
+function shouldConfirmCheckinByLedger({
+  justCollected = false,
+  alreadyCollected = false,
+  hasBonusFromLedger = false
+} = {}) {
+  return justCollected !== true && alreadyCollected !== true && hasBonusFromLedger === true;
+}
+
+/**
  * Decide se o fluxo deve tentar autenticar nesta execução.
  *
  * Regras:
@@ -511,8 +530,24 @@ async function runCheckin(options = {}) {
               ? earlyDesktopStreak
               : null;
 
+      // Segunda verificação (fallback): a UI pode não confirmar o clique, mas o extrato
+      // desktop de HOJE com a linha "Bônus diário" creditada prova que o check-in
+      // funcionou. Nesse caso a sequência pode ser incrementada — a leitura dinâmica da
+      // página continua tendo prioridade quando confiável.
+      const bonusFromLedgerToday =
+        desktopResult.todayBonusCoins !== null && desktopResult.todayBonusCoins !== undefined
+          ? parseInt(String(desktopResult.todayBonusCoins).replace(/[^0-9]/g, ''), 10)
+          : NaN;
+      const hasBonusFromLedger = !isNaN(bonusFromLedgerToday) && bonusFromLedgerToday > 0;
+      const confirmedByLedger = shouldConfirmCheckinByLedger({
+        justCollected,
+        alreadyCollected,
+        hasBonusFromLedger
+      });
+
       // Resolve o streak final (incremento determinístico, preservação em re-execução,
-      // proteção contra ciclo semanal espúrio e fallback para a leitura do desktop).
+      // proteção contra ciclo semanal espúrio, confirmação pelo extrato e fallback para
+      // a leitura do desktop).
       const { streakDays } = resolveStreakDays({
         detectedStreak,
         previousStreakDays,
@@ -521,10 +556,12 @@ async function runCheckin(options = {}) {
             ? earlyDesktopStreak
             : parseInt(String(earlyDesktopStreak).replace(/[^0-9]/g, ''), 10) || null,
         justCollected,
-        alreadyCollected: alreadyCollected || wasAlreadyCollectedToday
+        alreadyCollected: alreadyCollected || wasAlreadyCollectedToday,
+        confirmedByLedger
       });
 
-      const isCollected = alreadyCollected || wasAlreadyCollectedToday || justCollected;
+      const isCollected =
+        alreadyCollected || wasAlreadyCollectedToday || justCollected || confirmedByLedger;
       const isAlreadyCollected = (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected;
 
       // Determinação das moedas recebidas no check-in.
@@ -579,12 +616,7 @@ async function runCheckin(options = {}) {
       // O extrato desktop é a fonte de verdade: se HOJE há crédito de check-in (mesmo que
       // o clique tenha sido feito pelo usuário no app), o valor é contabilizado. O flag
       // `alreadyCollected` continua servindo apenas para NÃO clicar de novo no check-in.
-      const bonusFromLedgerToday =
-        desktopResult.todayBonusCoins !== null && desktopResult.todayBonusCoins !== undefined
-          ? parseInt(String(desktopResult.todayBonusCoins).replace(/[^0-9]/g, ''), 10)
-          : NaN;
-      const hasBonusFromLedger = !isNaN(bonusFromLedgerToday) && bonusFromLedgerToday > 0;
-
+      // (`bonusFromLedgerToday`/`hasBonusFromLedger` vêm da segunda verificação acima.)
       const coinsGainedToday = hasBonusFromLedger
         ? String(bonusFromLedgerToday)
         : isAlreadyCollected
@@ -861,6 +893,7 @@ if (require.main === module) {
 module.exports = {
   runCheckin,
   isSessionDataMissing,
+  shouldConfirmCheckinByLedger,
   shouldAttemptLogin,
   checkCaptchaCooldownForLogin
 };

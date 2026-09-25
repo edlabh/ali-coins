@@ -333,6 +333,13 @@ Adicione a linha para execução diária (exemplo: todos os dias às 04:15 da ma
 15 4 * * * cd /home/ubuntu/ali-coins && /usr/bin/node all.js >> /home/ubuntu/ali-coins/cron.log 2>&1
 ```
 
+> [!IMPORTANT]
+> **Evite a janela de virada do dia (`00:00–01:30` em `America/Los_Angeles`):** nessa
+> faixa a central de moedas fica instável — o clique do check-in pode não ser confirmado
+> pela UI e a tarefa "Browse surprise items" costuma falhar sem progresso. Prefira agendar
+> ~3h depois da virada (ex.: `10:00–11:30 UTC` = `07:00–08:30` em `America/Sao_Paulo`,
+> com atraso aleatório para anti-detecção).
+
 > [!TIP]
 >
 > - Se você configurou `TELEGRAM_ENABLED=true` no `credentials.env`, a notificação será enviada automaticamente em cada execução (sucesso, já coletado ou eventual erro).

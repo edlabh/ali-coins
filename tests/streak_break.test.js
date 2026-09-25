@@ -456,3 +456,66 @@ test('libs/report.js - resolveStreakDays mantém comportamento em uni e multi (f
   assert.strictEqual(num, 8);
   assert.strictEqual(str, 8);
 });
+
+test('libs/report.js - resolveStreakDays confirma pelo extrato quando a UI falha (fallback)', () => {
+  const { resolveStreakDays } = require('../libs/report');
+
+  // UI não confirmou o clique e a leitura da página veio ausente; o extrato confirma o
+  // "Bônus diário" de hoje -> a sequência incrementa (base + 1).
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: null,
+      previousStreakDays: 221,
+      justCollected: false,
+      alreadyCollected: false,
+      confirmedByLedger: true
+    }).streakDays,
+    222,
+    'confirmação pelo extrato deve incrementar a base'
+  );
+
+  // Leitura dinâmica confiável continua tendo prioridade (streak permanece dinâmico).
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: 222,
+      previousStreakDays: 221,
+      confirmedByLedger: true
+    }).streakDays,
+    222,
+    'leitura dinâmica da página tem prioridade sobre o incremento'
+  );
+
+  // Leitura espúria do ciclo semanal (<= 7) não pode derrubar a sequência confirmada.
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: 6,
+      previousStreakDays: 221,
+      confirmedByLedger: true
+    }).streakDays,
+    222,
+    'leitura do ciclo semanal não derruba a sequência confirmada pelo extrato'
+  );
+
+  // Sem base local e com extrato confirmando -> Dia 1.
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: null,
+      previousStreakDays: null,
+      confirmedByLedger: true
+    }).streakDays,
+    1,
+    'primeira execução confirmada pelo extrato deve ser Dia 1'
+  );
+
+  // Sem a confirmação pelo extrato, o comportamento atual é preservado (não incrementa).
+  assert.strictEqual(
+    resolveStreakDays({
+      detectedStreak: null,
+      previousStreakDays: 221,
+      justCollected: false,
+      alreadyCollected: false
+    }).streakDays,
+    221,
+    'sem confirmação (UI nem extrato) a base é preservada'
+  );
+});

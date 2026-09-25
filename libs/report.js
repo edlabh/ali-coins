@@ -159,6 +159,7 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
  *  - incremento determinístico (+1) quando o check-in acabou de ser feito hoje;
  *  - preservação do streak consolidado em re-execução no mesmo dia;
  *  - proteção contra leitura espúria do ciclo semanal (<= 7 com base > 7);
+ *  - confirmação pelo extrato desktop quando a UI não confirma o clique (fallback);
  *  - fallback para `earlyDesktopStreak` quando o meta local não tem histórico.
  *
  * @param {object} params
@@ -167,6 +168,7 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
  * @param {number|null} [params.earlyDesktopStreak=null] Streak lido no desktop pré-check-in
  * @param {boolean} [params.justCollected=false] Check-in recém-realizado nesta execução
  * @param {boolean} [params.alreadyCollected=false] Check-in já constava como feito hoje
+ * @param {boolean} [params.confirmedByLedger=false] Extrato confirma o "Bônus diário" de hoje
  * @returns {{ streakDays: number|string, baseStreak: number|null }}
  */
 function resolveStreakDays({
@@ -174,7 +176,8 @@ function resolveStreakDays({
   previousStreakDays,
   earlyDesktopStreak = null,
   justCollected = false,
-  alreadyCollected = false
+  alreadyCollected = false,
+  confirmedByLedger = false
 }) {
   const numericCandidates = [previousStreakDays, earlyDesktopStreak].filter(
     (v) => typeof v === 'number' && v > 0
@@ -192,7 +195,7 @@ function resolveStreakDays({
     const isSpuriousWeeklyCycle =
       !isNaN(parsedDetected) && baseStreak > 7 && parsedDetected <= 7 && parsedDetected > 1;
 
-    if (justCollected) {
+    if (justCollected || confirmedByLedger) {
       if (
         detectedStreak === null ||
         detectedStreak === undefined ||
@@ -219,7 +222,7 @@ function resolveStreakDays({
     } else {
       streakDays = !isNaN(parsedDetected) ? parsedDetected : baseStreak;
     }
-  } else if (justCollected) {
+  } else if (justCollected || confirmedByLedger) {
     streakDays = !isNaN(parsedDetected) && parsedDetected >= 1 ? parsedDetected : 1;
   }
 
@@ -830,9 +833,16 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
     );
     const checkinGained =
       jsonOutput.meta.checkinCoinsGained ?? computeCheckinCoinsGained(checkinResult);
-    logger.info(
-      `Check-in Diário: ${checkinResult.alreadyCollected ? 'Já coletado hoje (+0 moedas)' : `Coletado com sucesso (+${checkinGained} moedas)`}`
-    );
+    // Crédito vindo do extrato conta mesmo com alreadyCollected=true (feito no app);
+    // sem crédito e sem coleta confirmada, a linha NÃO pode anunciar sucesso.
+    const hasLedgerCredit = checkinResult.checkinCoinsFromLedger === true && checkinGained > 0;
+    const checkinStatus =
+      checkinResult.alreadyCollected && !hasLedgerCredit
+        ? 'Já coletado hoje (+0 moedas)'
+        : !checkinResult.alreadyCollected && !hasLedgerCredit && checkinGained <= 0
+          ? 'não confirmado nesta execução (nova tentativa na etapa de tarefas)'
+          : `Coletado com sucesso (+${checkinGained} moedas)`;
+    logger.info(`Check-in Diário: ${checkinStatus}`);
   }
 
   if (tasksResult && tasksResult.results) {
@@ -1014,9 +1024,15 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
       );
       const accCheckinGained =
         accMeta?.checkinCoinsGained ?? computeCheckinCoinsGained(res.checkinResult);
-      logger.info(
-        `  • Check-in: ${res.checkinResult.alreadyCollected ? 'Já coletado (+0 moedas)' : `Coletado com sucesso (+${accCheckinGained} moedas)`}`
-      );
+      const accHasLedgerCredit =
+        res.checkinResult.checkinCoinsFromLedger === true && accCheckinGained > 0;
+      const accCheckinStatus =
+        res.checkinResult.alreadyCollected && !accHasLedgerCredit
+          ? 'Já coletado (+0 moedas)'
+          : !res.checkinResult.alreadyCollected && !accHasLedgerCredit && accCheckinGained <= 0
+            ? 'não confirmado nesta execução (nova tentativa na etapa de tarefas)'
+            : `Coletado com sucesso (+${accCheckinGained} moedas)`;
+      logger.info(`  • Check-in: ${accCheckinStatus}`);
     }
 
     if (res.tasksResult && res.tasksResult.results) {

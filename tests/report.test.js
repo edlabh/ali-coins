@@ -971,6 +971,117 @@ test('report.js - renderUnifiedReport e renderMultiAccountReport exibem (+0 moed
   }
 });
 
+test('libs/report.js - check-in confirmado pelo extrato e check-in não confirmado (fallback da UI)', () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const logger = require('../logger');
+  const originalInfo = logger.info;
+  const messages = [];
+
+  try {
+    logger.info = (...args) => {
+      messages.push(
+        args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+      );
+    };
+
+    // Caso 1 (unificado): a UI não confirmou o clique, mas o extrato tem o "Bônus diário"
+    // de hoje (checkinCoinsFromLedger=true) -> o valor creditado aparece na linha.
+    renderUnifiedReport(
+      {
+        userEmail: 'user@example.com',
+        alreadyCollected: true,
+        coinsGainedToday: '40',
+        checkinCoinsFromLedger: true,
+        streakDays: 222,
+        totalBalance: '1540',
+        duration: '5s'
+      },
+      {
+        results: [{ title: 'Explore items', status: 'Concluída', coins: '+5 moedas' }],
+        initialBalance: 1540,
+        finalBalance: 1545,
+        coinsGained: 5,
+        finalCoins: '1545 moedas',
+        duration: '20s'
+      },
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '25s' }
+    );
+
+    const out1 = messages.join('\n');
+    assert.ok(
+      out1.includes('Check-in Diário: Coletado com sucesso (+40 moedas)'),
+      `Crédito do extrato deve aparecer na linha do check-in: ${out1}`
+    );
+
+    messages.length = 0;
+
+    // Caso 2 (unificado): UI não confirmou e o extrato não tem crédito de hoje -> NÃO
+    // pode anunciar "Coletado com sucesso (+0 moedas)" (regressão real observada em 25/09).
+    renderUnifiedReport(
+      {
+        userEmail: 'user@example.com',
+        alreadyCollected: false,
+        coinsGainedToday: '0',
+        streakDays: 1,
+        totalBalance: '2531',
+        duration: '5s'
+      },
+      {
+        results: [],
+        initialBalance: 2531,
+        finalBalance: 2531,
+        coinsGained: 0,
+        finalCoins: '2531 moedas',
+        duration: '0s'
+      },
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '5s' }
+    );
+
+    const out2 = messages.join('\n');
+    assert.ok(
+      out2.includes('Check-in Diário: não confirmado nesta execução'),
+      `Check-in sem confirmação não pode ser anunciado como sucesso: ${out2}`
+    );
+    assert.strictEqual(out2.includes('Coletado com sucesso (+0 moedas)'), false);
+
+    messages.length = 0;
+
+    // Caso 3 (multi): crédito confirmado pelo extrato com alreadyCollected=true -> exibe o valor.
+    renderMultiAccountReport(
+      [
+        {
+          account: { maskedUser: 'co1***@example.com' },
+          checkinResult: {
+            alreadyCollected: true,
+            coinsGainedToday: '40',
+            checkinCoinsFromLedger: true,
+            streakDays: 222,
+            totalBalance: '1540',
+            duration: '5s'
+          },
+          tasksResult: {
+            results: [{ title: 'Explore items', status: 'Concluída', coins: '+5 moedas' }],
+            coinsGained: 5,
+            finalCoins: '1545 moedas',
+            duration: '20s'
+          },
+          duration: '25s'
+        }
+      ],
+      { mainStartTime: new Date(), mainEndTime: new Date(), totalDuration: '25s' }
+    );
+
+    const out3 = messages.join('\n');
+    assert.ok(
+      out3.includes('Check-in: Coletado com sucesso (+40 moedas)'),
+      `Multi deve exibir o crédito do extrato na linha do check-in: ${out3}`
+    );
+  } finally {
+    logger.info = originalInfo;
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/report.js - renderMultiAccountReport exibe a quantidade correta de tarefas executadas (results.length)', () => {
   const realFilesSnapshot = snapshotRealFiles();
   const logger = require('../logger');
