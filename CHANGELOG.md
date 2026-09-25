@@ -41,6 +41,15 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   (o horário está no fuso do relatório e pode diferir do host do destinatário). O consolidado
   traz a agenda por conta (início/fim/próxima). Documentado em `credentials.env.example` e
   no `README.md`.
+- **Atraso aleatório no início da execução (`START_DELAY_MIN_MS` / `START_DELAY_MAX_MS`):**
+  espera sorteada entre MIN e MAX (ms) antes de iniciar, randomizando o horário de início em
+  qualquer agendador (cron/launchd/Agendador do Windows/Docker) sem depender de shell.
+  Padrão `0`/`0` = desligado; **nunca atrasa no `--dry-run`** (HEALTHCHECK do Docker) e pode
+  ser pulado com `--no-delay` (execuções manuais e a retentativa do `run_all.sh`). A espera
+  fica antes do lock/navegador (nada retido), é interrompível por SIGINT/SIGTERM e confere o
+  relógio de parede em pedaços (sobrevive à suspensão). A tolerância do heartbeat deve ser
+  maior ou igual ao teto do atraso. Documentado no README, `credentials.env.example` e
+  `INSTALL_*`.
 
 ### Corrigido
 
@@ -62,7 +71,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `tests/streak_break.test.js`, `tests/report.test.js`): confirmação pelo extrato
   incrementa a sequência, leitura dinâmica tem prioridade, ciclo semanal não derruba, sem
   confirmação a base é preservada, e as linhas do relatório não anunciam mais
-  "Coletado com sucesso (+0)". Suíte em **427/427**; lint/format limpos.
+  "Coletado com sucesso (+0)". Suíte em **433/433**; lint/format limpos.
 - Teste de regressão do PR #19 em `tests/balance.test.js`: a espera do marcador do
   check-in no extrato deve usar o `timeout` configurado (falha com o valor fixo de 6 s).
 - Testes do PR #18 (`tests/time_utils.test.js`, `tests/config.test.js`): `pickPauseMs`
@@ -77,6 +86,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `tests/collect_guard.test.js`): leitura de `1` desmentida pelo extrato não quebra;
   extrato confirmando (`1`) ou indisponível mantém o alerta; leituras diferentes de `1`
   não são afetadas.
+- Testes do atraso inicial (`tests/config.test.js`, `tests/time_utils.test.js`): validação
+  `START_DELAY_*` (padrão, faixa, `MAX < MIN`), `shouldApplyStartDelay` (dry-run e
+  `--no-delay` nunca atrasam), `isNoDelay` e `waitUntilWallClock` (espera em pedaços, alvo
+  já passado/suspensão e interrupção por AbortSignal).
 
 ## [1.6.2] - 2026-09-24
 

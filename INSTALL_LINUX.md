@@ -287,6 +287,12 @@ npm start
 
 ## 4. Configuração do Agendamento Diário (Crontab)
 
+> **Dica — atraso aleatório portátil:** em vez de randomizar no próprio cron
+> (`sleep $(shuf ...)`), use `START_DELAY_MIN_MS`/`START_DELAY_MAX_MS` no `credentials.env`
+> (ex.: `0` e `3540000` para um início em até ~59 min). Funciona igual em Linux, macOS,
+> Windows e Docker, **não atrasa no `--dry-run`** e pode ser pulado com `--no-delay`.
+> A tolerância do heartbeat deve ser maior ou igual ao teto do atraso.
+
 Para garantir que suas moedas sejam coletadas diariamente sem intervenção manual, configure o `cron`.
 
 ### O problema clássico do Cron no Linux

@@ -110,3 +110,69 @@ test('time_utils.js - getReportTimeZoneLabel devolve rótulo curto do fuso do re
   assert.strictEqual(typeof label, 'string');
   assert.ok(label.trim().length > 0, 'rótulo do fuso não pode ser vazio');
 });
+
+test('time_utils.js - waitUntilWallClock espera em pedaços até o alvo (relógio injetado)', async () => {
+  const { waitUntilWallClock } = require('../time_utils');
+  let t = 1000;
+  const slept = [];
+  const now = () => t;
+  const sleep = async (ms) => {
+    slept.push(ms);
+    t += ms;
+  };
+
+  assert.strictEqual(await waitUntilWallClock(3050, { chunkMs: 1000, now, sleep }), true);
+  assert.deepStrictEqual(slept, [1000, 1000, 50], 'dorme em pedaços curtos até completar o alvo');
+});
+
+test('time_utils.js - waitUntilWallClock retorna na hora se o alvo já passou (suspensão)', async () => {
+  const { waitUntilWallClock } = require('../time_utils');
+  let slept = 0;
+  const sleep = async () => {
+    slept++;
+  };
+
+  assert.strictEqual(await waitUntilWallClock(500, { now: () => 100000, sleep }), true);
+  assert.strictEqual(slept, 0, 'alvo no passado não deve dormir (notebook acordou depois da hora)');
+});
+
+test('time_utils.js - waitUntilWallClock é interrompível por sinal (AbortSignal)', async () => {
+  const { waitUntilWallClock } = require('../time_utils');
+
+  // Abortado antes de começar
+  let slept = 0;
+  const ac = new AbortController();
+  ac.abort();
+  assert.strictEqual(
+    await waitUntilWallClock(10000, {
+      chunkMs: 1000,
+      signal: ac.signal,
+      now: () => 0,
+      sleep: async () => {
+        slept++;
+      }
+    }),
+    false
+  );
+  assert.strictEqual(slept, 0);
+
+  // Abortado no meio da espera
+  let t = 0;
+  let n = 0;
+  const ac2 = new AbortController();
+  const sleep2 = async (ms) => {
+    t += ms;
+    n++;
+    ac2.abort();
+  };
+  assert.strictEqual(
+    await waitUntilWallClock(5000, {
+      chunkMs: 1000,
+      signal: ac2.signal,
+      now: () => t,
+      sleep: sleep2
+    }),
+    false
+  );
+  assert.strictEqual(n, 1, 'não deve continuar dormindo após o abort');
+});

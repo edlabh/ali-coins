@@ -177,6 +177,12 @@ const configSchema = z
     ACCOUNT_DELAY_MIN_MS: nonNegativeInt(0),
     ACCOUNT_DELAY_MAX_MS: nonNegativeInt(0),
 
+    // Atraso ALEATÓRIO no início da execução (somente no all.js real; --dry-run nunca
+    // atrasa), em ms, sorteado uniformemente entre MIN e MAX. Padrão 0/0 = desligado.
+    // Randomiza o horário de início (cron/launchd/Agendador/Docker) sem depender de shell.
+    START_DELAY_MIN_MS: nonNegativeInt(0),
+    START_DELAY_MAX_MS: nonNegativeInt(0),
+
     // Tarefas que exigem o app nativo (Prize Land/regar, minigames como Merge Boss,
     // quizzes e avaliações de pedidos) nunca concluem via web e consomem tentativas.
     // Por padrão são desligadas (ignoradas no loop e marcadas no relatório).
@@ -292,6 +298,13 @@ const configSchema = z
         code: z.ZodIssueCode.custom,
         message: 'ACCOUNT_DELAY_MAX_MS deve ser >= ACCOUNT_DELAY_MIN_MS.',
         path: ['ACCOUNT_DELAY_MAX_MS']
+      });
+    }
+    if (data.START_DELAY_MAX_MS < data.START_DELAY_MIN_MS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'START_DELAY_MAX_MS deve ser >= START_DELAY_MIN_MS.',
+        path: ['START_DELAY_MAX_MS']
       });
     }
     if (data.TELEGRAM_ENABLED) {
@@ -425,6 +438,10 @@ function createCliProgram() {
       '-f, --force',
       'Força a execução: sobrescreve lockfile ativo e ignora o cooldown pós-captcha (tenta o login)'
     )
+    .option(
+      '--no-delay',
+      'Não aplica o atraso inicial aleatório (START_DELAY_MIN_MS/MAX_MS); use em execuções manuais e retentativas'
+    )
     .option('--json', 'Formata a saída de status e relatórios em JSON')
     .option('--notify', 'Ativa notificações via Telegram (sobrescreve TELEGRAM_ENABLED)')
     .option('--no-notify', 'Desativa notificações via Telegram')
@@ -488,6 +505,23 @@ function isDryRun() {
 
 function isForce() {
   return process.argv.includes('--force') || process.argv.includes('-f');
+}
+
+function isNoDelay(argv = process.argv) {
+  return argv.includes('--no-delay');
+}
+
+/**
+ * Decide se o atraso inicial aleatório (START_DELAY_MIN_MS/MAX_MS) deve ser aplicado.
+ * Nunca no --dry-run (o HEALTHCHECK do Docker roda `all.js --dry-run --json` a cada
+ * 10 min — um atraso ali deixaria o container unhealthy), nunca com --no-delay
+ * (execuções manuais/retentativas) e nunca com teto 0 (recurso desligado).
+ * @param {{dryRun?: boolean, noDelay?: boolean, maxMs?: number}} [params]
+ * @returns {boolean}
+ */
+function shouldApplyStartDelay({ dryRun = false, noDelay = false, maxMs = 0 } = {}) {
+  if (dryRun === true || noDelay === true) return false;
+  return Number.isFinite(maxMs) && maxMs > 0;
 }
 
 function isJson() {
@@ -613,6 +647,8 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TASK_PAUSE_MAX_MS: process.env.TASK_PAUSE_MAX_MS,
     ACCOUNT_DELAY_MIN_MS: process.env.ACCOUNT_DELAY_MIN_MS,
     ACCOUNT_DELAY_MAX_MS: process.env.ACCOUNT_DELAY_MAX_MS,
+    START_DELAY_MIN_MS: process.env.START_DELAY_MIN_MS,
+    START_DELAY_MAX_MS: process.env.START_DELAY_MAX_MS,
     PW_TRACE: process.env.PW_TRACE,
     PW_SCREENSHOT: process.env.PW_SCREENSHOT,
     PW_VIDEO: process.env.PW_VIDEO,
@@ -973,6 +1009,8 @@ async function handleDryRun() {
         taskPauseMaxMs: cfg.TASK_PAUSE_MAX_MS,
         accountDelayMinMs: cfg.ACCOUNT_DELAY_MIN_MS,
         accountDelayMaxMs: cfg.ACCOUNT_DELAY_MAX_MS,
+        startDelayMinMs: cfg.START_DELAY_MIN_MS,
+        startDelayMaxMs: cfg.START_DELAY_MAX_MS,
         telegram: {
           enabled: cfg.TELEGRAM_ENABLED,
           botTokenConfigured: Boolean(cfg.TELEGRAM_BOT_TOKEN),
@@ -1031,6 +1069,9 @@ async function handleDryRun() {
         ` • Pausa entre contas (ACCOUNT_DELAY_MIN_MS..MAX_MS): ${cfg.ACCOUNT_DELAY_MAX_MS > 0 ? `${cfg.ACCOUNT_DELAY_MIN_MS}-${cfg.ACCOUNT_DELAY_MAX_MS}ms` : 'Desligada'}`
       );
       logger.info(
+        ` • Atraso inicial (START_DELAY_MIN_MS..MAX_MS): ${cfg.START_DELAY_MAX_MS > 0 ? `${cfg.START_DELAY_MIN_MS}-${cfg.START_DELAY_MAX_MS}ms` : 'Desligado'}`
+      );
+      logger.info(
         ` • Tarefas exclusivas do app (SKIP_APP_ONLY_TASKS): ${cfg.SKIP_APP_ONLY_TASKS ? 'Desligadas' : 'Ativas'}`
       );
       logger.info(
@@ -1076,6 +1117,8 @@ module.exports = {
   loadConfig,
   isDryRun,
   isForce,
+  isNoDelay,
+  shouldApplyStartDelay,
   isJson,
   isNotify,
   isHeartbeat,

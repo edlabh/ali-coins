@@ -31,7 +31,8 @@ if [ $EXIT_CODE -eq 1 ]; then
   echo ""
   echo "[run_all.sh] Execução finalizou com erro (código 1). Aguardando 10 segundos para retentativa única..."
   sleep 10
-  run_all_node "$@"
+  # Retentativa não deve esperar outro sorteio do atraso inicial (START_DELAY_*).
+  run_all_node "$@" --no-delay
   EXIT_CODE=$?
 fi
 

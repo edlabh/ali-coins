@@ -149,6 +149,37 @@ function getReportTimeZoneLabel(date = new Date()) {
 }
 
 /**
+ * Aguarda até um instante-alvo do relógio de parede, dormindo em pedaços curtos e
+ * conferindo `Date.now()` a cada pedaço (em notebooks que suspendem, alguns sistemas não
+ * contam o tempo suspenso nos timers; ao acordar com o alvo já passado, retorna na hora).
+ * Interrompível por AbortSignal (SIGINT/SIGTERM).
+ * @param {number} targetMs Instante-alvo (epoch ms)
+ * @param {object} [options]
+ * @param {number} [options.chunkMs=1000] Tamanho máximo de cada pedaço
+ * @param {AbortSignal|null} [options.signal] Sinal de cancelamento
+ * @param {() => number} [options.now=Date.now] Relógio injetável (testes)
+ * @param {(ms: number) => Promise<void>} [options.sleep] Dormir injetável (testes)
+ * @returns {Promise<boolean>} true se alcançou o alvo; false se foi interrompido
+ */
+async function waitUntilWallClock(targetMs, options = {}) {
+  const {
+    chunkMs = 1000,
+    signal = null,
+    now = Date.now,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  } = options;
+
+  if (!Number.isFinite(targetMs)) return true;
+
+  while (true) {
+    if (signal && signal.aborted) return false;
+    const remaining = targetMs - now();
+    if (remaining <= 0) return true;
+    await sleep(Math.min(Math.max(1, Math.floor(chunkMs)), remaining));
+  }
+}
+
+/**
  * Sorteia uma pausa (ms) uniforme e inclusiva entre `minMs` e `maxMs`.
  * Valores inválidos/negativos viram 0; se `maxMs < minMs`, usa `minMs`. Com `maxMs` 0 retorna 0
  * (pausa desligada). `random` é injetável para testes determinísticos.
@@ -172,5 +203,6 @@ module.exports = {
   calculateAccountBackoff,
   pickPauseMs,
   composeAccountWaitMs,
-  getReportTimeZoneLabel
+  getReportTimeZoneLabel,
+  waitUntilWallClock
 };

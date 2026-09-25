@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { configSchema, ConfigValidationError, loadConfig, maskChatId } = require('../config');
+const {
+  configSchema,
+  ConfigValidationError,
+  loadConfig,
+  maskChatId,
+  isNoDelay,
+  shouldApplyStartDelay
+} = require('../config');
 const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
 
 test('config.js - defaults schema Zod', () => {
@@ -455,4 +462,68 @@ test('config.js - ACCOUNT_DELAY_MIN_MS/MAX_MS: padrão desligado, faixa válida 
       }),
     /ACCOUNT_DELAY_MAX_MS deve ser >= ACCOUNT_DELAY_MIN_MS/
   );
+});
+
+test('config.js - START_DELAY_MIN_MS/MAX_MS: padrão desligado, faixa válida e rejeita max < min', () => {
+  const base = {
+    ALI_USER: 'test@example.com',
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
+
+  // Padrão: 0/0 (sem atraso inicial, comportamento anterior preservado)
+  const padrao = configSchema.parse(base);
+  assert.strictEqual(padrao.START_DELAY_MIN_MS, 0);
+  assert.strictEqual(padrao.START_DELAY_MAX_MS, 0);
+
+  // Faixa válida vinda de string de ambiente (ex.: até ~59 min)
+  const ok = configSchema.parse({
+    ...base,
+    START_DELAY_MIN_MS: '60000',
+    START_DELAY_MAX_MS: '3540000'
+  });
+  assert.strictEqual(ok.START_DELAY_MIN_MS, 60000);
+  assert.strictEqual(ok.START_DELAY_MAX_MS, 3540000);
+
+  // Valor inválido cai no padrão 0
+  assert.strictEqual(
+    configSchema.parse({ ...base, START_DELAY_MAX_MS: 'abc' }).START_DELAY_MAX_MS,
+    0
+  );
+
+  // max < min é erro de configuração acionável
+  assert.throws(
+    () =>
+      configSchema.parse({
+        ...base,
+        START_DELAY_MIN_MS: '3540000',
+        START_DELAY_MAX_MS: '60000'
+      }),
+    /START_DELAY_MAX_MS deve ser >= START_DELAY_MIN_MS/
+  );
+});
+
+test('config.js - shouldApplyStartDelay: dry-run e --no-delay nunca atrasam; teto 0 desliga', () => {
+  assert.strictEqual(
+    shouldApplyStartDelay({ dryRun: false, noDelay: false, maxMs: 3540000 }),
+    true,
+    'faixa ativa deve aplicar o atraso'
+  );
+  assert.strictEqual(
+    shouldApplyStartDelay({ dryRun: true, noDelay: false, maxMs: 3540000 }),
+    false,
+    '--dry-run (HEALTHCHECK do Docker) nunca pode atrasar'
+  );
+  assert.strictEqual(
+    shouldApplyStartDelay({ dryRun: false, noDelay: true, maxMs: 3540000 }),
+    false,
+    '--no-delay pula o atraso (retentativas/manuais)'
+  );
+  assert.strictEqual(shouldApplyStartDelay({ dryRun: false, noDelay: false, maxMs: 0 }), false);
+  assert.strictEqual(shouldApplyStartDelay({}), false);
+});
+
+test('config.js - isNoDelay detecta a flag sem depender do parse do commander', () => {
+  assert.strictEqual(isNoDelay(['node', 'all.js', '--no-delay']), true);
+  assert.strictEqual(isNoDelay(['node', 'all.js']), false);
 });

@@ -308,6 +308,12 @@ Os tokens criptografados serão gravados em `session_token.txt` (Conta 1), `sess
 
 ## 5. Agendamento Automático Diário (Task Scheduler)
 
+> **Dica — atraso aleatório portátil:** o Agendador do Windows tem atraso próprio, mas ele
+> não é portátil. Com `START_DELAY_MIN_MS`/`START_DELAY_MAX_MS` no `credentials.env`
+> (ex.: `0` e `3540000` para até ~59 min) o comportamento é o mesmo em qualquer sistema,
+> **não atrasa no `--dry-run`** e pode ser pulado com `--no-delay`. No Windows, lembre-se de
+> que o "tempo limite" da tarefa conta o atraso; a tolerância do heartbeat deve ser ≥ ao teto.
+
 ### Opção 1: Criação Automática via PowerShell (1 Comando)
 
 Abra o PowerShell na pasta do projeto e execute (exemplo para rodar diariamente às **08:00**):

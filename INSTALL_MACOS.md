@@ -215,6 +215,11 @@ Se a mensagem `Chromium OK no macOS!` for exibida, o navegador está 100% funcio
 
 ## 4. Agendamento Automático Diário no macOS
 
+> **Dica — atraso aleatório portátil:** `cron` e `launchd` não têm atraso aleatório próprio.
+> Use `START_DELAY_MIN_MS`/`START_DELAY_MAX_MS` no `credentials.env` (ex.: `0` e `3540000`
+> para até ~59 min) — vale para macOS, Linux, Windows e Docker, **não atrasa no `--dry-run`**
+> e pode ser pulado com `--no-delay`. A tolerância do heartbeat deve ser ≥ ao teto do atraso.
+
 ### Opção 1: Via Cron (Mais simples)
 
 1. Abra a edição do crontab no Terminal:

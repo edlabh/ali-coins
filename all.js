@@ -2,6 +2,9 @@ const {
   loadConfig,
   handleDryRun,
   isForce,
+  isDryRun,
+  isNoDelay,
+  shouldApplyStartDelay,
   isJson,
   checkAndDisplayHelp,
   loadAccounts,
@@ -15,7 +18,8 @@ const {
   calculateAccountBackoff,
   pickPauseMs,
   composeAccountWaitMs,
-  getReportTimeZoneLabel
+  getReportTimeZoneLabel,
+  waitUntilWallClock
 } = require('./time_utils');
 const { version: APP_VERSION } = require('./package.json');
 const { acquireLock, LockActiveError } = require('./lockfile');
@@ -113,11 +117,14 @@ async function main() {
   let releaseSingleLock = null;
   let browser = null;
   let gracefulExitRef = null;
+  // AbortController do atraso inicial (interrompível por SIGINT/SIGTERM).
+  const startDelayAbort = new AbortController();
 
   // Encerramento por sinal: registrado ANTES do lockfile para rodar PRIMEIRO — fecha o
   // browser (requisições em voo) e só então libera o lock, evitando que outra instância
   // inicie a mesma conta enquanto o Chromium anterior ainda finaliza.
   const handleShutdownSignal = (signal) => {
+    startDelayAbort.abort();
     logger.warn({ signal }, 'Sinal de encerramento recebido; fechando browser e liberando lock...');
     if (typeof gracefulExitRef === 'function') {
       void gracefulExitRef(1);
@@ -131,6 +138,46 @@ async function main() {
   };
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => handleShutdownSignal(signal));
+  }
+
+  // Atraso inicial aleatório (anti-detecção; START_DELAY_MIN_MS/MAX_MS; padrão 0/0 =
+  // desligado). Fica APÓS os sinais e ANTES do lock/navegador: nada fica retido durante a
+  // espera. O --dry-run encerra antes (handleDryRun) e `--no-delay` pula (manuais/retentativas).
+  if (
+    shouldApplyStartDelay({
+      dryRun: isDryRun(),
+      noDelay: isNoDelay(),
+      maxMs: config.START_DELAY_MAX_MS ?? 0
+    })
+  ) {
+    const startDelayMinMs = config.START_DELAY_MIN_MS ?? 0;
+    const startDelayMaxMs = config.START_DELAY_MAX_MS ?? 0;
+    const startDelayMs = pickPauseMs(startDelayMinMs, startDelayMaxMs);
+    if (startDelayMs > 0) {
+      const targetAt = new Date(Date.now() + startDelayMs);
+      logger.info(
+        {
+          event: 'start_delay',
+          delayMs: startDelayMs,
+          windowMinMs: startDelayMinMs,
+          windowMaxMs: startDelayMaxMs,
+          targetAt: targetAt.toISOString()
+        },
+        `Início atrasado em ${Math.round(startDelayMs / 1000)}s ` +
+          `(janela ${Math.round(startDelayMinMs / 1000)}–${Math.round(startDelayMaxMs / 1000)}s; ` +
+          `início previsto às ${formatTime(targetAt)} ${getReportTimeZoneLabel(targetAt)})`
+      );
+      const reached = await waitUntilWallClock(targetAt.getTime(), {
+        signal: startDelayAbort.signal
+      });
+      if (!reached) {
+        logger.warn(
+          { event: 'start_delay_aborted', delayMs: startDelayMs },
+          'Atraso inicial interrompido por sinal de encerramento.'
+        );
+        return;
+      }
+    }
   }
 
   if (!isMulti) {
