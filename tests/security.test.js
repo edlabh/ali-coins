@@ -42,7 +42,9 @@ test('security.js - encryptSession e decryptSession v3 roundtrip (moderno com pa
     meta: { user: 'user@example.com' }
   });
 
-  const encrypted = encryptSession(payload, VALID_SECRET);
+  // Fixa N=2^17 explicitamente: o default depende da RAM do host (getEffectiveDefaultScryptN)
+  // e em máquinas pequenas o valor reduzido quebraria esta asserção (issue #23).
+  const encrypted = encryptSession(payload, VALID_SECRET, { N: 131072 });
   assert.ok(
     encrypted.startsWith('v3:131072:8:1:'),
     'Token v3 deve iniciar com v3:131072:8:1: indicando parâmetros scrypt'

@@ -41,7 +41,7 @@ const { closeCachedDesktopContext } = require('./libs/ui');
 const { sendHeartbeat } = require('./libs/heartbeat');
 const { startAccountTimer } = require('./libs/timing');
 const { setupGlobalCrashHandler } = require('./libs/crash');
-const { flushAndExit } = require('./libs/exit');
+const { flushAndExit, signalExitCode } = require('./libs/exit');
 const logger = require('./logger');
 
 let currentConfig = null;
@@ -119,11 +119,14 @@ async function main() {
   let gracefulExitRef = null;
   // AbortController do atraso inicial (interrompível por SIGINT/SIGTERM).
   const startDelayAbort = new AbortController();
+  // Último sinal recebido (usado para o código de saída 128+n quando o node é PID 1).
+  let shutdownSignal = null;
 
   // Encerramento por sinal: registrado ANTES do lockfile para rodar PRIMEIRO — fecha o
   // browser (requisições em voo) e só então libera o lock, evitando que outra instância
   // inicie a mesma conta enquanto o Chromium anterior ainda finaliza.
   const handleShutdownSignal = (signal) => {
+    shutdownSignal = signal;
     startDelayAbort.abort();
     logger.warn({ signal }, 'Sinal de encerramento recebido; fechando browser e liberando lock...');
     if (typeof gracefulExitRef === 'function') {
@@ -133,8 +136,11 @@ async function main() {
     try {
       process.kill(process.pid, signal);
     } catch {
-      process.exit(1);
+      // Sem permissão de re-emitir: cai no fallback abaixo
     }
+    // PID 1 (docker run sem --init): o kernel ignora o sinal re-emitido ao próprio processo;
+    // encerra explicitamente com o código convencional se o processo ainda estiver vivo.
+    setTimeout(() => process.exit(signalExitCode(signal)), 100).unref();
   };
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => handleShutdownSignal(signal));
@@ -171,10 +177,21 @@ async function main() {
         signal: startDelayAbort.signal
       });
       if (!reached) {
+        // Interrupção pelo usuário/stop do container: sai com 128+n (130/143), nunca 0 nem 1
+        // (1 dispararia a retentativa do run_all.sh, mas a parada foi intencional). O caminho
+        // explícito também cobre o caso de `node` ser PID 1 (sem --init), onde o re-raise no
+        // handler é ignorado pelo kernel e o processo sairia "naturalmente" com código 0.
+        const exitCode = signalExitCode(shutdownSignal);
         logger.warn(
-          { event: 'start_delay_aborted', delayMs: startDelayMs },
+          {
+            event: 'start_delay_aborted',
+            delayMs: startDelayMs,
+            signal: shutdownSignal,
+            exitCode
+          },
           'Atraso inicial interrompido por sinal de encerramento.'
         );
+        await flushAndExit(exitCode);
         return;
       }
     }

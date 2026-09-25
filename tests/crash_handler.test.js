@@ -38,7 +38,7 @@ test('libs/crash.js - unhandledRejection em subprocesso encerra com exit code 6 
     const result = spawnSync(process.execPath, ['-e', script], {
       cwd: rootDir,
       encoding: 'utf-8',
-      timeout: 5000
+      timeout: 15000
     });
 
     assert.strictEqual(result.status, 6, 'Processo deve finalizar com exit code 6');
@@ -68,7 +68,7 @@ test('libs/crash.js - uncaughtException em subprocesso encerra com exit code 6 e
     const result = spawnSync(process.execPath, ['-e', script], {
       cwd: rootDir,
       encoding: 'utf-8',
-      timeout: 5000
+      timeout: 15000
     });
 
     assert.strictEqual(result.status, 6, 'Processo deve finalizar com exit code 6');

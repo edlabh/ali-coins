@@ -307,6 +307,17 @@ const configSchema = z
         path: ['START_DELAY_MAX_MS']
       });
     }
+    // Teto de 24 h para as pausas (issue #21): um erro de unidade (segundos digitados como
+    // ms, dígito a mais) não deve virar dias de espera silenciosa na execução real.
+    for (const key of ['TASK_PAUSE_MAX_MS', 'ACCOUNT_DELAY_MAX_MS', 'START_DELAY_MAX_MS']) {
+      if (data[key] > MAX_DELAY_MS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${key} deve ser <= ${MAX_DELAY_MS} (24 h). Lembre que o valor é em milissegundos.`,
+          path: [key]
+        });
+      }
+    }
     if (data.TELEGRAM_ENABLED) {
       if (!data.TELEGRAM_BOT_TOKEN || !/^\d+:[\w-]{30,}$/.test(data.TELEGRAM_BOT_TOKEN)) {
         ctx.addIssue({
@@ -523,6 +534,10 @@ function shouldApplyStartDelay({ dryRun = false, noDelay = false, maxMs = 0 } = 
   if (dryRun === true || noDelay === true) return false;
   return Number.isFinite(maxMs) && maxMs > 0;
 }
+
+// Teto de espera das pausas configuráveis (24 h): um erro de unidade (segundos digitados
+// como ms, dígito a mais) não deve transformar a execução em dias de espera silenciosa.
+const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
 
 function isJson() {
   return process.argv.includes('--json');

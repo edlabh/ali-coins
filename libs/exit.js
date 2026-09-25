@@ -94,9 +94,28 @@ async function flushAndExit(code = 0) {
   return process.exit(code);
 }
 
+/**
+ * Código de saída convencional para um sinal (128 + número do sinal). Usado quando o `node`
+ * é PID 1 (docker run sem `--init`): o kernel ignora o sinal re-emitido ao próprio processo,
+ * então o encerramento precisa ser explícito para não sair com código 0 numa interrupção.
+ * @param {string} signal Nome do sinal (ex.: 'SIGINT', 'SIGTERM')
+ * @returns {number} 130 para SIGINT, 143 para SIGTERM, 1 para desconhecidos
+ */
+function signalExitCode(signal) {
+  switch (String(signal)) {
+    case 'SIGINT':
+      return 130;
+    case 'SIGTERM':
+      return 143;
+    default:
+      return 1;
+  }
+}
+
 module.exports = {
   flushStream,
   flushStdStreams,
   flushAndExit,
+  signalExitCode,
   FLUSH_TIMEOUT_MS
 };

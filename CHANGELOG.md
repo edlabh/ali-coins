@@ -38,13 +38,29 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   `--disable-extensions`, `--disable-notifications` e `--prerender=disabled`. A cadência
   anti-bot (1000ms no clique, 1500ms no scroll) permanece intacta.
 
+### Corrigido
+
+- **Teto de 24 h para as pausas (`config.js`, issue #21):** `START_DELAY_MAX_MS`,
+  `TASK_PAUSE_MAX_MS` e `ACCOUNT_DELAY_MAX_MS` passam a validar no schema (máx. `86400000`),
+  com mensagem explícita — um erro de unidade (segundos digitados como ms) deixa de virar
+  dias de espera silenciosa. Limite exato continua aceito.
+- **Interrupção do atraso inicial com o node como PID 1 (`all.js`, `libs/exit.js`, issue #22):**
+  `docker stop` durante a espera passa a sair com **130/143** (128+n) em vez de 0 — como PID 1
+  (docker run sem `--init`) o kernel ignora o sinal re-emitido; o encerramento agora é explícito
+  via `signalExitCode()` + `flushAndExit()`, com fallback de saída no handler de sinal.
+- **Suíte robusta em hardware pequeno/lento (`tests/`, issue #23):** timeout do teste de crash
+  elevado para 15 s (carga da suíte em máquinas modestas); o roundtrip scrypt fixa `N=2^17` no
+  teste (não depende mais da RAM do host); e o teste de seletores no Chromium **pula com
+  mensagem clara** quando o navegador não está instalado (`npm ci --ignore-scripts`).
+
 ### Testes
 
 - Novos testes de regressão: reúso da leitura desktop (`tests/collect_guard.test.js`), reúso
   da página mobile (`tests/do_tasks_reuse.test.js`), trackers/flags do Chromium
   (`tests/browser_retry.test.js`), fallback sem `pino-pretty` e dependência
   (`tests/logger.test.js`) e scripts de host fora do Docker (`tests/dockerignore.test.js`);
-  suíte em **441/441**; lint/format limpos.
+- Novos testes das issues: teto de 24 h nas pausas (`tests/config.test.js`) e códigos de saída
+  por sinal (`tests/exit_signal.test.js`); suíte em **443/443**; lint/format limpos.
 
 ## [1.7.0] - 2026-09-25
 

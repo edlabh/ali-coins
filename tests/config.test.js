@@ -503,6 +503,26 @@ test('config.js - START_DELAY_MIN_MS/MAX_MS: padrão desligado, faixa válida e 
   );
 });
 
+test('config.js - teto de 24 h nas pausas (issues #21): erro de unidade não vira dias de espera', () => {
+  const base = {
+    ALI_USER: 'test@example.com',
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
+  const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
+
+  for (const key of ['START_DELAY_MAX_MS', 'TASK_PAUSE_MAX_MS', 'ACCOUNT_DELAY_MAX_MS']) {
+    // Valor absurdo (ex.: ms a mais) deve ser recusado com mensagem clara
+    assert.throws(
+      () => configSchema.parse({ ...base, [key]: '3540000000' }),
+      new RegExp(`${key} deve ser <= ${MAX_DELAY_MS} \\(24 h\\)`),
+      `${key} acima de 24 h deveria falhar`
+    );
+    // Limite exato continua aceito
+    assert.strictEqual(configSchema.parse({ ...base, [key]: '86400000' })[key], MAX_DELAY_MS);
+  }
+});
+
 test('config.js - shouldApplyStartDelay: dry-run e --no-delay nunca atrasam; teto 0 desliga', () => {
   assert.strictEqual(
     shouldApplyStartDelay({ dryRun: false, noDelay: false, maxMs: 3540000 }),

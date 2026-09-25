@@ -143,7 +143,25 @@ test('libs/ui/diagnostics.js - captureDomHashAndArtifacts gera hash SHA-256 e sc
   }
 });
 
-test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no Chromium', async () => {
+// Chromium pode não estar instalado (npm ci --ignore-scripts, cache vazio, hardware modesto):
+// sem o binário o teste seria um falso negativo — pula com mensagem clara (issue #23).
+let chromiumInstalled = false;
+try {
+  const fs = require('node:fs');
+  const { chromium } = require('playwright');
+  const executablePath = chromium.executablePath();
+  chromiumInstalled = Boolean(executablePath) && fs.existsSync(executablePath);
+} catch {
+  chromiumInstalled = false;
+}
+
+test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no Chromium', async (t) => {
+  if (!chromiumInstalled) {
+    t.skip(
+      'Chromium do Playwright não instalado (rode `npx playwright install --only-shell chromium`)'
+    );
+    return;
+  }
   const { launchBrowser } = require('../browser');
   const realFilesSnapshot = snapshotRealFiles();
   let browser;

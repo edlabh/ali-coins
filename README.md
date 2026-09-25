@@ -143,12 +143,12 @@ LOG_LEVEL=info
 # TASK_RETRY_PASSES=1
 # TASK_RETRY_DELAY_MS=5000
 # TASK_PAUSE_MIN_MS=0           # pausa aleatória antes de cada tarefa, entre MIN e MAX em ms (padrão: 0/0 = desligada)
-# TASK_PAUSE_MAX_MS=0           # ex.: 15000 e 60000 -> 15s a 60s entre tarefas (MAX deve ser >= MIN)
+# TASK_PAUSE_MAX_MS=0           # ex.: 15000 e 60000 -> 15s a 60s entre tarefas (MAX >= MIN; máx. 24 h)
 # ACCOUNT_DELAY_MIN_MS=0        # pausa aleatória entre contas no modo multi-conta, entre MIN e MAX em ms (padrão: 0/0 = desligada)
-# ACCOUNT_DELAY_MAX_MS=0        # ex.: 60000 e 180000 -> 1 a 3 min entre contas (MAX deve ser >= MIN)
+# ACCOUNT_DELAY_MAX_MS=0        # ex.: 60000 e 180000 -> 1 a 3 min entre contas (MAX >= MIN; máx. 24 h)
 # Atraso aleatório no início da execução (anti-detecção; padrão: 0/0 = desligado)
 # START_DELAY_MIN_MS=0          # espera sorteada antes de iniciar (só no all.js real; --dry-run nunca atrasa)
-# START_DELAY_MAX_MS=0          # ex.: 0 e 3540000 -> início em até ~59 min (MAX >= MIN); pule com --no-delay
+# START_DELAY_MAX_MS=0          # ex.: 0 e 3540000 -> início em até ~59 min (MAX >= MIN; máx. 24 h); pule com --no-delay
 # Obs.: a tolerância do heartbeat (dead man's switch) deve ser >= START_DELAY_MAX_MS.
 
 # Telegram por conta (opcional): enviar também o resultado individual de cada conta (padrão: false)
