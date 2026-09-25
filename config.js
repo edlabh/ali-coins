@@ -49,6 +49,16 @@ const positiveInt = (defaultVal) =>
     }, z.number().int().positive())
     .default(defaultVal);
 
+// Helper para número inteiro NÃO negativo (aceita 0) com valor padrão
+const nonNegativeInt = (defaultVal) =>
+  z
+    .preprocess((val) => {
+      if (val === undefined || val === null || val === '') return defaultVal;
+      const parsed = typeof val === 'number' ? val : Number(String(val).trim());
+      return Number.isInteger(parsed) && parsed >= 0 ? parsed : defaultVal;
+    }, z.number().int().nonnegative())
+    .default(defaultVal);
+
 // Schema de validação Zod para configuração
 const configSchema = z
   .object({
@@ -155,6 +165,12 @@ const configSchema = z
     // Espera entre passadas, em ms, para dar tempo do site consolidar o progresso (padrão: 5000).
     TASK_RETRY_DELAY_MS: positiveInt(5000),
 
+    // Pausa ALEATÓRIA antes de cada tarefa do painel (inclui a 1ª, logo após o check-in), em ms,
+    // sorteada uniformemente entre MIN e MAX. Padrão 0/0 = desligada (comportamento anterior).
+    // Deixa o ritmo menos mecânico: sem isso as tarefas rodam encadeadas, com esperas fixas.
+    TASK_PAUSE_MIN_MS: nonNegativeInt(0),
+    TASK_PAUSE_MAX_MS: nonNegativeInt(0),
+
     // Tarefas que exigem o app nativo (Prize Land/regar, minigames como Merge Boss,
     // quizzes e avaliações de pedidos) nunca concluem via web e consomem tentativas.
     // Por padrão são desligadas (ignoradas no loop e marcadas no relatório).
@@ -258,6 +274,13 @@ const configSchema = z
     HEARTBEAT_TIMEOUT_MS: positiveInt(5000)
   })
   .superRefine((data, ctx) => {
+    if (data.TASK_PAUSE_MAX_MS < data.TASK_PAUSE_MIN_MS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'TASK_PAUSE_MAX_MS deve ser >= TASK_PAUSE_MIN_MS.',
+        path: ['TASK_PAUSE_MAX_MS']
+      });
+    }
     if (data.TELEGRAM_ENABLED) {
       if (!data.TELEGRAM_BOT_TOKEN || !/^\d+:[\w-]{30,}$/.test(data.TELEGRAM_BOT_TOKEN)) {
         ctx.addIssue({
@@ -573,6 +596,8 @@ function loadConfig(requireCredentials = true, argv = process.argv) {
     TASK_RETRY_UNFINISHED: process.env.TASK_RETRY_UNFINISHED,
     TASK_RETRY_PASSES: process.env.TASK_RETRY_PASSES,
     TASK_RETRY_DELAY_MS: process.env.TASK_RETRY_DELAY_MS,
+    TASK_PAUSE_MIN_MS: process.env.TASK_PAUSE_MIN_MS,
+    TASK_PAUSE_MAX_MS: process.env.TASK_PAUSE_MAX_MS,
     PW_TRACE: process.env.PW_TRACE,
     PW_SCREENSHOT: process.env.PW_SCREENSHOT,
     PW_VIDEO: process.env.PW_VIDEO,
@@ -929,6 +954,8 @@ async function handleDryRun() {
         taskRoundMaxAttempts: cfg.TASK_ROUND_MAX_ATTEMPTS,
         taskMaxDurationMs: cfg.TASK_MAX_DURATION_MS,
         taskScrollMaxMs: cfg.TASK_SCROLL_MAX_MS,
+        taskPauseMinMs: cfg.TASK_PAUSE_MIN_MS,
+        taskPauseMaxMs: cfg.TASK_PAUSE_MAX_MS,
         telegram: {
           enabled: cfg.TELEGRAM_ENABLED,
           botTokenConfigured: Boolean(cfg.TELEGRAM_BOT_TOKEN),
@@ -980,6 +1007,9 @@ async function handleDryRun() {
       logger.info(` • Limite por Rodada (TASK_ROUND_MAX_ATTEMPTS): ${cfg.TASK_ROUND_MAX_ATTEMPTS}`);
       logger.info(` • Timeout por Tentativa (TASK_MAX_DURATION_MS): ${cfg.TASK_MAX_DURATION_MS}ms`);
       logger.info(` • Teto de Scroll (TASK_SCROLL_MAX_MS): ${cfg.TASK_SCROLL_MAX_MS}ms`);
+      logger.info(
+        ` • Pausa entre tarefas (TASK_PAUSE_MIN_MS..MAX_MS): ${cfg.TASK_PAUSE_MAX_MS > 0 ? `${cfg.TASK_PAUSE_MIN_MS}-${cfg.TASK_PAUSE_MAX_MS}ms` : 'Desligada'}`
+      );
       logger.info(
         ` • Tarefas exclusivas do app (SKIP_APP_ONLY_TASKS): ${cfg.SKIP_APP_ONLY_TASKS ? 'Desligadas' : 'Ativas'}`
       );

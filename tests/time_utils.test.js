@@ -5,7 +5,8 @@ const {
   formatTime,
   formatDateTime,
   formatDuration,
-  calculateAccountBackoff
+  calculateAccountBackoff,
+  pickPauseMs
 } = require('../time_utils');
 
 test('time_utils.js - formatDate formata data no formato DD/MM/AAAA (fuso do relatório)', () => {
@@ -60,4 +61,31 @@ test('time_utils.js - formatDuration e backoff são resilientes a valores não f
   assert.ok(Number.isFinite(calculateAccountBackoff(NaN, 1000, 10000, 0.5)));
   assert.ok(Number.isFinite(calculateAccountBackoff(Infinity, 1000, 10000, 0.5)));
   assert.strictEqual(calculateAccountBackoff(NaN, 1000, 10000, 0.5), 1000);
+});
+
+test('time_utils.js - pickPauseMs sorteia dentro de [min, max] e desliga com max 0', () => {
+  // Extremos do sorteio determinístico: random()=0 -> min; random()->1- -> max (inclusivo)
+  assert.strictEqual(
+    pickPauseMs(15000, 60000, () => 0),
+    15000
+  );
+  assert.strictEqual(
+    pickPauseMs(15000, 60000, () => 0.999999999),
+    60000
+  );
+  const meio = pickPauseMs(10, 20, () => 0.5);
+  assert.ok(meio >= 10 && meio <= 20);
+
+  // Desligada (padrão) e entradas inválidas
+  assert.strictEqual(pickPauseMs(), 0);
+  assert.strictEqual(pickPauseMs(0, 0), 0);
+  assert.strictEqual(pickPauseMs(-5, -1), 0);
+  assert.strictEqual(pickPauseMs('abc', undefined), 0);
+  // max < min: usa min (nunca devolve valor fora do intervalo pedido)
+  assert.strictEqual(
+    pickPauseMs(5000, 1000, () => 0.7),
+    5000
+  );
+  // Sempre inteiro
+  assert.ok(Number.isInteger(pickPauseMs(1, 1000, () => 0.123456)));
 });

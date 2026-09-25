@@ -117,10 +117,27 @@ function calculateAccountBackoff(
   return Math.min(Math.round(cappedMs * jitterFactor), maxMs);
 }
 
+/**
+ * Sorteia uma pausa (ms) uniforme e inclusiva entre `minMs` e `maxMs`.
+ * Valores inválidos/negativos viram 0; se `maxMs < minMs`, usa `minMs`. Com `maxMs` 0 retorna 0
+ * (pausa desligada). `random` é injetável para testes determinísticos.
+ * @param {number} [minMs=0]
+ * @param {number} [maxMs=0]
+ * @param {() => number} [random=Math.random]
+ * @returns {number}
+ */
+function pickPauseMs(minMs = 0, maxMs = 0, random = Math.random) {
+  const min = Math.max(0, Math.floor(Number(minMs) || 0));
+  const max = Math.max(min, Math.floor(Number(maxMs) || 0));
+  if (max === 0) return 0;
+  return min + Math.floor(random() * (max - min + 1));
+}
+
 module.exports = {
   formatDate,
   formatTime,
   formatDateTime,
   formatDuration,
-  calculateAccountBackoff
+  calculateAccountBackoff,
+  pickPauseMs
 };

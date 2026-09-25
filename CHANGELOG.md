@@ -24,6 +24,14 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   "Coletado com sucesso (+0 moedas)" quando não houve coleta nem crédito no extrato: passa
   a exibir "não confirmado nesta execução".
 
+- **Pausa aleatória opcional antes de cada tarefa (`TASK_PAUSE_MIN_MS` / `TASK_PAUSE_MAX_MS`, padrão `0`/`0` = desligada):**
+  hoje as tarefas do painel rodam encadeadas, com esperas fixas de 1–2,5 s e sem intervalo entre o check-in e a
+  1ª tarefa, num ritmo idêntico todos os dias. As duas variáveis sorteiam uma pausa uniforme entre MIN e MAX (ms)
+  antes de cada tarefa, inclusive a primeira. A pausa fica depois de escolher a tarefa e antes de executá-la, então
+  não sobra pausa no fim. Com o padrão o comportamento é exatamente o anterior. O schema valida `MAX >= MIN`, o
+  `--dry-run` exibe a configuração (texto e JSON) e o sorteio é a função pura `pickPauseMs` (`time_utils.js`), coberta
+  por testes. Documentado em `credentials.env.example` e no `README.md`.
+
 ### Corrigido
 
 - **Espera do marcador do check-in no extrato respeita o `NAV_TIMEOUT_SHORT`
@@ -41,6 +49,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   "Coletado com sucesso (+0)". Suíte em **416/416**; lint/format limpos.
 - Teste de regressão do PR #19 em `tests/balance.test.js`: a espera do marcador do
   check-in no extrato deve usar o `timeout` configurado (falha com o valor fixo de 6 s).
+  834ebe5b85f5a2ba7ae4c4a9d2aea85f
 
 ## [1.6.2] - 2026-09-24
 

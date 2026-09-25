@@ -141,6 +141,8 @@ LOG_LEVEL=info
 # TASK_RETRY_UNFINISHED=false   # 2ª passada só nas tarefas incompletas (padrão: false)
 # TASK_RETRY_PASSES=1
 # TASK_RETRY_DELAY_MS=5000
+# TASK_PAUSE_MIN_MS=0           # pausa aleatória antes de cada tarefa, entre MIN e MAX em ms (padrão: 0/0 = desligada)
+# TASK_PAUSE_MAX_MS=0           # ex.: 15000 e 60000 -> 15s a 60s entre tarefas (MAX deve ser >= MIN)
 
 # Telegram por conta (opcional): enviar também o resultado individual de cada conta (padrão: false)
 # TELEGRAM_PER_ACCOUNT=false

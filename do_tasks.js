@@ -7,7 +7,7 @@ const {
   checkAndDisplayHelp,
   maskUser
 } = require('./config');
-const { formatDateTime, formatDuration } = require('./time_utils');
+const { formatDateTime, formatDuration, pickPauseMs } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const { flushAndExit } = require('./libs/exit');
@@ -268,6 +268,8 @@ async function runTasks(options = {}) {
       const retryUnfinished = config.TASK_RETRY_UNFINISHED === true;
       const maxRetryPasses = retryUnfinished ? Math.max(0, config.TASK_RETRY_PASSES ?? 1) : 0;
       const retryDelayMs = config.TASK_RETRY_DELAY_MS ?? 5000;
+      const pauseMinMs = config.TASK_PAUSE_MIN_MS ?? 0;
+      const pauseMaxMs = config.TASK_PAUSE_MAX_MS ?? 0;
       // Títulos que esgotaram as rodadas/tentativas anteriormente; só estes podem ser
       // "reabertos" na passada extra (evita reprocessar tarefas já concluídas).
       const exhaustedTitles = new Set();
@@ -404,6 +406,14 @@ async function runTasks(options = {}) {
           if (!pendingTask) {
             logger.info('Todas as tarefas disponíveis foram concluídas ou verificadas.');
             break;
+          }
+
+          // Pausa aleatória ANTES da tarefa (padrão desligada). Ocorre só quando há tarefa a executar,
+          // então não há pausa "sobrando" no fim; cobre também o intervalo check-in -> 1ª tarefa.
+          const pauseMs = pickPauseMs(pauseMinMs, pauseMaxMs);
+          if (pauseMs > 0) {
+            logger.info(`Pausa de ${Math.round(pauseMs / 1000)}s antes da próxima tarefa.`);
+            await new Promise((resolve) => setTimeout(resolve, pauseMs));
           }
 
           const roundKey = getRoundKey(pendingTask);

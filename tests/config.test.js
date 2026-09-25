@@ -379,3 +379,41 @@ test('config.js - passwordFile não permite path traversal fora do diretório do
     cleanupIsolatedTestDir(tmpDir);
   }
 });
+
+test('config.js - TASK_PAUSE_MIN_MS/MAX_MS: padrão desligado, aceita faixa válida e rejeita max < min', () => {
+  const base = {
+    ALI_USER: 'test@example.com',
+    ALI_PASSWORD: 'password123',
+    SESSION_SECRET: '12345678901234567890123456789012'
+  };
+
+  // Padrão: 0/0 (pausa desligada, comportamento anterior preservado)
+  const padrao = configSchema.parse(base);
+  assert.strictEqual(padrao.TASK_PAUSE_MIN_MS, 0);
+  assert.strictEqual(padrao.TASK_PAUSE_MAX_MS, 0);
+
+  // Faixa válida vinda de string de ambiente
+  const ok = configSchema.parse({
+    ...base,
+    TASK_PAUSE_MIN_MS: '15000',
+    TASK_PAUSE_MAX_MS: '60000'
+  });
+  assert.strictEqual(ok.TASK_PAUSE_MIN_MS, 15000);
+  assert.strictEqual(ok.TASK_PAUSE_MAX_MS, 60000);
+
+  // Só MAX (min padrão 0) é válido; valor inválido cai no padrão 0
+  assert.strictEqual(
+    configSchema.parse({ ...base, TASK_PAUSE_MAX_MS: '30000' }).TASK_PAUSE_MAX_MS,
+    30000
+  );
+  assert.strictEqual(
+    configSchema.parse({ ...base, TASK_PAUSE_MAX_MS: 'abc' }).TASK_PAUSE_MAX_MS,
+    0
+  );
+
+  // max < min é erro de configuração acionável
+  assert.throws(
+    () => configSchema.parse({ ...base, TASK_PAUSE_MIN_MS: '60000', TASK_PAUSE_MAX_MS: '15000' }),
+    /TASK_PAUSE_MAX_MS deve ser >= TASK_PAUSE_MIN_MS/
+  );
+});
