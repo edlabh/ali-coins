@@ -451,9 +451,9 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
       timeout
     }).catch(() => {});
 
-    await desktopPage
-      .waitForSelector(SELECTORS.desktop.mycoinCheckin, { timeout: 6000 })
-      .catch(() => {});
+    // Mesmo timeout da navegação (options.timeout / NAV_TIMEOUT_SHORT): antes esta espera era um
+    // 6000 ms fixo, alheio à configuração, e não acompanhava os ajustes de timeout para páginas lentas.
+    await desktopPage.waitForSelector(SELECTORS.desktop.mycoinCheckin, { timeout }).catch(() => {});
 
     const desktopText = await desktopPage.innerText('body').catch(() => '');
 

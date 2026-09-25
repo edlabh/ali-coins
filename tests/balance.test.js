@@ -12,6 +12,7 @@ const {
   getBalanceDesktop
 } = require('../libs/ui/balance');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
+const { SELECTORS } = require('../libs/selectors');
 
 test('libs/ui/balance.js - extractStreakFromText reconhece padrões multilíngues (pt, en, es)', () => {
   const realFilesSnapshot = snapshotRealFiles();
@@ -235,6 +236,39 @@ test('libs/ui/balance.js - getBalanceDesktop calcula desktopStreak via históric
     assert.strictEqual(result.hasAppCheckinToday, true);
     assert.strictEqual(typeof result.desktopStreak, 'number');
     assert.strictEqual(result.loginPromptDetected, false, 'página normal não é prompt de login');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/balance.js - getBalanceDesktop espera o marcador do check-in com options.timeout, não 6s fixo', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    // A função faz mais de uma espera (ex.: o campo de senha do prompt de reautenticação, com
+    // timeout próprio); por isso o timeout é registrado por seletor.
+    const timeoutBySelector = {};
+    const mockContext = {
+      newPage: async () => ({
+        goto: async () => {},
+        waitForSelector: async (selector, opts) => {
+          timeoutBySelector[selector] = opts && opts.timeout;
+        },
+        innerText: async () => 'Minhas moedas\n100\n',
+        screenshot: async () => {},
+        close: async () => {}
+      }),
+      route: async () => {},
+      tracing: { start: async () => {}, stop: async () => {} },
+      close: async () => {}
+    };
+    const mockBrowser = { newContext: async () => mockContext };
+
+    await getBalanceDesktop(mockBrowser, { cookies: [] }, { timeout: 20000 });
+    assert.strictEqual(
+      timeoutBySelector[SELECTORS.desktop.mycoinCheckin],
+      20000,
+      'a espera do marcador deve usar o mesmo timeout recebido em options, não um 6000 fixo'
+    );
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }
