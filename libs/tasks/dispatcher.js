@@ -2,7 +2,12 @@
  * Orquestrador fino de despacho e execução de tarefas do painel do AliExpress
  */
 const { waitWithScroll } = require('../../browser');
-const { executeSurpriseItems } = require('./surprise');
+const {
+  executeSurpriseItems,
+  shouldReloadSurpriseFeed,
+  loadTappedCards,
+  saveTappedCards
+} = require('./surprise');
 const { executeSearchTask } = require('./search');
 const { executePrizeLandTask } = require('./prizeland');
 const {
@@ -191,6 +196,9 @@ async function executeTaskAction(
 module.exports = {
   // Orquestração
   executeTaskAction,
+  shouldReloadSurpriseFeed,
+  loadTappedCards,
+  saveTappedCards,
 
   // Verificação e DOM
   openTaskDrawer,

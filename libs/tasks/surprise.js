@@ -1,5 +1,77 @@
 const { SELECTORS } = require('../selectors');
 const defaultLogger = require('../../logger');
+const fs = require('fs');
+const path = require('path');
+
+// Teto de segurança da memória diária de cards da surpresa (evita arquivo/Set gigantes)
+const MAX_TAPPED_CARDS_MEMORY = 500;
+
+/**
+ * Decide se vale recarregar o feed de surpresas quando nenhum card NOVO é encontrado.
+ * O feed costuma repetir os mesmos cards e toques repetidos não contam progresso — a recarga
+ * busca itens novos. Executada no máximo uma vez por chamada da tarefa.
+ * @param {{foundNewCard?: boolean, alreadyReloaded?: boolean}} [params]
+ * @returns {boolean}
+ */
+function shouldReloadSurpriseFeed({ foundNewCard = false, alreadyReloaded = false } = {}) {
+  return foundNewCard !== true && alreadyReloaded !== true;
+}
+
+/**
+ * Caminho do arquivo de memória diária dos cards tocados.
+ * @param {string} dir
+ * @param {string} dateKey
+ * @returns {string}
+ */
+function tappedCardsFilePath(dir, dateKey) {
+  return path.join(dir, `surprise_tapped_${dateKey}.json`);
+}
+
+/**
+ * Carrega as assinaturas de cards já tocados no dia (memória entre execuções).
+ * Nunca lança: arquivo ausente/inválido resulta em conjunto vazio.
+ * @param {{dir?: string, dateKey?: string}} [params]
+ * @returns {Set<string>}
+ */
+function loadTappedCards({ dir, dateKey } = {}) {
+  try {
+    if (!dir || !dateKey) return new Set();
+    const raw = fs.readFileSync(tappedCardsFilePath(dir, dateKey), 'utf8');
+    const parsed = JSON.parse(raw);
+    const list = Array.isArray(parsed)
+      ? parsed
+      : parsed && Array.isArray(parsed.cards)
+        ? parsed.cards
+        : [];
+    return new Set(list.filter((s) => typeof s === 'string').slice(0, MAX_TAPPED_CARDS_MEMORY));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Persiste as assinaturas de cards tocados no dia (memória entre execuções).
+ * Nunca lança: falha de I/O retorna false e a execução segue normalmente.
+ * @param {{dir?: string, dateKey?: string, cards?: Set<string>|string[]}} [params]
+ * @returns {boolean}
+ */
+function saveTappedCards({ dir, dateKey, cards } = {}) {
+  try {
+    if (!dir || !dateKey) return false;
+    const list = Array.from(cards || [])
+      .filter((s) => typeof s === 'string')
+      .slice(0, MAX_TAPPED_CARDS_MEMORY);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      tappedCardsFilePath(dir, dateKey),
+      JSON.stringify({ savedAt: new Date().toISOString(), cards: list }, null, 2),
+      'utf8'
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Normaliza uma URL do AliExpress removendo parâmetros voláteis que não alteram a identidade da página.
@@ -200,6 +272,8 @@ async function executeSurpriseItems(
   // nela. Usado apenas para decidir o fallback de detalhe ao final (best-effort).
   let navigatedAwayDuringClicks = false;
   let lastClickStayedOnFeed = false;
+  // A recarga do feed (busca de itens novos) acontece no máximo uma vez por execução.
+  let feedReloaded = false;
 
   // Carrega cards + assinaturas em lote (1 $$ + 1 $$eval por consulta) e cai no modo
   // individual (getCardSignature) quando o page não suporta $$eval.
@@ -299,7 +373,37 @@ async function executeSurpriseItems(
       }
     }
 
-    // 4. Se ainda assim não houver card novo, ENCERRA para evitar repetição (sem wrap)
+    // 4. Último recurso antes de encerrar: recarrega o feed para buscar itens NOVOS.
+    //    O feed costuma repetir os mesmos cards e toques repetidos não contam progresso;
+    //    a recarga (além do scroll) é o que pode trazer itens ainda não tocados.
+    if (shouldReloadSurpriseFeed({ foundNewCard: Boolean(card), alreadyReloaded: feedReloaded })) {
+      feedReloaded = true;
+      if (signal && signal.aborted) {
+        break;
+      }
+      logger.info('Nenhum card novo encontrado; recarregando o feed de surpresas...');
+      const reloadUrl = feedUrl || (typeof page.url === 'function' ? page.url() : '');
+      if (reloadUrl && typeof page.goto === 'function') {
+        await page
+          .goto(reloadUrl, { waitUntil: 'domcontentloaded', timeout: 15000 })
+          .catch(() => {});
+        if (typeof page.waitForTimeout === 'function') {
+          await page.waitForTimeout(1500).catch(() => {});
+        }
+        ({ cards: currentCards, signatures: currentSignatures } = await loadCards());
+        for (let cIdx = 0; cIdx < currentCards.length; cIdx++) {
+          const sig = await signatureAt(cIdx);
+          if (!touchedCardsSet.has(sig)) {
+            card = currentCards[cIdx];
+            cardIndex = cIdx;
+            cardSig = sig;
+            break;
+          }
+        }
+      }
+    }
+
+    // 5. Se ainda assim não houver card novo, ENCERRA para evitar repetição (sem wrap)
     if (!card) {
       logger.warn(
         `Todos os ${currentCards.length} cards disponíveis já foram tocados nesta rodada. Encerrando toques para evitar repetição de itens.`
@@ -600,5 +704,8 @@ module.exports = {
   normalizeFeedUrl,
   isFeedUrl,
   getCardSignature,
-  getCardSignatures
+  getCardSignatures,
+  shouldReloadSurpriseFeed,
+  loadTappedCards,
+  saveTappedCards
 };

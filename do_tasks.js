@@ -7,7 +7,7 @@ const {
   checkAndDisplayHelp,
   maskUser
 } = require('./config');
-const { formatDateTime, formatDuration, pickPauseMs } = require('./time_utils');
+const { formatDateTime, formatDate, formatDuration, pickPauseMs } = require('./time_utils');
 const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const { flushAndExit } = require('./libs/exit');
@@ -36,6 +36,9 @@ const {
   getRoundKey,
   recordRoundAttempt,
   withTimeout,
+  loadTappedCards,
+  saveTappedCards,
+  getDiagnosticsDir,
   ensureMainPage: ensureMainPageFn,
   getDrawerTasksWithRetry: getDrawerTasksWithRetryFn
 } = require('./libs/ui');
@@ -290,7 +293,16 @@ async function runTasks(options = {}) {
       const failedTasks = {};
       const taskProgressMap = {};
       const taskStatusMap = {};
-      const touchedCards = new Set();
+      // Memória diária dos cards da surpresa: itens repetidos não contam progresso e repetir
+      // entre runs queima tentativas/feed. Opt-out: SURPRISE_REMEMBER_TAPPED=false.
+      // Falha de I/O nunca impede a execução (load/save tratam e retornam vazio/false).
+      const rememberTappedCards = !/^(0|false|off|no)$/i.test(
+        String(process.env.SURPRISE_REMEMBER_TAPPED || '').trim()
+      );
+      const surpriseTappedDateKey = formatDate(new Date()).replace(/\//g, '-');
+      const touchedCards = rememberTappedCards
+        ? loadTappedCards({ dir: getDiagnosticsDir(), dateKey: surpriseTappedDateKey })
+        : new Set();
 
       // Aplica o progresso observado na gaveta: avanço de rodada ou mudança de status
       // reiniciam tentativas e LIMPAM falha residual — o progresso do AliExpress chega
@@ -639,6 +651,23 @@ async function runTasks(options = {}) {
             'Teto global de ações atingido; encerrando novas passadas para não estourar o tempo.'
           );
           break;
+        }
+      }
+
+      // Persiste a memória diária dos cards da surpresa (apenas quando o recurso está
+      // ativo e houve toques) — permite que o próximo run ignore itens já tocados hoje.
+      if (rememberTappedCards && touchedCards.size > 0) {
+        const saved = saveTappedCards({
+          dir: getDiagnosticsDir(),
+          dateKey: surpriseTappedDateKey,
+          cards: touchedCards
+        });
+        if (saved) {
+          logger.info(
+            `Memória da surpresa: ${touchedCards.size} card(s) tocados hoje (${surpriseTappedDateKey}) salvos em scratch/.`
+          );
+        } else {
+          logger.warn('Falha ao salvar a memória de cards da surpresa; seguindo normalmente.');
         }
       }
 

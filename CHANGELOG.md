@@ -13,6 +13,19 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [1.7.2] - 2026-10-02
 
+### Adicionado
+
+- **Recarga do feed de surpresas em estagnação (`libs/tasks/surprise.js`):** quando todos os
+  cards visíveis já foram tocados, além do scroll o feed é recarregado uma vez por execução
+  (navegação + releitura dos cards) para buscar itens ainda não tocados antes de encerrar a
+  rodada — o feed costuma repetir os mesmos cards e toques repetidos não contam progresso.
+- **Memória diária de cards já tocados (`libs/tasks/surprise.js`, `do_tasks.js`):** as
+  assinaturas dos cards tocados no dia são persistidas em
+  `scratch/surprise_tapped_<data>.json` e carregadas no run seguinte, evitando gastar
+  tentativas em itens já contabilizados pelo painel. Falha de leitura/escrita nunca
+  interrompe a execução, o histórico é limitado a 500 assinaturas por dia e há opt-out com
+  `SURPRISE_REMEMBER_TAPPED=false`.
+
 ### Corrigido
 
 - **Tarefa "Explore itens surpresa" reaberta após progresso tardio (`do_tasks.js`,
@@ -32,8 +45,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 ### Testes
 
 - Novos testes em `tests/tasks.test.js`: reabertura por progresso tardio, seleção de
-  candidatos à confirmação e classificação do relatório; suíte em **446/446**; lint/format
-  limpos.
+  candidatos à confirmação e classificação do relatório; recarga única do feed de surpresas
+  e roundtrip da memória diária de cards (arquivo inválido e teto de 500); suíte em
+  **448/448**; lint/format limpos.
 
 ## [1.7.1] - 2026-09-25
 

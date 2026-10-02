@@ -2753,3 +2753,67 @@ test('tasks/state - resolveTaskReportStatus não mascara tarefa concluída como 
     'string'
   );
 });
+
+test('tasks/surprise - shouldReloadSurpriseFeed decide a recarga única do feed', () => {
+  const { shouldReloadSurpriseFeed } = require('../libs/tasks/surprise');
+
+  assert.strictEqual(
+    shouldReloadSurpriseFeed({ foundNewCard: false, alreadyReloaded: false }),
+    true,
+    'sem card novo e sem recarga ainda: deve recarregar'
+  );
+  assert.strictEqual(
+    shouldReloadSurpriseFeed({ foundNewCard: true, alreadyReloaded: false }),
+    false,
+    'com card novo não recarrega'
+  );
+  assert.strictEqual(
+    shouldReloadSurpriseFeed({ foundNewCard: false, alreadyReloaded: true }),
+    false,
+    'recarrega no máximo uma vez por execução'
+  );
+  assert.strictEqual(shouldReloadSurpriseFeed({}), true);
+});
+
+test('tasks/surprise - memória diária de cards tocados (roundtrip, arquivo inválido e teto)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { loadTappedCards, saveTappedCards } = require('../libs/tasks/surprise');
+  const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
+  const dir = createIsolatedTestDir('ali-coins-surprise-mem-');
+  try {
+    // Sem arquivo -> conjunto vazio
+    assert.strictEqual(loadTappedCards({ dir, dateKey: '02-10-2026' }).size, 0);
+
+    // Roundtrip
+    const cards = new Set(['sig-a', 'sig-b', 'sig-c']);
+    assert.strictEqual(saveTappedCards({ dir, dateKey: '02-10-2026', cards }), true);
+    assert.deepStrictEqual([...loadTappedCards({ dir, dateKey: '02-10-2026' })].sort(), [
+      'sig-a',
+      'sig-b',
+      'sig-c'
+    ]);
+
+    // Dia diferente -> arquivo diferente (vazio)
+    assert.strictEqual(loadTappedCards({ dir, dateKey: '03-10-2026' }).size, 0);
+
+    // Conteúdo inválido -> vazio, sem lançar
+    fs.writeFileSync(path.join(dir, 'surprise_tapped_03-10-2026.json'), '{invalido', 'utf8');
+    assert.strictEqual(loadTappedCards({ dir, dateKey: '03-10-2026' }).size, 0);
+
+    // Teto de segurança: no máximo 500 assinaturas persistidas
+    const muitas = new Set(Array.from({ length: 600 }, (_, i) => `sig-${i}`));
+    assert.strictEqual(saveTappedCards({ dir, dateKey: '04-10-2026', cards: muitas }), true);
+    assert.strictEqual(loadTappedCards({ dir, dateKey: '04-10-2026' }).size, 500);
+
+    // Caminho inválido (arquivo no lugar de diretório) -> false, sem lançar
+    const arquivoNoLugarDeDir = path.join(dir, 'arquivo.txt');
+    fs.writeFileSync(arquivoNoLugarDeDir, 'x', 'utf8');
+    assert.strictEqual(
+      saveTappedCards({ dir: arquivoNoLugarDeDir, dateKey: '02-10-2026', cards }),
+      false
+    );
+  } finally {
+    cleanupIsolatedTestDir(dir);
+  }
+});
