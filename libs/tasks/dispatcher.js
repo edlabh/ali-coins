@@ -6,7 +6,8 @@ const {
   executeSurpriseItems,
   shouldReloadSurpriseFeed,
   loadTappedCards,
-  saveTappedCards
+  saveTappedCards,
+  composeSurpriseTappedKey
 } = require('./surprise');
 const { executeSearchTask } = require('./search');
 const { executePrizeLandTask } = require('./prizeland');
@@ -199,6 +200,7 @@ module.exports = {
   shouldReloadSurpriseFeed,
   loadTappedCards,
   saveTappedCards,
+  composeSurpriseTappedKey,
 
   // Verificação e DOM
   openTaskDrawer,

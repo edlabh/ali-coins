@@ -2817,3 +2817,24 @@ test('tasks/surprise - memória diária de cards tocados (roundtrip, arquivo inv
     cleanupIsolatedTestDir(dir);
   }
 });
+
+test('tasks/surprise - composeSurpriseTappedKey separa a memória por conta', () => {
+  const { composeSurpriseTappedKey } = require('../libs/tasks/surprise');
+
+  assert.strictEqual(
+    composeSurpriseTappedKey({ dateKey: '02-10-2026', user: 'edelanoali@gmail.com' }),
+    '02-10-2026-c6272bee',
+    'hash de 8 caracteres igual ao usado nas sessões por conta (sha256 do e-mail)'
+  );
+  assert.notStrictEqual(
+    composeSurpriseTappedKey({ dateKey: '02-10-2026', user: 'outra@gmail.com' }),
+    composeSurpriseTappedKey({ dateKey: '02-10-2026', user: 'edelanoali@gmail.com' }),
+    'contas diferentes usam memórias diferentes'
+  );
+  assert.strictEqual(
+    composeSurpriseTappedKey({ dateKey: '02-10-2026', user: '' }),
+    '02-10-2026',
+    'sem usuário identificado mantém a chave global (compatibilidade)'
+  );
+  assert.strictEqual(composeSurpriseTappedKey({}), '');
+});

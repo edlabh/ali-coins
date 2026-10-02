@@ -11,6 +11,23 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.7.3] - 2026-10-06
+
+### Corrigido
+
+- **Memória diária da surpresa separada por conta (`libs/tasks/surprise.js`, `do_tasks.js`):**
+  a chave do arquivo passa a incluir o hash da conta (sha256 de 8 caracteres, o mesmo das
+  sessões), gerando `scratch/surprise_tapped_<data>-<hash>.json`. Antes, o arquivo era único
+  por dia: com 2 contas, a segunda podia ignorar cards que a primeira já havia tocado (feeds
+  diferentes, mesma assinatura), desperdiçando itens. Sem usuário identificado, a chave
+  continua global (compatibilidade).
+
+### Testes
+
+- Novo teste em `tests/tasks.test.js` para `composeSurpriseTappedKey` (hash igual ao das
+  sessões, separação entre contas e fallback global); suíte em **449/449**; lint/format
+  limpos.
+
 ## [1.7.2] - 2026-10-02
 
 ### Adicionado

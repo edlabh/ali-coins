@@ -57,6 +57,7 @@ module.exports = {
   shouldReloadSurpriseFeed: dispatcher.shouldReloadSurpriseFeed,
   loadTappedCards: dispatcher.loadTappedCards,
   saveTappedCards: dispatcher.saveTappedCards,
+  composeSurpriseTappedKey: dispatcher.composeSurpriseTappedKey,
   markSpecialOrAppOnly: dispatcher.markSpecialOrAppOnly,
   classifyTaskStatus: dispatcher.classifyTaskStatus,
   findTaskElement: dispatcher.findTaskElement,

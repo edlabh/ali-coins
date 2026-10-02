@@ -38,6 +38,7 @@ const {
   withTimeout,
   loadTappedCards,
   saveTappedCards,
+  composeSurpriseTappedKey,
   getDiagnosticsDir,
   ensureMainPage: ensureMainPageFn,
   getDrawerTasksWithRetry: getDrawerTasksWithRetryFn
@@ -294,12 +295,16 @@ async function runTasks(options = {}) {
       const taskProgressMap = {};
       const taskStatusMap = {};
       // Memória diária dos cards da surpresa: itens repetidos não contam progresso e repetir
-      // entre runs queima tentativas/feed. Opt-out: SURPRISE_REMEMBER_TAPPED=false.
+      // entre runs queima tentativas/feed. A chave inclui o hash da conta — cada conta tem a
+      // sua própria memória. Opt-out: SURPRISE_REMEMBER_TAPPED=false.
       // Falha de I/O nunca impede a execução (load/save tratam e retornam vazio/false).
       const rememberTappedCards = !/^(0|false|off|no)$/i.test(
         String(process.env.SURPRISE_REMEMBER_TAPPED || '').trim()
       );
-      const surpriseTappedDateKey = formatDate(new Date()).replace(/\//g, '-');
+      const surpriseTappedDateKey = composeSurpriseTappedKey({
+        dateKey: formatDate(new Date()).replace(/\//g, '-'),
+        user: userEmail
+      });
       const touchedCards = rememberTappedCards
         ? loadTappedCards({ dir: getDiagnosticsDir(), dateKey: surpriseTappedDateKey })
         : new Set();

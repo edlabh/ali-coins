@@ -2,6 +2,7 @@ const { SELECTORS } = require('../selectors');
 const defaultLogger = require('../../logger');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // Teto de segurança da memória diária de cards da surpresa (evita arquivo/Set gigantes)
 const MAX_TAPPED_CARDS_MEMORY = 500;
@@ -71,6 +72,22 @@ function saveTappedCards({ dir, dateKey, cards } = {}) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Compõe a chave da memória diária de cards já tocados, separando por conta.
+ * O hash do e-mail segue o mesmo esquema das sessões por conta (sha256, 8 primeiros
+ * caracteres) — a memória de cada conta não interfere nas demais. Sem usuário
+ * identificado, mantém a chave global (compatibilidade).
+ * @param {{dateKey?: string, user?: string}} [params]
+ * @returns {string}
+ */
+function composeSurpriseTappedKey({ dateKey, user } = {}) {
+  const base = typeof dateKey === 'string' ? dateKey : '';
+  const email = typeof user === 'string' ? user.trim() : '';
+  if (!base || !email) return base;
+  const accountHash = crypto.createHash('sha256').update(email).digest('hex').slice(0, 8);
+  return `${base}-${accountHash}`;
 }
 
 /**
@@ -707,5 +724,6 @@ module.exports = {
   getCardSignatures,
   shouldReloadSurpriseFeed,
   loadTappedCards,
-  saveTappedCards
+  saveTappedCards,
+  composeSurpriseTappedKey
 };
