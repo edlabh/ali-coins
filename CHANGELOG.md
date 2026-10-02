@@ -11,6 +11,30 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
 > completo está em [RELEASING.md](RELEASING.md).
 
+## [1.7.2] - 2026-10-02
+
+### Corrigido
+
+- **Tarefa "Explore itens surpresa" reaberta após progresso tardio (`do_tasks.js`,
+  `libs/tasks/state.js`):** quando o painel confirma avanço de rodada (ou mudança de status)
+  depois de a tarefa ter sido marcada como "sem progresso", a falha residual é limpa e as
+  tentativas (por título e por rodada) são zeradas — a rodada seguinte passa a executar no
+  mesmo run. Antes, o `failedTasks` ficava "grudado": a rodada 2 nunca rodava e o relatório
+  dizia "Falhou" mesmo quando o painel já mostrava a tarefa concluída (2/2).
+- **Confirmação de progresso tardio antes de desistir (`do_tasks.js`):** ao esgotar as
+  tentativas da rodada, o runner aguarda ~4s e relê o painel uma vez; se a rodada avançou
+  nesse intervalo, a tarefa é reaberta — evita desistir segundos antes de o AliExpress
+  processar os toques (progressão atrasada).
+- **Relatório não mascara tarefa concluída (`libs/tasks/state.js`, `do_tasks.js`):** a
+  classificação final prioriza a tarefa concluída (mesmo com falha residual) e evita bullets
+  duplicados do mesmo título.
+
+### Testes
+
+- Novos testes em `tests/tasks.test.js`: reabertura por progresso tardio, seleção de
+  candidatos à confirmação e classificação do relatório; suíte em **446/446**; lint/format
+  limpos.
+
 ## [1.7.1] - 2026-09-25
 
 ### Performance

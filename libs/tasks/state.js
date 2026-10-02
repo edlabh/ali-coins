@@ -220,6 +220,87 @@ function resetTaskAttempt(attemptsMap, title) {
 }
 
 /**
+ * Reabre uma tarefa quando o painel confirma progresso tardio (avanço de rodada ou mudança
+ * de status): limpa a falha registrada e zera as tentativas por título e por rodada, para
+ * que a(s) rodada(s) restante(s) sejam executadas no mesmo run.
+ *
+ * Contexto: a progressão do AliExpress chega com atraso; sem esta limpeza, o `failedTasks`
+ * (marcado segundos antes de a rodada avançar) bloqueava a tarefa pelo resto da execução.
+ * O status especial de tarefa do app desativada é preservado (nunca reabre).
+ *
+ * @param {object} params
+ * @param {object} [params.taskAttempts] Mapa de tentativas por título
+ * @param {object} [params.roundAttemptsMap] Mapa de tentativas por (título + statusText)
+ * @param {object} [params.failedTasks] Mapa de falhas por título (mutado)
+ * @param {string} params.title Título da tarefa que progrediu
+ * @returns {boolean} true quando havia falha registrada e ela foi limpa (tarefa reaberta)
+ */
+function resetTaskForProgress({ taskAttempts, roundAttemptsMap, failedTasks, title } = {}) {
+  if (!title) return false;
+
+  if (taskAttempts) taskAttempts[title] = 0;
+
+  const prefix = `${title}:::`;
+  if (roundAttemptsMap) {
+    for (const key of Object.keys(roundAttemptsMap)) {
+      if (key.startsWith(prefix)) roundAttemptsMap[key] = 0;
+    }
+  }
+
+  let reopened = false;
+  if (failedTasks && failedTasks[title] && failedTasks[title] !== APP_ONLY_DISABLED_STATUS) {
+    delete failedTasks[title];
+    reopened = true;
+  }
+  return reopened;
+}
+
+/**
+ * Seleciona tarefas que esgotaram as tentativas da rodada atual e ainda não foram marcadas
+ * como falha — candidatas a uma confirmação extra (re-leitura do painel após um pequeno
+ * atraso) antes de aceitar a desistência por "sem progresso".
+ *
+ * @param {Array<object>} tasks Tarefas extraídas da gaveta
+ * @param {object} [params]
+ * @param {object} [params.roundAttemptsMap={}] Tentativas por rodada
+ * @param {object} [params.failedTasks={}] Falhas já registradas
+ * @param {number} [params.maxRoundAttempts=3] Limite por rodada
+ * @param {boolean} [params.skipAppOnlyTasks=true] Ignora tarefas exclusivas do app
+ * @returns {string[]} Títulos candidatos à confirmação (ordem da gaveta)
+ */
+function selectLateProgressCandidates(
+  tasks,
+  { roundAttemptsMap = {}, failedTasks = {}, maxRoundAttempts = 3, skipAppOnlyTasks = true } = {}
+) {
+  if (!Array.isArray(tasks)) return [];
+  const candidatos = [];
+  for (const t of tasks) {
+    if (!t || t.isDone || t.failureReason) continue;
+    if (failedTasks[t.title]) continue;
+    if (skipAppOnlyTasks && isInteractiveOrAppOnly(t)) continue;
+    const key = getRoundKey(t);
+    if (!key) continue;
+    if ((roundAttemptsMap[key] || 0) >= maxRoundAttempts) candidatos.push(t.title);
+  }
+  return candidatos;
+}
+
+/**
+ * Classifica o status de uma tarefa para o relatório final: tarefa CONCLUÍDA nunca é
+ * mascarada por uma falha residual (ex.: "Falhou (sem progresso...)" marcado segundos antes
+ * de o progresso tardio aparecer). Para tarefas não concluídas, mantém o motivo da falha.
+ * @param {object} task
+ * @param {{failedTasks?: object, skipAppOnlyTasks?: boolean}} [options]
+ * @returns {string}
+ */
+function resolveTaskReportStatus(task, { failedTasks = {}, skipAppOnlyTasks = true } = {}) {
+  if (task && task.isDone) {
+    return classifyTaskStatus(task, { failedTasks: {}, skipAppOnlyTasks });
+  }
+  return classifyTaskStatus(task, { failedTasks, skipAppOnlyTasks });
+}
+
+/**
  * Marca uma tarefa especial como finalizada para evitar novas tentativas
  * @param {object} attemptsMap
  * @param {string} title
@@ -339,6 +420,9 @@ module.exports = {
   selectReopenableTasks,
   recordTaskAttempt,
   resetTaskAttempt,
+  resetTaskForProgress,
+  selectLateProgressCandidates,
+  resolveTaskReportStatus,
   markSpecialOrAppOnly,
   classifyTaskStatus,
   getRoundKey,

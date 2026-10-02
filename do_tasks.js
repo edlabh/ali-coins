@@ -27,8 +27,10 @@ const {
   findNextPendingTask,
   recordTaskAttempt,
   resetTaskAttempt,
+  resetTaskForProgress,
+  selectLateProgressCandidates,
+  resolveTaskReportStatus,
   markSpecialOrAppOnly,
-  classifyTaskStatus,
   findTaskElement,
   captureDomHashAndArtifacts,
   getRoundKey,
@@ -40,6 +42,11 @@ const {
 const { renderTasksReport } = require('./libs/report');
 const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
+
+// Confirmação de progresso tardio: quando uma tarefa esgota as tentativas da rodada atual,
+// o painel do AliExpress pode ainda estar processando os toques (progresso atrasado) —
+// espera este tempo e relê a gaveta antes de aceitar a desistência por "sem progresso".
+const LATE_PROGRESS_CONFIRM_MS = 4000;
 
 /**
  * Verifica se a URL corresponde à central de moedas mobile (usada para decidir o reúso da
@@ -284,6 +291,47 @@ async function runTasks(options = {}) {
       const taskProgressMap = {};
       const taskStatusMap = {};
       const touchedCards = new Set();
+
+      // Aplica o progresso observado na gaveta: avanço de rodada ou mudança de status
+      // reiniciam tentativas e LIMPAM falha residual — o progresso do AliExpress chega
+      // com atraso e, sem isso, uma tarefa marcada "sem progresso" segundos antes ficava
+      // bloqueada pelo resto do run (rodada seguinte nunca era executada).
+      const applyTaskProgress = (tasks) => {
+        for (const t of tasks) {
+          if (!t) continue;
+          if (t.completedRounds !== null && t.completedRounds !== undefined) {
+            const prevRounds =
+              taskProgressMap[t.title] !== undefined ? taskProgressMap[t.title] : -1;
+            if (t.completedRounds > prevRounds) {
+              if (prevRounds >= 0) {
+                const reopened = resetTaskForProgress({
+                  taskAttempts,
+                  roundAttemptsMap,
+                  failedTasks,
+                  title: t.title
+                });
+                logger.info(
+                  `Tarefa "${t.title}" avançou de rodada (${t.completedRounds}/${t.totalRounds}). Resetando tentativas.` +
+                    (reopened ? ' Falha anterior limpa (progresso tardio).' : '')
+                );
+              }
+              taskProgressMap[t.title] = t.completedRounds;
+            }
+          }
+          if (t.statusText) {
+            const prevStatus = taskStatusMap[t.title];
+            if (prevStatus !== undefined && prevStatus !== t.statusText) {
+              resetTaskForProgress({
+                taskAttempts,
+                roundAttemptsMap,
+                failedTasks,
+                title: t.title
+              });
+            }
+            taskStatusMap[t.title] = t.statusText;
+          }
+        }
+      };
       const maxAttemptsPerTask = config.TASK_MAX_ATTEMPTS;
       const maxRoundAttempts = config.TASK_ROUND_MAX_ATTEMPTS || 3;
       const taskMaxDurationMs = config.TASK_MAX_DURATION_MS || 3 * 60 * 1000;
@@ -357,9 +405,12 @@ async function runTasks(options = {}) {
         // Mantém a última extração de tarefas no escopo externo ao `while` para a
         // reabertura de passada (o destructuring declara `currentTasks` dentro do laço).
         let lastExtractedTasks = [];
+        // Títulos já submetidos à confirmação de progresso tardio nesta passada (evita
+        // esperas repetidas para a mesma tarefa/rodada).
+        const lateProgressChecked = new Set();
 
         while (totalActions < MAX_TOTAL_ACTIONS) {
-          const {
+          let {
             page: refreshedPage,
             tasks: currentTasks,
             error: extractErr
@@ -401,27 +452,38 @@ async function runTasks(options = {}) {
             }
           }
 
-          // Se uma tarefa progrediu de rodada ou status, reseta suas tentativas consecutivas
-          for (const t of currentTasks) {
-            if (t.completedRounds !== null && t.completedRounds !== undefined) {
-              const prevRounds =
-                taskProgressMap[t.title] !== undefined ? taskProgressMap[t.title] : -1;
-              if (t.completedRounds > prevRounds) {
-                if (prevRounds >= 0) {
-                  logger.info(
-                    `Tarefa "${t.title}" avançou de rodada (${t.completedRounds}/${t.totalRounds}). Resetando tentativas.`
-                  );
-                  resetTaskAttempt(taskAttempts, t.title);
-                }
-                taskProgressMap[t.title] = t.completedRounds;
-              }
-            }
-            if (t.statusText) {
-              const prevStatus = taskStatusMap[t.title];
-              if (prevStatus !== undefined && prevStatus !== t.statusText) {
-                resetTaskAttempt(taskAttempts, t.title);
-              }
-              taskStatusMap[t.title] = t.statusText;
+          // Progresso observado na gaveta -> aplica reset de tentativas e limpa falha residual
+          applyTaskProgress(currentTasks);
+
+          // Confirmação de progresso tardio: se alguma tarefa esgotou as tentativas desta
+          // rodada e ainda não foi marcada como falha, o painel pode estar apenas atrasado.
+          // Dá uma última chance (relê a gaveta após alguns segundos) antes de desistir.
+          const lateCandidates = selectLateProgressCandidates(currentTasks, {
+            roundAttemptsMap,
+            failedTasks,
+            maxRoundAttempts,
+            skipAppOnlyTasks
+          }).filter((title) => !lateProgressChecked.has(title));
+          if (lateCandidates.length > 0) {
+            for (const title of lateCandidates) lateProgressChecked.add(title);
+            logger.info(
+              `Possível progresso tardio em ${lateCandidates.length} tarefa(s) (${lateCandidates.join(' | ')}); ` +
+                `relendo o painel em ${LATE_PROGRESS_CONFIRM_MS}ms antes de desistir...`
+            );
+            await page.waitForTimeout(LATE_PROGRESS_CONFIRM_MS);
+            const {
+              page: confirmPage,
+              tasks: confirmTasks,
+              error: confirmErr
+            } = await getDrawerTasksWithRetry(page, {
+              maxRetries: 1,
+              label: 'confirmação de progresso tardio'
+            });
+            page = confirmPage;
+            if (!confirmErr && confirmTasks && confirmTasks.length > 0) {
+              currentTasks = confirmTasks;
+              lastExtractedTasks = currentTasks;
+              applyTaskProgress(currentTasks);
             }
           }
 
@@ -598,14 +660,19 @@ async function runTasks(options = {}) {
       }
       const results = finalTasks.map((t) => ({
         title: t.title,
-        status: failedTasks[t.title] || classifyTaskStatus(t, { failedTasks, skipAppOnlyTasks }),
+        // Tarefa concluída nunca é mascarada por falha residual (progresso tardio);
+        // para as demais, mantém o motivo da falha quando houver.
+        status: resolveTaskReportStatus(t, { failedTasks, skipAppOnlyTasks }),
         coins: t.coins,
         estimatedCoins: t.estimatedCoins || t.coins
       }));
 
-      // Garante que tarefas que desistiram/falharam constem no relatório mesmo se ausentes da gaveta
+      // Garante que tarefas que desistiram/falharam constem no relatório mesmo se ausentes
+      // da gaveta (comparação normalizada por trim evita bullets duplicados do mesmo título).
+      const hasTitle = (title) =>
+        results.some((r) => String(r.title).trim() === String(title).trim());
       for (const [failedTitle, reason] of Object.entries(failedTasks)) {
-        if (!results.some((r) => r.title === failedTitle)) {
+        if (!hasTitle(failedTitle)) {
           results.push({
             title: failedTitle,
             status: reason,

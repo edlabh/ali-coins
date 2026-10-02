@@ -2626,3 +2626,130 @@ test('tasks - segunda passada: reabre tarefa esgotada e processa novamente', () 
   });
   assert.strictEqual(next3, null);
 });
+
+test('tasks/state - resetTaskForProgress limpa falha e zera tentativas (progresso tardio)', () => {
+  const { resetTaskForProgress, APP_ONLY_DISABLED_STATUS } = require('../libs/tasks/state');
+
+  const taskAttempts = { X: 4, Y: 2 };
+  const roundAttemptsMap = { 'X:::1/2': 3, 'X:::2/2': 0, 'Y:::1/2': 3 };
+  const failedTasks = {
+    X: 'Falhou (sem progresso após 3 tentativas)',
+    Y: 'Falhou (limite de 4 tentativas atingido)'
+  };
+
+  const reopened = resetTaskForProgress({
+    taskAttempts,
+    roundAttemptsMap,
+    failedTasks,
+    title: 'X'
+  });
+  assert.strictEqual(reopened, true, 'deve indicar reabertura quando havia falha registrada');
+  assert.strictEqual(taskAttempts.X, 0, 'zera tentativas por título');
+  assert.strictEqual(roundAttemptsMap['X:::1/2'], 0, 'zera tentativas da rodada antiga');
+  assert.strictEqual(
+    roundAttemptsMap['X:::2/2'],
+    0,
+    'zera tentativas de todas as chaves da tarefa'
+  );
+  assert.strictEqual(roundAttemptsMap['Y:::1/2'], 3, 'não mexe em outras tarefas');
+  assert.strictEqual(taskAttempts.Y, 2, 'não mexe em outras tarefas');
+  assert.strictEqual('X' in failedTasks, false, 'remove a falha da tarefa reaberta');
+  assert.ok(failedTasks.Y.includes('limite'), 'mantém a falha das demais');
+
+  // Sem falha registrada -> não "reabre", mas ainda zera tentativas
+  const taskAttempts2 = { Z: 2 };
+  const roundAttempts2 = { 'Z:::GO': 3 };
+  const reopened2 = resetTaskForProgress({
+    taskAttempts: taskAttempts2,
+    roundAttemptsMap: roundAttempts2,
+    failedTasks: {},
+    title: 'Z'
+  });
+  assert.strictEqual(reopened2, false);
+  assert.strictEqual(taskAttempts2.Z, 0);
+  assert.strictEqual(roundAttempts2['Z:::GO'], 0);
+
+  // Preserva o status especial de tarefa do app desativada (nunca reabre)
+  const failedApp = { W: APP_ONLY_DISABLED_STATUS };
+  assert.strictEqual(
+    resetTaskForProgress({
+      taskAttempts: {},
+      roundAttemptsMap: {},
+      failedTasks: failedApp,
+      title: 'W'
+    }),
+    false
+  );
+  assert.strictEqual(failedApp.W, APP_ONLY_DISABLED_STATUS);
+});
+
+test('tasks/state - selectLateProgressCandidates sugere confirmação só quando vale a pena', () => {
+  const { selectLateProgressCandidates } = require('../libs/tasks/state');
+
+  const tasks = [
+    { title: 'A', statusText: 'GO', isDone: false },
+    { title: 'B', statusText: 'GO', isDone: false },
+    { title: 'C', statusText: 'GO', isDone: true },
+    { title: 'Complete 1 Merge Boss game order', statusText: 'GO', isDone: false }
+  ];
+  const base = { failedTasks: {}, maxRoundAttempts: 3, skipAppOnlyTasks: true };
+
+  // A esgotou as tentativas da rodada atual; B não; C concluída; app-only ignorada
+  assert.deepStrictEqual(
+    selectLateProgressCandidates(tasks, {
+      roundAttemptsMap: {
+        'A:::GO': 3,
+        'B:::GO': 2,
+        'C:::GO': 3,
+        'Complete 1 Merge Boss game order:::GO': 3
+      },
+      ...base
+    }),
+    ['A']
+  );
+
+  // Falha já registrada para A -> nada a confirmar
+  assert.deepStrictEqual(
+    selectLateProgressCandidates(tasks, {
+      roundAttemptsMap: { 'A:::GO': 3 },
+      failedTasks: { A: 'Falhou (sem progresso após 3 tentativas)' },
+      maxRoundAttempts: 3,
+      skipAppOnlyTasks: true
+    }),
+    []
+  );
+
+  // Sem tarefas / entradas inválidas
+  assert.deepStrictEqual(selectLateProgressCandidates(null, base), []);
+  assert.deepStrictEqual(selectLateProgressCandidates([], base), []);
+});
+
+test('tasks/state - resolveTaskReportStatus não mascara tarefa concluída como falha', () => {
+  const { resolveTaskReportStatus } = require('../libs/tasks/state');
+
+  const done = {
+    title: 'Browse surprise items',
+    isDone: true,
+    totalRounds: 2,
+    statusText: '2/2'
+  };
+  const failed = { 'Browse surprise items': 'Falhou (sem progresso após 3 tentativas)' };
+
+  assert.strictEqual(
+    resolveTaskReportStatus(done, { failedTasks: failed }),
+    'Concluída (2/2)',
+    'tarefa concluída deve ser reportada como concluída mesmo com falha residual'
+  );
+  assert.strictEqual(
+    resolveTaskReportStatus(
+      { title: 'X', isDone: false, statusText: 'GO' },
+      { failedTasks: { X: 'Falhou (sem progresso após 3 tentativas)' } }
+    ),
+    'Falhou (sem progresso após 3 tentativas)',
+    'tarefa não concluída mantém o motivo da falha'
+  );
+  assert.strictEqual(
+    typeof resolveTaskReportStatus({ title: 'Y', isDone: false, statusText: 'GO' }, {}),
+    'string'
+  );
+});
