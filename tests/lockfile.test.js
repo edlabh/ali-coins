@@ -189,14 +189,32 @@ test('lockfile.js - criação atômica impede dupla aquisição sob concorrênci
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('lockfile-race-');
   const tmpLockPath = path.join(tmpDir, 'race.lock');
+  const startFile = path.join(tmpDir, 'race.start');
   const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
 
+  // Barreira de início: todos os filhos avisam READY e só tentam o lock depois que o
+  // pai cria o startFile. Sem isso, um processo que inicia tarde (runner lento do
+  // Windows/CI) podia adquirir o lock legitimamente após o vencedor liberar, e o teste
+  // acusava dupla aquisição — flake de timing, não de concorrência do lockfile.
   const childScript = `
+    const fs = require('fs');
     const { acquireLock } = require(${JSON.stringify(lockModule)});
-    acquireLock(false, 60000, ${JSON.stringify(tmpLockPath)})
+    const startFile = ${JSON.stringify(startFile)};
+    const waitFor = (file, timeoutMs) => new Promise((resolve, reject) => {
+      const deadline = Date.now() + timeoutMs;
+      const tick = () => {
+        if (fs.existsSync(file)) return resolve();
+        if (Date.now() > deadline) return reject(new Error('timeout esperando ' + file));
+        setTimeout(tick, 5);
+      };
+      tick();
+    });
+    process.stdout.write('READY\\n');
+    waitFor(startFile, 15000)
+      .then(() => acquireLock(false, 60000, ${JSON.stringify(tmpLockPath)}))
       .then(async (release) => {
         process.stdout.write('ACQUIRED\\n');
-        await new Promise((r) => setTimeout(r, 1200));
+        await new Promise((r) => setTimeout(r, 2500));
         await release();
         process.exit(0);
       })
@@ -206,8 +224,38 @@ test('lockfile.js - criação atômica impede dupla aquisição sob concorrênci
       });
   `;
 
+  const spawnLockChild = () => {
+    const child = spawn(process.execPath, ['-e', childScript], {
+      cwd: path.resolve(__dirname, '..'),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    let readyResolve;
+    const ready = new Promise((resolve) => {
+      readyResolve = resolve;
+    });
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+      if (stdout.includes('READY')) readyResolve();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    const closed = new Promise((resolve) => {
+      child.on('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
+      child.on('error', (err) =>
+        resolve({ code: -1, signal: null, stdout, stderr: `${stderr}${err && err.message}` })
+      );
+    });
+    return { child, ready, closed };
+  };
+
   try {
-    const results = await Promise.all(Array.from({ length: 6 }, () => runNodeChild(childScript)));
+    const children = Array.from({ length: 6 }, () => spawnLockChild());
+    await Promise.all(children.map((c) => c.ready));
+    fs.writeFileSync(startFile, 'go');
+    const results = await Promise.all(children.map((c) => c.closed));
     const acquired = results.filter((r) => r.stdout.includes('ACQUIRED'));
     const blocked = results.filter((r) => r.stdout.includes('LOCK_ACTIVE'));
 

@@ -2,6 +2,13 @@
 
 Este guia explica detalhadamente o funcionamento dos mecanismos de segurança do AliExpress em ambientes de nuvem (Oracle Cloud, AWS, Google Cloud, DigitalOcean, Hetzner, etc.) e o método recomendado de **delegação de sessão** (geração local e exportação para o servidor).
 
+> [!TIP]
+> **Login manual assistido (2.0.0):** em um computador com interface gráfica, execute
+> `node collect.js` (ou `./run_all.sh`) e escolha a **opção 2** quando o menu aparecer.
+> O bot abre uma janela do AliExpress para você resolver login/captcha/2FA, salva a
+> sessão automaticamente e retoma em headless. Em VPS/cron sem GUI o menu não aparece;
+> nesse caso use o fluxo de exportação/importação descrito abaixo.
+
 ---
 
 ## Sumário

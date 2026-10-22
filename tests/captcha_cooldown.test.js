@@ -414,6 +414,25 @@ test('libs/notify.js - evento manual_login_required instrui login local, captcha
   });
   assert.ok(futuro.includes('Cooldown previsto até'), 'cooldown futuro aparece como previsto');
   assert.ok(!futuro.includes('Cooldown encerrado em'), 'não diz que encerrou antes da hora');
+
+  const tentativa = buildMessage({
+    event: 'manual_login_required',
+    hostname: 'test-host',
+    report: { type: 'unified_report', user: 'x***@example.com' },
+    error: {
+      isManualLoginRequired: true,
+      manualAttempted: true
+    }
+  });
+  assert.ok(
+    tentativa.includes('tentativa de login manual em janela não foi concluída'),
+    'distingue falha da tentativa manual do gate remoto'
+  );
+  assert.ok(tentativa.includes('Login manual necessário'), 'cabeçalho genérico sem RGV587');
+  assert.ok(
+    tentativa.includes('escolha a opção <b>2</b>'),
+    'aponta o menu local como alternativa ao export/import'
+  );
 });
 
 test('libs/session.js - login novo (freshLogin) zera o cooldown pós-captcha', async () => {
@@ -427,6 +446,9 @@ test('libs/session.js - login novo (freshLogin) zera o cooldown pós-captcha', a
         user: 'x@example.com',
         lastStreakDays: 7,
         lastCaptchaAt: '2026-09-24T10:00:00Z',
+        captchaCooldownHours: 48,
+        captchaRiskControl: true,
+        captchaRequireManualLogin: true,
         isImported: true,
         importedAt: '2026-09-20T00:00:00Z'
       }),
@@ -448,6 +470,9 @@ test('libs/session.js - login novo (freshLogin) zera o cooldown pós-captcha', a
 
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     assert.strictEqual(meta.lastCaptchaAt, undefined, 'desafio superado: cooldown zerado');
+    assert.strictEqual(meta.captchaCooldownHours, undefined, 'cooldown custom (48h) removido');
+    assert.strictEqual(meta.captchaRiskControl, undefined, 'marcação de risco removida');
+    assert.strictEqual(meta.captchaRequireManualLogin, undefined, 'gate manual liberado');
     assert.strictEqual(meta.isImported, undefined, 'marcadores de importação limpos');
     assert.strictEqual(meta.importedAt, undefined);
     assert.strictEqual(meta.lastStreakDays, 5, 'streak atualizado no login novo');

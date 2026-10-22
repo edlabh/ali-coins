@@ -48,6 +48,8 @@ A CLI suporta as seguintes flags unificadas (via `commander`):
 | `--json`                | Emite o relatório de execução, diagnósticos e validação em formato JSON puro.                                                |
 | `--notify`              | Força o envio de notificações via Telegram para a execução atual.                                                            |
 | `--no-notify`           | Desativa o envio de notificações via Telegram para a execução atual.                                                         |
+| `--manual-login`        | Abre uma janela para login manual quando necessário (equivale a `MANUAL_LOGIN=always`).                                      |
+| `--no-manual-login`     | Nunca oferece login manual; mantém 100% headless (equivale a `MANUAL_LOGIN=never`).                                          |
 | `--heartbeat`           | Força o envio de heartbeat / dead man's switch para a execução atual.                                                        |
 | `--no-heartbeat`        | Desativa o envio de heartbeat / dead man's switch para a execução atual.                                                     |
 | `--all`                 | Processa todas as contas configuradas (usado por `export_session.js`/`import_session.js`).                                   |
@@ -67,15 +69,16 @@ A CLI suporta as seguintes flags unificadas (via `commander`):
 
 Os scripts retornam códigos de saída padronizados para integração contínua e automação via Cron/Task Scheduler:
 
-| Código  | Significado            | Descrição                                                                             |
-| :-----: | :--------------------- | :------------------------------------------------------------------------------------ |
-| **`0`** | Sucesso                | Check-in ou tarefas executadas com novas moedas coletadas com sucesso.                |
-| **`1`** | Falha                  | Erro crítico de execução, credenciais inválidas ou falha de autenticação.             |
-| **`2`** | Sem Ação / Já Coletado | O check-in já havia sido realizado hoje e não há tarefas pendentes.                   |
-| **`3`** | Lock Ativo             | Outra instância da automação já está em execução no momento (evita sobreposição).     |
-| **`4`** | Streak Quebrado        | Alerta crítico: sequência de check-in foi interrompida/resetada (ontem → hoje).       |
-| **`5`** | 2FA Não-Interativo     | Interrupção rápida (<5s) em cron/CI quando o AliExpress solicita 2FA (sem TTY).       |
-| **`6`** | Falha Global           | Erro não capturado ou Promise rejeitada (`uncaughtException` / `unhandledRejection`). |
+| Código  | Significado            | Descrição                                                                               |
+| :-----: | :--------------------- | :-------------------------------------------------------------------------------------- |
+| **`0`** | Sucesso                | Check-in ou tarefas executadas com novas moedas coletadas com sucesso.                  |
+| **`1`** | Falha                  | Erro crítico de execução, credenciais inválidas ou falha de autenticação.               |
+| **`2`** | Sem Ação / Já Coletado | O check-in já havia sido realizado hoje e não há tarefas pendentes.                     |
+| **`3`** | Lock Ativo             | Outra instância da automação já está em execução no momento (evita sobreposição).       |
+| **`4`** | Streak Quebrado        | Alerta crítico: sequência de check-in foi interrompida/resetada (ontem → hoje).         |
+| **`5`** | 2FA Não-Interativo     | Interrupção rápida (<5s) em cron/CI quando o AliExpress solicita 2FA (sem TTY).         |
+| **`6`** | Falha Global           | Erro não capturado ou Promise rejeitada (`uncaughtException` / `unhandledRejection`).   |
+| **`7`** | Intervenção Manual     | Login manual necessário e não concluído (janela fechada/timeout); sem retry automático. |
 
 ---
 
@@ -123,6 +126,15 @@ ALLOW_MEDIA=false
 
 # Modo headless (sem janela gráfica) (padrão: true)
 HEADLESS=true
+
+# Login manual opcional em janela (padrão: auto)
+# auto   = menu 1/2 somente quando o login for necessário e houver TTY + interface gráfica
+# never  = 100% headless (nunca pergunta nem abre janela)
+# always = abre a janela direto quando o login for necessário (sem menu)
+# MANUAL_LOGIN=auto
+# MANUAL_LOGIN_PROMPT_TIMEOUT_MS=60000   # timeout do menu (padrão: 60s; expira em headless)
+# MANUAL_LOGIN_TIMEOUT_MS=900000         # timeout da janela de login (padrão: 15min)
+# MANUAL_LOGIN_CONTEXT=desktop           # desktop (mouse/captcha) | mobile (Pixel 7)
 
 # Nível de log estruturado (trace, debug, info, warn, error, fatal, silent) (padrão: info)
 LOG_LEVEL=info
@@ -205,6 +217,44 @@ Execute o modo unificado:
 
 - **Linux / macOS:** `./run_all.sh`
 - **Windows:** `run_all.bat` ou `.\run_all.ps1`
+
+---
+
+## Login Manual Opcional em Janela (2.0.0)
+
+O modo padrão continua **100% headless**. Quando o login for necessário — sem sessão válida,
+sessão rejeitada/reautenticação, captcha ou bloqueio anti-bot — e a execução estiver em um
+terminal com interface gráfica, o bot oferece um menu de duas opções:
+
+1. **Continuar 100% headless** (padrão; `Enter` ou timeout de 60s)
+2. **Abrir uma janela para login manual**
+
+Na opção 2, você resolve login/captcha/2FA **manualmente** na janela do AliExpress. O bot
+detecta um cookie forte de autenticação (`login_aliyunid_ticket` ou `xman_us_t`), salva a
+sessão, fecha a janela e retoma o restante da execução em headless. Nenhum captcha é burlado.
+
+A janela usa por padrão um contexto **desktop** (sem emulação de toque), para que o
+slider/captcha aceite o mouse. Use `MANUAL_LOGIN_CONTEXT=mobile` se quiser reproduzir a
+emulação Pixel 7 do fluxo mobile.
+
+**Requisitos:** TTY interativo e GUI (Windows/macOS; Linux com `DISPLAY` ou
+`WAYLAND_DISPLAY`). Em cron, Docker, CI ou SSH sem display, o menu não aparece e o
+comportamento é idêntico ao da versão 1.x.
+
+```env
+MANUAL_LOGIN=auto                      # auto | never | always
+MANUAL_LOGIN_PROMPT_TIMEOUT_MS=60000   # menu sem resposta = opção 1
+MANUAL_LOGIN_TIMEOUT_MS=900000         # janela sem login = falha (sem retry)
+MANUAL_LOGIN_CONTEXT=desktop           # desktop (padrão) | mobile (Pixel 7)
+```
+
+Flags equivalentes: `--manual-login` (`always`) e `--no-manual-login` (`never`).
+Se a janela for fechada ou o tempo esgotar, o processo sai com **código 7** (intervenção
+manual) e **não** é retentado pelo `run_all.sh`. O gate/cooldown anti-bot (RGV587) só é
+limpo quando a sessão é salva com sucesso.
+
+> 💡 Em VPS/nuvem sem interface gráfica, faça o login manual no seu computador local e
+> transfira a sessão com `export_session.js` / `import_session.js` (veja a seção de nuvem abaixo).
 
 ---
 
@@ -359,6 +409,7 @@ docker run --rm \
 ```
 
 - **Hosts com 1 GB de RAM (Oracle Free Tier, t2/t3.micro, DO):** recomende 1–2 GB de swap no host (`fallocate -l 2G /swapfile`) e limite o container: `--init --pids-limit=256 --shm-size=256m --memory=768m --memory-swap=1536m`. As flags de baixo consumo do Chromium já são aplicadas por padrão tanto no Docker quanto fora dele (`CHROMIUM_LOW_MEMORY=true`), `NODE_OPTIONS="--max-old-space-size=256"` previne picos de heap, `NODE_COMPILE_CACHE` acelera o arranque (cache de bytecode V8 em `/tmp`) e `SCRYPT_N=32768` reduz o pico do scrypt de ~134 MB para ~33 MB. Detalhes em [`CLOUD_SESSIONS.md`](CLOUD_SESSIONS.md#7-otimizações-para-vps-com-pouca-memória-512-mb---1-gb-ram) e nos manuais específicos por SO ([`INSTALL_LINUX.md`](INSTALL_LINUX.md#d-servidores-com-pouca-memória-ram-vps-de-512-mb-ou-1-gb---execução-nativa-ou-docker), [`INSTALL_WINDOWS.md`](INSTALL_WINDOWS.md#h-otimização-para-ambientes-com-pouca-memória-ram-1-gb-a-2-gb-ou-vms-windows), [`INSTALL_MACOS.md`](INSTALL_MACOS.md#d-otimização-de-recursos-e-baixo-consumo-de-memória-macs-com-pouca-ram-ou-vms)).
+- **Heap do Node/OOM no fluxo unificado (fora do Docker):** os `run*.sh` detectam a RAM do host: 256 MB em máquinas pequenas, 384 MB (3–6 GB) ou 512 MB (acima de 6 GB). Isso evita o `JavaScript heap out of memory` do check-in + tarefas em um único processo. Para forçar um teto, use `ALI_HEAP_MB=512 ./run_all.sh`; um `NODE_OPTIONS` exportado tem precedência. Dentro do container o teto segue 256 MB por causa do limite de `memory: 768M`; se for rodar o fluxo unificado em container com mais tarefas, aumente `NODE_OPTIONS` e o limite de memória juntos.
 - **Usuário não-root:** O container executa por padrão como usuário de sistema dedicado `appuser` (UID/GID 10001).
 - **Execução com `--user <uid>:<gid>` do host:** Se você especificar o usuário do host para manter as permissões dos arquivos montados, monte `/etc/passwd` e `/etc/group` em modo somente-leitura para que a resolução de usuário do Node (`os.userInfo()` via libuv `uv_os_get_passwd`) não gere erro `ENOENT`:
   ```bash

@@ -5,6 +5,25 @@ const { SELECTORS } = require('../selectors');
 const { closeModals } = require('../ui/navigation');
 const defaultLogger = require('../../logger');
 
+// Evita repetir o log de detecção do layout inline a cada extração/retry.
+let inlineLayoutLogged = false;
+
+/**
+ * Verifica se a página já renderizou a lista inline de tarefas (layout aecoin-*, out/2026).
+ * Retorna false sem custo quando o page não expõe $$eval (mocks/testes antigos).
+ * @param {object|import('playwright').Page} page
+ * @returns {Promise<boolean>}
+ */
+async function hasInlineTaskItems(page) {
+  if (!page || typeof page.$$eval !== 'function') return false;
+  try {
+    const count = await page.$$eval(SELECTORS.tasks.inlineTaskItem, (els) => els.length);
+    return Number(count) > 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Abre a gaveta de tarefas no msite com até 5 tentativas resilientes,
  * auto-cura de skeleton congelado (.login-pending-container) via reload único
@@ -17,6 +36,26 @@ async function openTaskDrawer(optionsOrPage, maybeLogger) {
   const page = optionsOrPage && optionsOrPage.page ? optionsOrPage.page : optionsOrPage;
   const logger = (optionsOrPage && optionsOrPage.logger) || maybeLogger || defaultLogger;
   if (!page || (typeof page.isClosed === 'function' && page.isClosed())) return false;
+
+  // Layout novo (out/2026): a lista de tarefas é inline (classes aecoin-*); não há
+  // gaveta para abrir. O `.e2e_task` antigo virou um componente morto (header sem
+  // botão e conteúdo preso no loading), então detectamos os itens antes do fluxo antigo.
+  if (typeof page.$$eval === 'function') {
+    for (let wait = 0; wait < 8; wait++) {
+      if (await hasInlineTaskItems(page)) {
+        if (!inlineLayoutLogged) {
+          inlineLayoutLogged = true;
+          logger.info(
+            'Painel de tarefas inline detectado (layout aecoin-*); sem gaveta para abrir.'
+          );
+        }
+        return true;
+      }
+      if (typeof page.waitForTimeout === 'function') {
+        await page.waitForTimeout(500).catch(() => {});
+      }
+    }
+  }
 
   let isDrawerOpen = false;
   try {
@@ -164,19 +203,63 @@ async function extractTasksFromDrawer(optionsOrPage, maybeLogger) {
   try {
     const tasks = await page.$$eval(SELECTORS.tasks.taskItem, (els) =>
       els.map((e, idx) => {
-        const title = e.querySelector('.e2e_normal_task_content_title')?.innerText?.trim() || '';
-        const desc =
-          e.querySelector('.e2e_normal_task_content_secondTitle')?.innerText?.trim() || '';
-        const btn = e.querySelector('.e2e_normal_task_right_btn');
-        const btnText = btn?.innerText?.trim() || '';
-        const btnStyle = btn?.getAttribute('style') || '';
-        const statusText = e.querySelector('.statusText')?.innerText?.trim() || '';
+        const elementClass = typeof e.className === 'string' ? e.className : '';
+        const isNewLayout = /aecoin-taskItem-/.test(elementClass);
+
+        let title = '';
+        let desc = '';
+        let btnText = '';
+        let btnStyle = '';
+        let btnClass = '';
+        let statusText = '';
+        let groupId = '';
+
+        if (isNewLayout) {
+          // Layout inline aecoin-* (out/2026): o botão é um <div> com classe btnGo/btnCollect
+          // e o texto exibido é a recompensa (+N), não o rótulo GO/IR/COLLECT do layout antigo.
+          title = e.querySelector('[class*="aecoin-taskItemTitle-"]')?.innerText?.trim() || '';
+          desc =
+            e
+              .querySelector(
+                '[class*="aecoin-taskItemDesc-"], [class*="aecoin-taskItemSecondTitle-"], [class*="taskItemSubTitle"]'
+              )
+              ?.innerText?.trim() || '';
+          if (!desc) {
+            const mainEl = e.querySelector('[class*="aecoin-taskItemMain-"]');
+            const mainText = mainEl?.innerText?.replace(/\s+/g, ' ').trim() || '';
+            if (mainText && mainText !== title) {
+              desc = mainText.replace(title, '').trim();
+            }
+          }
+          const btn = e.querySelector('[class*="aecoin-taskItemBtn-"]');
+          btnText = btn?.innerText?.trim() || '';
+          btnStyle = btn?.getAttribute('style') || '';
+          btnClass = typeof btn?.className === 'string' ? btn.className : '';
+          statusText = e.querySelector('[class*="aecoin-progress-"]')?.innerText?.trim() || '';
+          if (!statusText) {
+            const rightText =
+              e.querySelector('[class*="aecoin-taskItemRight-"]')?.innerText?.trim() || '';
+            const rm = rightText.match(/([0-9]+)\s*\/\s*([0-9]+)/);
+            if (rm) statusText = `${rm[1]}/${rm[2]}`;
+          }
+          groupId =
+            e.querySelector('[class*="aecoin-taskItemRight-"]')?.getAttribute('data-groupid') || '';
+        } else {
+          title = e.querySelector('.e2e_normal_task_content_title')?.innerText?.trim() || '';
+          desc = e.querySelector('.e2e_normal_task_content_secondTitle')?.innerText?.trim() || '';
+          const btn = e.querySelector('.e2e_normal_task_right_btn');
+          btnText = btn?.innerText?.trim() || '';
+          btnStyle = btn?.getAttribute('style') || '';
+          btnClass = typeof btn?.className === 'string' ? btn.className : '';
+          statusText = e.querySelector('.statusText')?.innerText?.trim() || '';
+          groupId = e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
+        }
 
         let completedRounds = null;
         let currentRound = null;
         let totalRounds = null;
         if (statusText) {
-          const sm = statusText.match(/^([0-9]+)\/([0-9]+)$/);
+          const sm = statusText.match(/^([0-9]+)\s*\/\s*([0-9]+)$/);
           if (sm) {
             completedRounds = parseInt(sm[1], 10);
             totalRounds = parseInt(sm[2], 10);
@@ -184,13 +267,17 @@ async function extractTasksFromDrawer(optionsOrPage, maybeLogger) {
           }
         }
 
-        const isActionable = Boolean(btnText.match(/^(GO|IR)$/i));
-        const isClaimable = Boolean(
-          btnText.match(/^(COLLECT|COLETAR|GET|RECEBER|CLAIM|RESGATAR|\+[0-9]+)/i)
-        );
+        const isActionable = isNewLayout
+          ? /aecoin-btnGo-/i.test(btnClass)
+          : Boolean(btnText.match(/^(GO|IR)$/i));
+        const isClaimable = isNewLayout
+          ? /(aecoin-btnCollect-|aecoin-btnReceive-|aecoin-btnGet-|aecoin-btnClaim-|aecoin-btnRescue-)/i.test(
+              btnClass
+            )
+          : Boolean(btnText.match(/^(COLLECT|COLETAR|GET|RECEBER|CLAIM|RESGATAR|\+[0-9]+)/i));
 
         // Uma tarefa é considerada totalmente concluída quando:
-        // 1. O número de rodadas concluídas atinge o total (ex: 2/2, 3/3) e não há botão de resgate pendente
+        // 1. O número de rodadas concluídas atinge o total (ex: 2/2, 3/3) e não há resgate pendente
         // 2. Ou quando não há contagem de rodadas, mas o botão está desabilitado/concluído e não é nem executável nem resgatável
         let isDone = false;
         if (totalRounds !== null && completedRounds !== null) {
@@ -200,14 +287,17 @@ async function extractTasksFromDrawer(optionsOrPage, maybeLogger) {
           // 'cover' foi removida por poder marcar como concluída uma tarefa ativa
           // (ex: botão com background-size: cover).
           const isDisabledStyle = btnStyle.includes('opacity: 0.5');
-          const isDoneText = Boolean(btnText.match(/^(DONE|CONCLU[IÍ]DO|COMPLETED)$/i));
+          const isDoneText = Boolean(btnText.match(/^(DONE|CONCLU[IÍ]DO|COMPLETED|RESGATADO)$/i));
+          const isDoneClass =
+            isNewLayout &&
+            /(aecoin-btnDone-|aecoin-btnComplete-|aecoin-taskItemDone-|aecoin-taskItemCompleted-|aecoin-taskItemChecked-)/i.test(
+              `${btnClass} ${elementClass}`
+            );
           // Somente sinais POSITIVOS de conclusão: a ausência de rótulos conhecidos não
           // marca mais a tarefa como concluída (evita pular tarefas com botões novos/A-B).
-          isDone = !isClaimable && (isDisabledStyle || isDoneText);
+          isDone = !isClaimable && (isDisabledStyle || isDoneText || isDoneClass);
         }
 
-        const groupId =
-          e.querySelector('.e2e_normal_task_right')?.getAttribute('data-groupid') || '';
         const allText = e.innerText?.replace(/\n+/g, ' ') || '';
         const coinMatch = allText.match(/\+([0-9]+(?:～[0-9]+)?)/);
         // Nota: o rótulo de vitrine exibido no card (+X moedas) é meramente informativo/estimado.
@@ -220,6 +310,7 @@ async function extractTasksFromDrawer(optionsOrPage, maybeLogger) {
           desc,
           btnText,
           btnStyle,
+          btnClass,
           statusText,
           completedRounds,
           currentRound,

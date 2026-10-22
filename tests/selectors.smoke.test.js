@@ -92,6 +92,34 @@ const FIXTURE_HTML = `
 </html>
 `;
 
+// Fixture do layout NOVO de tarefas (lista inline, CSS Modules aecoin-*, out/2026).
+// O hash do CSS Modules muda a cada deploy; os seletores usam [class*="prefixo-"].
+const NEW_TASKS_FIXTURE_HTML = `
+<!DOCTYPE html>
+<html>
+<body>
+  <div class="aecoin-wrap-3FLmt">
+    <div class="aecoin-list-GH5dZ">
+      <div class="aecoin-taskItem-2lchG">
+        <div class="aecoin-taskItemLeft-3PYqX"></div>
+        <div class="aecoin-taskItemMain-2hOCY">
+          <div class="aecoin-taskItemTitle-2zPls">Explore sponsored items</div>
+          <div class="aecoin-taskItemDesc-Abcde">Browse for 15 seconds</div>
+        </div>
+        <div class="aecoin-taskItemRight-2vl5c" data-groupid="2360008">
+          <div class="aecoin-progress-3AVd3">0/2</div>
+          <div id="task-receive-btn-1" class="aecoin-taskItemBtn-HFfNk aecoin-btnGo-14H1k">
+            <div class="aecoin-rewardText-1oKA1">+5</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="feeds-discount-card"></div>
+</body>
+</html>
+`;
+
 /**
  * Avalia se um seletor composto Playwright / CSS casa com o HTML fornecido
  * @param {string} html
@@ -259,6 +287,22 @@ test('selectors.smoke - seletores do painel de tarefas casam com fixture HTML', 
     assert.ok(await page.$(SELECTORS.tasks.taskRight), 'taskRight deve casar com fixture');
     assert.ok(await page.$(SELECTORS.tasks.openDrawerBtn), 'openDrawerBtn deve casar com fixture');
     assert.ok(await page.$(SELECTORS.tasks.productCard), 'productCard deve casar com fixture');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('selectors.smoke - painel de tarefas novo (inline aecoin-*) casa com fixture', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const page = createMockPage(NEW_TASKS_FIXTURE_HTML);
+    assert.ok(await page.$(SELECTORS.tasks.inlineTaskItem), 'inlineTaskItem deve casar');
+    assert.ok(await page.$(SELECTORS.tasks.taskItem), 'taskItem deve casar');
+    assert.ok(await page.$(SELECTORS.tasks.taskTitle), 'taskTitle deve casar');
+    assert.ok(await page.$(SELECTORS.tasks.taskSecondTitle), 'taskSecondTitle deve casar');
+    assert.ok(await page.$(SELECTORS.tasks.taskBtn), 'taskBtn deve casar');
+    assert.ok(await page.$(SELECTORS.tasks.taskStatus), 'taskStatus deve casar');
+    assert.ok(await page.$(SELECTORS.tasks.taskRight), 'taskRight deve casar');
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }

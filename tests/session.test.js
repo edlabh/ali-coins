@@ -308,6 +308,112 @@ test('libs/session.js - validateAndRefresh invalida sessão divergente isolada',
   }
 });
 
+test('libs/session.js - clearSession preserva gate/cooldown anti-bot quando solicitado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-preserve-antibot-');
+
+  try {
+    const fakeState = {
+      cookies: [
+        { name: 'xman_us_t', value: 'token123', expires: Math.floor(Date.now() / 1000) + 3600 }
+      ]
+    };
+    await saveSession(fakeState, 'risk@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+    const metaPath = path.join(tmpDir, 'session_meta.json');
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({
+        user: 'risk@example.com',
+        lastStreakDays: 9,
+        lastCaptchaAt: '2026-10-01T00:00:00Z',
+        captchaCooldownHours: 48,
+        captchaRiskControl: true,
+        captchaRequireManualLogin: true
+      }),
+      'utf-8'
+    );
+
+    await clearSession({
+      baseDir: tmpDir,
+      encryptLocalSession: false,
+      preserveAntiBotMeta: true
+    });
+
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session.json')),
+      false,
+      'sessão deve ser removida'
+    );
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    assert.strictEqual(meta.user, 'risk@example.com');
+    assert.strictEqual(meta.captchaRequireManualLogin, true, 'gate manual preservado');
+    assert.strictEqual(meta.captchaRiskControl, true, 'marcação de risco preservada');
+    assert.strictEqual(meta.captchaCooldownHours, 48, 'cooldown custom preservado');
+    assert.strictEqual(meta.lastCaptchaAt, '2026-10-01T00:00:00Z');
+    assert.strictEqual(meta.lastStreakDays, undefined, 'campos não anti-bot não são preservados');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/session.js - validateAndRefresh de sessão expirada preserva o gate anti-bot', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmpDir = createIsolatedTestDir('session-expired-antibot-');
+
+  try {
+    const expiredState = {
+      cookies: [
+        {
+          name: 'xman_us_t',
+          value: 'token_expirado',
+          expires: Math.floor(Date.now() / 1000) - 60
+        }
+      ],
+      origins: []
+    };
+    await saveSession(expiredState, 'risk@example.com', {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+    const metaPath = path.join(tmpDir, 'session_meta.json');
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({
+        user: 'risk@example.com',
+        lastCaptchaAt: '2026-10-01T00:00:00Z',
+        captchaCooldownHours: 48,
+        captchaRiskControl: true,
+        captchaRequireManualLogin: true
+      }),
+      'utf-8'
+    );
+
+    const refreshed = await validateAndRefresh('risk@example.com', null, {
+      baseDir: tmpDir,
+      encryptLocalSession: false
+    });
+
+    assert.strictEqual(refreshed.valid, false);
+    assert.strictEqual(
+      fs.existsSync(path.join(tmpDir, 'session.json')),
+      false,
+      'sessão expirada deve ser removida'
+    );
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    assert.strictEqual(meta.captchaRequireManualLogin, true, 'gate não pode ser desarmado');
+    assert.strictEqual(meta.captchaRiskControl, true);
+    assert.strictEqual(meta.captchaCooldownHours, 48);
+    assert.strictEqual(meta.lastCaptchaAt, '2026-10-01T00:00:00Z');
+  } finally {
+    cleanupIsolatedTestDir(tmpDir);
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('libs/session.js - validateAndRefresh aceita sessão válida correspondente isolada', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('session-test-');

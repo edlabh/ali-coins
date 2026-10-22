@@ -667,6 +667,115 @@ test('tasks - openTaskDrawer e extractTasksFromDrawer aceitam chamada por objeto
   }
 });
 
+test('tasks - openTaskDrawer detecta a lista inline aecoin-* sem abrir gaveta', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let drawerChecked = false;
+    let oldButtonClicked = false;
+    const mockPage = {
+      $eval: async () => {
+        drawerChecked = true;
+        return false;
+      },
+      $$eval: async (_sel, fn) => fn([{ className: 'aecoin-taskItem-2lchG' }]),
+      $: async () => {
+        oldButtonClicked = true;
+        return null;
+      },
+      waitForTimeout: async () => {},
+      waitForSelector: async () => null
+    };
+
+    const opened = await openTaskDrawer({ page: mockPage });
+    assert.strictEqual(opened, true);
+    assert.strictEqual(drawerChecked, false, 'não deve consultar/abrir a gaveta antiga');
+    assert.strictEqual(oldButtonClicked, false, 'não deve clicar em botão da gaveta antiga');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - extractTasksFromDrawer suporta o layout inline aecoin-* (out/2026)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { extractTasksFromDrawer } = require('../libs/tasks/verifier');
+    const mockPage = {
+      $$eval: async (_sel, fn) =>
+        fn([
+          {
+            className: 'aecoin-taskItem-2lchG',
+            innerText: 'Daily check-in +1',
+            querySelector: (s) => {
+              if (s.includes('aecoin-taskItemTitle-')) return { innerText: 'Daily check-in ' };
+              if (s.includes('aecoin-taskItemMain-')) return { innerText: 'Daily check-in ' };
+              if (s.includes('aecoin-taskItemBtn-')) {
+                return {
+                  innerText: '+1',
+                  getAttribute: () => '',
+                  className: 'aecoin-taskItemBtn-HFfNk aecoin-btnGo-14H1k'
+                };
+              }
+              if (s.includes('aecoin-progress-')) return { innerText: '' };
+              if (s.includes('aecoin-taskItemRight-')) {
+                return {
+                  innerText: '+1',
+                  getAttribute: (attr) => (attr === 'data-groupid' ? '2360007' : '')
+                };
+              }
+              return null;
+            }
+          },
+          {
+            className: 'aecoin-taskItem-2lchG',
+            innerText: 'Explore sponsored items 0/2 +5',
+            querySelector: (s) => {
+              if (s.includes('aecoin-taskItemTitle-')) {
+                return { innerText: 'Explore sponsored items' };
+              }
+              if (s.includes('aecoin-taskItemMain-')) {
+                return { innerText: 'Explore sponsored items' };
+              }
+              if (s.includes('aecoin-taskItemBtn-')) {
+                return {
+                  innerText: '+5',
+                  getAttribute: () => '',
+                  className: 'aecoin-taskItemBtn-HFfNk aecoin-btnGo-14H1k'
+                };
+              }
+              if (s.includes('aecoin-progress-')) return { innerText: '0/2' };
+              if (s.includes('aecoin-taskItemRight-')) {
+                return {
+                  innerText: '0/2 +5',
+                  getAttribute: (attr) => (attr === 'data-groupid' ? '2360008' : '')
+                };
+              }
+              return null;
+            }
+          }
+        ])
+    };
+
+    const tasks = await extractTasksFromDrawer(mockPage);
+    assert.strictEqual(tasks.length, 2);
+
+    assert.strictEqual(tasks[0].title, 'Daily check-in');
+    assert.strictEqual(tasks[0].btnText, '+1');
+    assert.strictEqual(tasks[0].isActionable, true, 'btnGo deve ser acionável no layout novo');
+    assert.strictEqual(tasks[0].isClaimable, false, '+N não é resgate no layout novo');
+    assert.strictEqual(tasks[0].groupId, '2360007');
+    assert.strictEqual(tasks[0].isDone, false);
+
+    assert.strictEqual(tasks[1].title, 'Explore sponsored items');
+    assert.strictEqual(tasks[1].statusText, '0/2');
+    assert.strictEqual(tasks[1].completedRounds, 0);
+    assert.strictEqual(tasks[1].totalRounds, 2);
+    assert.strictEqual(tasks[1].isActionable, true);
+    assert.strictEqual(tasks[1].isDone, false);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('tasks - anti-hang: repetição de rodada idêntica 3x marca tarefa como Falhou e desiste no loop', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
