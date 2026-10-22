@@ -188,6 +188,7 @@ function findNextPendingTask(tasks, attemptsMapArg = {}, maxAttemptsArg = 4, opt
         t.isActionable ||
         t.btnText === 'GO' ||
         t.btnText === 'IR' ||
+        /aecoin-btnGo-/i.test(t.btnClass || '') ||
         (t.completedRounds !== null &&
           t.totalRounds !== null &&
           t.completedRounds < t.totalRounds &&

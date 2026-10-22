@@ -43,9 +43,31 @@ const { startAccountTimer } = require('./libs/timing');
 const { setupGlobalCrashHandler } = require('./libs/crash');
 const { flushAndExit, signalExitCode } = require('./libs/exit');
 const logger = require('./logger');
+const v8 = require('node:v8');
 
 let currentConfig = null;
 let currentAccount = null;
+
+/**
+ * Registra o uso de heap do Node e alerta quando se aproxima do teto do V8.
+ * O teto padrão de 256 MB (hosts de 1 GB) pode ficar apertado no fluxo unificado
+ * (check-in + tarefas); a mensagem orienta a subir via ALI_HEAP_MB/NODE_OPTIONS.
+ * @param {string} stage
+ */
+function logHeapUsage(stage) {
+  const heapLimitMb = Math.round(v8.getHeapStatistics().heap_size_limit / 1048576);
+  const heapUsedMb = Math.round(process.memoryUsage().heapUsed / 1048576);
+  const ratio = heapLimitMb > 0 ? heapUsedMb / heapLimitMb : 0;
+  const details = { stage, heapUsedMb, heapLimitMb };
+  if (ratio >= 0.8) {
+    logger.warn(
+      details,
+      'Heap do Node próximo do limite; considere aumentar ALI_HEAP_MB (run*.sh) ou NODE_OPTIONS=--max-old-space-size=...'
+    );
+  } else {
+    logger.debug(details, 'Uso de heap do Node.');
+  }
+}
 
 /**
  * Notifica (uma única vez) que o cooldown pós-captcha expirou e o login voltará a ser
@@ -371,7 +393,7 @@ async function main() {
         } catch (tgErr) {
           logger.warn({ err: tgErr.message }, 'Falha ao enviar notificação Telegram de erro.');
         }
-        await gracefulExit(1);
+        await gracefulExit(err.isManualLoginRequired ? 7 : 1);
       }
 
       const step1EndTime = new Date();
@@ -399,6 +421,7 @@ async function main() {
       logger.info(
         `>>> [ETAPA 1/2] Concluída em ${formatDateTime(step1EndTime)} | Duração: ${step1Duration}`
       );
+      logHeapUsage('check-in');
 
       // ETAPA 2: Execução das tarefas diárias
       const step2StartTime = new Date();
@@ -431,6 +454,7 @@ async function main() {
       logger.info(
         `>>> [ETAPA 2/2] Concluída em ${formatDateTime(step2EndTime)} | Duração: ${step2Duration}`
       );
+      logHeapUsage('tarefas');
 
       // ETAPA 3: Relatório consolidado
       const mainEndTime = new Date();
@@ -652,6 +676,7 @@ async function main() {
         let accIsCaptchaCooldown = false;
         let accIsRiskControl = false;
         let accIsManualLoginRequired = false;
+        let accIsManualLoginAttempted = false;
         let accRiskCooldownHours = null;
         let accRiskCooldownUntil = null;
         let accStreakBroken = false;
@@ -735,6 +760,7 @@ async function main() {
           logger.info(
             `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Concluída em ${formatDateTime(step2Timing.endTime)} | Duração: ${accStep2Duration}`
           );
+          logHeapUsage(`conta-${i + 1}-tarefas`);
 
           anyAccountSuccess = true;
           consecutiveFailures = 0;
@@ -780,11 +806,14 @@ async function main() {
           }
           if (accErr.isManualLoginRequired) {
             accIsManualLoginRequired = true;
+            accIsManualLoginAttempted = Boolean(accErr.manualAttempted);
             anyAccountManualLoginRequired = true;
             if (!firstManualLoginError) firstManualLoginError = accErr;
             logger.error(
-              { account: account.maskedUser },
-              '[Anti-bot] Login remoto suspenso até renovação manual da sessão (login local + captcha + import).'
+              { account: account.maskedUser, manualAttempted: accIsManualLoginAttempted },
+              accIsManualLoginAttempted
+                ? '[Anti-bot] Login manual em janela não foi concluído; intervenção do operador necessária (sem retry automático).'
+                : '[Anti-bot] Login remoto suspenso até renovação manual da sessão (login local + captcha + import).'
             );
           }
           if (accImportedExpired) {
@@ -964,6 +993,7 @@ async function main() {
           riskCooldownHours: accRiskCooldownHours,
           riskCooldownUntil: accRiskCooldownUntil,
           manualLoginRequired: accIsManualLoginRequired,
+          manualLoginAttempted: accIsManualLoginAttempted,
           startTime: accTiming.startTime,
           endTime: accTiming.endTime,
           duration: accTiming.duration,
@@ -1010,8 +1040,7 @@ async function main() {
       let multiEvent = 'success';
       if (allAccountsLocked) multiEvent = 'lock_active';
       else if (anyAccountStreakBroken) multiEvent = 'streak_break';
-      else if (anyAccountManualLoginRequired && !anyAccountSuccess)
-        multiEvent = 'manual_login_required';
+      else if (anyAccountManualLoginRequired) multiEvent = 'manual_login_required';
       else if (anyAccount2FARequired && !anyAccountSuccess) multiEvent = '2fa_required';
       else if (anyAccountRiskControl && !anyAccountSuccess) multiEvent = 'risk_blocked';
       else if (anyAccountCaptchaRequired && !anyAccountSuccess) multiEvent = 'captcha_required';
@@ -1069,6 +1098,16 @@ async function main() {
           report: multiPayload
         });
         await gracefulExit(4);
+      }
+      // Intervenção manual (gate/manual abortado) nunca deve ser retentada pelo
+      // run_all.sh (que só retenta exit 1). Exit 7 sinaliza ao operador sem loop.
+      if (anyAccountManualLoginRequired) {
+        await sendHeartbeat('fail', {
+          config,
+          error: new Error('Intervenção manual necessária para concluir o login'),
+          report: multiPayload
+        });
+        await gracefulExit(7);
       }
       if (anyAccount2FARequired && !anyAccountSuccess) {
         await sendHeartbeat('fail', {

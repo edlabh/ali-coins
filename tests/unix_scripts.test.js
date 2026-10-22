@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const {
   snapshotRealFiles,
   assertRealFilesUntouched,
@@ -38,6 +38,50 @@ test('Unix Scripts - setup_linux.sh and setup_macos.sh syntax and anchoring vali
     }
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('Unix Scripts - run*.sh usam heap adaptativo e respeitam ALI_HEAP_MB/NODE_OPTIONS', () => {
+  // Requer bash; em ambientes sem bash (Windows sem Git Bash/CI) o teste é pulado.
+  try {
+    execSync('bash --version', { stdio: 'ignore' });
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.status === 127) return;
+    throw err;
+  }
+
+  const scripts = ['run.sh', 'run_all.sh', 'run_tasks.sh'];
+  for (const script of scripts) {
+    const content = fs.readFileSync(path.join(__dirname, '..', script), 'utf8');
+    const start = content.indexOf('_ALI_HEAP_MB=256');
+    const endMarker = 'export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=$_ALI_HEAP_MB}"';
+    const end = content.indexOf(endMarker);
+    assert.ok(
+      start >= 0 && end > start,
+      `${script} deve possuir o bloco de heap adaptativo dos run*.sh`
+    );
+
+    const block = content.slice(start, end + endMarker.length);
+    const run = (env) => {
+      const res = spawnSync('bash', ['-c', `${block}\necho "$_ALI_HEAP_MB|$NODE_OPTIONS"`], {
+        env: { ...process.env, ...env },
+        encoding: 'utf8'
+      });
+      assert.strictEqual(res.status, 0, `${script}: bash falhou: ${res.stderr}`);
+      return res.stdout.trim();
+    };
+
+    assert.strictEqual(
+      run({ ALI_HEAP_MB: '320', NODE_OPTIONS: '' }),
+      '320|--max-old-space-size=320',
+      `${script} deve respeitar ALI_HEAP_MB`
+    );
+    assert.ok(
+      run({ ALI_HEAP_MB: '', NODE_OPTIONS: '--max-old-space-size=777' }).endsWith(
+        '|--max-old-space-size=777'
+      ),
+      `${script} deve preservar NODE_OPTIONS explícito`
+    );
   }
 });
 

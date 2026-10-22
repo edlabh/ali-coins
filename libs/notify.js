@@ -510,8 +510,9 @@ function buildMessage({
     return buildMultiAccountMessage({ report, event, error, safeHost, now });
   }
 
-  // Login remoto suspenso após bloqueio anti-bot (RGV587): o cooldown acabou, mas o gate
-  // manual exige renovar a sessão na máquina local (login + captcha + export/import).
+  // Intervenção manual: sem sessão válida, gate RGV587 ou tentativa de login manual em
+  // janela não concluída. Em VPS sem GUI, a sessão precisa ser renovada localmente
+  // (login + captcha + export/import); em host com GUI, o menu oferece a opção 2.
   if (event === 'manual_login_required') {
     const manualAccounts =
       report && Array.isArray(report.accounts)
@@ -530,20 +531,33 @@ function buildMessage({
         ? `⏳ <b>Cooldown previsto até ${formatDateTime(until)}.</b>`
         : `⏳ <b>Cooldown encerrado em ${formatDateTime(until)}.</b>`
       : null;
+    const riskLike = Boolean(
+      error && (error.isRiskControl || error.cooldownUntil || error.cooldownHours)
+    );
+    const heading = riskLike
+      ? '🔒 <b>Login remoto suspenso após bloqueio anti-bot (RGV587)</b>'
+      : '🔒 <b>Login manual necessário</b>';
+    const attemptedLine =
+      error && error.manualAttempted
+        ? '❌ <b>A tentativa de login manual em janela não foi concluída.</b>'
+        : null;
 
     return [
       `🔒 ali-coins — ${now}`,
-      '🔒 <b>Login remoto suspenso após bloqueio anti-bot (RGV587)</b>',
+      heading,
       contasLine,
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       untilLine,
+      attemptedLine,
       '',
       '<b>Ação necessária (na ordem):</b>',
       '1️⃣ Faça o login no AliExpress <b>na máquina local</b> (navegador real).',
       '2️⃣ Resolva o captcha/desafio, se aparecer.',
       '3️⃣ Exporte a sessão com <code>node export_session.js</code> e importe no host remoto com <code>node import_session.js</code>.',
       '',
-      'ℹ️ A automação só voltará a executar após a sessão ser importada.'
+      '💡 <b>Dica:</b> em um host com interface gráfica, execute <code>node collect.js</code> e escolha a opção <b>2</b> para abrir a janela de login manual — a sessão é salva automaticamente.',
+      '',
+      'ℹ️ A automação só voltará a executar após a sessão ser renovada (importada ou salva pelo login manual).'
     ]
       .filter(Boolean)
       .join('\n');

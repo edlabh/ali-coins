@@ -314,6 +314,7 @@ O bot do Telegram reporta os principais eventos associados aos códigos de saíd
 | **`4`** | `streak_break`           | Alerta crítico: sequência diária interrompida.                                     |
 | **`5`** | `2fa_required`           | Alerta de 2FA solicitado em ambiente não-interativo (cron/CI).                     |
 | **`6`** | `failure` (Crash Global) | Notificação de emergência enviada por `uncaughtException` ou `unhandledRejection`. |
+| **`7`** | `manual_login_required`  | Login manual necessário (gate RGV587 ou janela não concluída); sem retry.          |
 
 ---
 

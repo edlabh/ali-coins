@@ -48,7 +48,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV NODE_ENV=production
 
 # Teto de heap V8 do processo Node: GC mais agressivo antes de pressionar hosts de 1 GB.
-# 256 MB dá folga ao GC (menos pausas sob pressão) sem ameaçar hosts de 1 GB.
+# 256 MB dá folga ao GC sem ameaçar o limite de 768 MB do container. Fora do Docker,
+# os run*.sh detectam a RAM do host e sobem para 384/512 MB (ALI_HEAP_MB sobrepõe).
+# Em deploy com mais memória, ajuste NODE_OPTIONS/compose (ex.: 512 MB + memory 1G).
 ENV NODE_OPTIONS=--max-old-space-size=256
 
 # Cache de bytecode V8 (Node 22+): o /tmp é tmpfs em memória nas execuções com --shm/tmpfs,

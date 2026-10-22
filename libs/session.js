@@ -379,9 +379,46 @@ async function clearSessionUnlocked(options = {}) {
     logger.warn({ err: err.message }, 'Aviso: falha ao criar backup versionado da sessão.');
   }
 
+  // Em alguns fluxos (ex.: sessão expirada detectada por validateAndRefresh), o meta
+  // contém o gate/cooldown anti-bot que precisa sobreviver à remoção da sessão. Sem isso,
+  // apagar a sessão desarmava silenciosamente o gate e a execução seguinte voltava a
+  // tentar login automático (justamente o comportamento que o RGV587 exige evitar).
+  let preservedMeta = null;
+  if (options.preserveAntiBotMeta === true) {
+    try {
+      if (fs.existsSync(mPath)) {
+        const meta = JSON.parse(await fs.promises.readFile(mPath, 'utf-8'));
+        const antiBotKeys = [
+          'lastCaptchaAt',
+          'captchaCooldownHours',
+          'captchaRiskControl',
+          'captchaRequireManualLogin'
+        ];
+        const hasAntiBot = antiBotKeys.some((key) => meta && meta[key] !== undefined);
+        if (hasAntiBot) {
+          preservedMeta = { user: meta.user };
+          for (const key of antiBotKeys) {
+            if (meta[key] !== undefined) preservedMeta[key] = meta[key];
+          }
+        }
+      }
+    } catch {
+      // Meta ilegível: não impede a limpeza da sessão.
+    }
+  }
+
   await fs.promises.unlink(encPath).catch(() => {});
   await fs.promises.unlink(sPath).catch(() => {});
-  await fs.promises.unlink(mPath).catch(() => {});
+  if (preservedMeta) {
+    await safeWriteFile(mPath, JSON.stringify(preservedMeta), 'utf-8', { durable: false });
+    safeChmod600(mPath);
+    logger.info(
+      { preservedAntiBot: true },
+      'Sessão removida; metadados anti-bot (gate/cooldown) preservados.'
+    );
+  } else {
+    await fs.promises.unlink(mPath).catch(() => {});
+  }
 
   // Limpeza de backups antigos segundo retenção
   await pruneSessionBackups(options).catch(() => {});
@@ -472,7 +509,9 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
       }
     }
     if (shouldClear) {
-      await clearSession(options);
+      // Preserva o gate/cooldown anti-bot: a sessão pode ter expirado justamente após
+      // um bloqueio RGV587, e apagar o meta reabriria o login automático.
+      await clearSession({ ...options, preserveAntiBotMeta: true });
     }
     return {
       valid: false,
@@ -552,7 +591,13 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
   if (options.freshLogin) {
     delete metaData.isImported;
     delete metaData.importedAt;
+    // O desafio anti-bot foi superado: limpa TODOS os marcadores de gate/cooldown.
+    // Antes só `lastCaptchaAt` era removido, então o gate manual e o cooldown custom
+    // (48h do RGV587) continuavam ativos mesmo após um login manual bem-sucedido.
     delete metaData.lastCaptchaAt;
+    delete metaData.captchaCooldownHours;
+    delete metaData.captchaRiskControl;
+    delete metaData.captchaRequireManualLogin;
   }
 
   if (

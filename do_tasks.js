@@ -909,6 +909,12 @@ if (require.main === module) {
       activeBrowser = null;
       gracefulExitRef = null;
       if (releaseLock) await releaseLock();
+      if (err.isManualLoginRequired) {
+        await sendTelegram({ config: cfg, event: 'manual_login_required', error: err }).catch(
+          () => {}
+        );
+        await flushAndExit(7);
+      }
       if (err.name === 'TwoFactorRequiredNonInteractive' || err.is2FARequired) {
         logger.error(
           '[2FA Não-Interativo] O AliExpress exigiu verificação de código 2FA durante execução sem terminal interativo (cron/CI). ' +

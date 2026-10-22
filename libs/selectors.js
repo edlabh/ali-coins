@@ -54,14 +54,21 @@ const SELECTORS = {
   },
 
   // Painel de Tarefas ("Ganhe mais moedas")
+  // Layout antigo (gaveta .e2e_*) e layout novo (lista inline aecoin-*, out/2026).
+  // Os sufixos -XXXXX são hash de build (CSS Modules): usar [class*="prefixo-"] sem o hash.
+  // Nota: [class*="aecoin-taskItem-"] casa só o container do item (o hash vem após "-");
+  // sub-elementos (taskItemTitle-, taskItemMain-, ...) têm letra após "Item" e não casam.
   tasks: {
     drawerContainer: '.e2e_task',
-    taskItem: '.e2e_normal_task',
-    taskTitle: '.e2e_normal_task_content_title',
-    taskSecondTitle: '.e2e_normal_task_content_secondTitle',
-    taskBtn: '.e2e_normal_task_right_btn',
-    taskStatus: '.statusText',
-    taskRight: '.e2e_normal_task_right',
+    inlineTaskList: '[class*="aecoin-list-"]',
+    inlineTaskItem: '[class*="aecoin-taskItem-"]',
+    taskItem: '[class*="aecoin-taskItem-"], .e2e_normal_task',
+    taskTitle: '[class*="aecoin-taskItemTitle-"], .e2e_normal_task_content_title',
+    taskSecondTitle:
+      '[class*="aecoin-taskItemDesc-"], [class*="aecoin-taskItemSecondTitle-"], .e2e_normal_task_content_secondTitle',
+    taskBtn: '[class*="aecoin-taskItemBtn-"], .e2e_normal_task_right_btn',
+    taskStatus: '[class*="aecoin-progress-"], .statusText',
+    taskRight: '[class*="aecoin-taskItemRight-"], .e2e_normal_task_right',
     openDrawerBtn:
       'button.aecoin-taskButton-3V41b, [class*="taskButton"], button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, [class*="signButtonWrapper"] button, div[class*="aecoin-signButton"], button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas")',
     productCard: '.feeds-discount-card',

@@ -15,6 +15,7 @@ Documentação completa disponível em: README.md e TELEGRAM.md
 - Validação rápida (Dry-Run):          npm start -- --dry-run
 - Relatório em formato JSON:           npm start -- --json
 - Notificar Telegram pontualmente:     npm start -- --notify
+- Login manual em janela (opcional):   npm start -- --manual-login
 - Testar Bot Telegram:                 npm run notify:test
 - Apenas Check-in Diário:              npm run collect
 - Apenas Tarefas:                      npm run tasks
@@ -31,6 +32,7 @@ Documentação completa disponível em: README.md e TELEGRAM.md
 - 4: Streak quebrado (sequência de check-in interrompida)
 - 5: 2FA não-interativo (fail-fast em cron sem TTY)
 - 6: Falha global (uncaughtException / unhandledRejection)
+- 7: Intervenção manual necessária (login em janela não concluído; sem retry)
 
 Consulte README.md, TELEGRAM.md, INSTALL_LINUX.md, INSTALL_WINDOWS.md,
 INSTALL_MACOS.md e CLOUD_SESSIONS.md para detalhes adicionais de configuração.

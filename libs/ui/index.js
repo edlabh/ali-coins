@@ -6,6 +6,7 @@ const navigation = require('./navigation');
 const balance = require('./balance');
 const diagnostics = require('./diagnostics');
 const login = require('./login');
+const manualLogin = require('./manual-login');
 const tasks = require('./tasks');
 
 module.exports = {
@@ -13,5 +14,6 @@ module.exports = {
   ...balance,
   ...diagnostics,
   ...login,
+  ...manualLogin,
   ...tasks
 };

@@ -7,9 +7,107 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ## [Unreleased]
 
-> Alterações destinadas às próximas versões (1.0.x / 1.1.0) devem ser registradas aqui e
-> migradas para a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo
-> completo está em [RELEASING.md](RELEASING.md).
+> Alterações destinadas às próximas versões devem ser registradas aqui e migradas para
+> a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
+> [RELEASING.md](RELEASING.md).
+
+## [2.1.0] - 2026-10-22
+
+### Por que esta release
+
+O principal motivo da 2.1.0 é a **mudança da página de coleta de moedas do AliExpress**
+(out/2026): o painel "Ganhe mais moedas" deixou de ser uma gaveta (`.e2e_task`) e passou
+a renderizar a lista de tarefas **inline** com classes CSS Modules `aecoin-*`. Sem esse
+ajuste, as versões até a 2.0.0 não conseguiam mais ler as tarefas (o bot tentava abrir a
+gaveta 5 vezes e falhava com "Painel 'Ganhe mais moedas' inacessível") e o dia fechava
+sem as moedas das tarefas, mesmo com o check-in diário funcionando.
+
+### Corrigido
+
+- **Painel "Ganhe mais moedas" no layout inline `aecoin-*` (`libs/selectors.js`,
+  `libs/tasks/verifier.js`, `libs/tasks/state.js`):** em 20/10/2026 o AliExpress
+  substituiu a gaveta `.e2e_task` por uma lista renderizada inline (CSS Modules
+  `aecoin-*`); a gaveta antiga virou um componente morto (cabeçalho sem botão e conteúdo
+  preso no loading) e as tarefas passavam a vir vazias (`tasks: null` /
+  `tasksCoinsGained: 0`). O bot agora:
+  - detecta a lista inline em `openTaskDrawer`, sem tentar abrir a gaveta morta;
+  - extrai título, botão, recompensa, status de rodadas (`aecoin-progress-*`) e
+    `data-groupid` nos dois layouts, com seletores `[class*="prefixo-"]` imunes ao hash
+    de build do CSS Modules;
+  - classifica `aecoin-btnGo-*` como acionável — no layout novo o texto do botão é a
+    recompensa (`+N`), não o rótulo `GO`/`IR` — e classes `btnCollect`/`btnReceive`/…
+    como resgatáveis, preservando o comportamento antigo (`.e2e_*`) como fallback.
+- **`findNextPendingTask` reconhece `aecoin-btnGo-*` (`libs/tasks/state.js`):** além de
+  `isActionable`/`GO`/`IR`, o `btnClass` do layout novo também marca a tarefa como
+  executável (defesa em profundidade para variações de renderização).
+
+### Testes
+
+- Novos casos em `tests/tasks.test.js` (detecção inline + extração `aecoin-*`) e
+  fixture/smoke do painel novo em `tests/selectors.smoke.test.js`.
+
+### Notas
+
+- Validação ao vivo (22/10/2026): painel inline detectado, tarefas lidas e executadas
+  (check-in diário e tarefas de navegação/scroll concluídas; a lista dinâmica expandiu
+  durante a execução).
+- "Browse surprise items" pode não contabilizar quando o clique cai no `adclick.html`
+  sem abrir o detalhe do produto. É um comportamento do feed de surpresas, separado do
+  painel, já coberto pelos fallbacks/late-progress do bot; acompanhar à parte se voltar
+  a ocorrer.
+
+## [2.0.0] - 2026-10-19
+
+### Adicionado
+
+- **Login manual opcional em janela (`libs/ui/manual-login.js`, `collect.js`):** quando o
+  login é necessário (sem sessão válida, sessão rejeitada/reautenticação, cooldown de
+  captcha ou bloqueio RGV587) e há TTY + interface gráfica, o bot oferece um menu com duas
+  opções: continuar 100% headless (padrão) ou abrir uma janela visível para o operador
+  resolver login/captcha/2FA. Ao detectar o cookie forte `login_aliyunid_ticket`, a sessão
+  é salva com `freshLogin`, a janela temporária é fechada e o fluxo retoma em headless.
+  O menu também é oferecido após uma falha anti-bot no login automático, sem burlar captcha.
+- **Janela manual em contexto desktop por padrão (`MANUAL_LOGIN_CONTEXT=desktop|mobile`):**
+  evita a emulação de toque do Pixel 7, que impedia o slider/captcha de responder ao mouse
+  em ambientes como o WSLg. `mobile` reativa a emulação Pixel 7; o fluxo headless continua
+  mobile em qualquer caso.
+- **Configuração e CLI:** `MANUAL_LOGIN=auto|never|always` (padrão `auto`),
+  `MANUAL_LOGIN_PROMPT_TIMEOUT_MS` (60s) e `MANUAL_LOGIN_TIMEOUT_MS` (15min), além das flags
+  `--manual-login` (equivale a `always`) e `--no-manual-login` (equivale a `never`).
+  A detecção de GUI cobre Windows/macOS e Linux com `DISPLAY`/`WAYLAND_DISPLAY`; em cron,
+  Docker, CI ou SSH sem display nada é perguntado (comportamento 1.x preservado).
+- **Exit code 7 e notificação de intervenção manual:** RGV587 detectado no login automático,
+  janela fechada/timeout ou gate manual sem renovação encerram com código 7 (sem retry pelo
+  `run_all.sh`) e notificam `manual_login_required`, distinguindo falha da tentativa manual
+  do gate remoto. Vale para `all.js`, `collect.js` e `do_tasks.js` avulsos.
+
+### Corrigido
+
+- **Heap do Node adaptativo nos `run*.sh`:** máquinas com mais RAM sobem o teto de
+  256 MB para 384/512 MB (hosts de 1 GB continuam em 256 MB), corrigindo o
+  `JavaScript heap out of memory` observado no fluxo unificado (check-in + tarefas)
+  em um único processo. `ALI_HEAP_MB`/`NODE_OPTIONS` permitem forçar um valor, e o
+  `all.js` agora alerta quando o heap se aproxima do teto.
+- **Janela manual reconhece `xman_us_t` além de `login_aliyunid_ticket`:** o login
+  desktop pode gravar apenas `xman_us_t`; a espera ficava presa mesmo com a página de
+  moedas já aberta. A detecção agora usa os mesmos cookies fortes de `validateSession`
+  e registra qual sinal foi aceito.
+- **`saveSession(..., { freshLogin: true })` limpa todo o estado anti-bot
+  (`libs/session.js`):** além de `lastCaptchaAt` e dos marcadores de sessão importada,
+  remove `captchaCooldownHours`, `captchaRiskControl` e `captchaRequireManualLogin`. Antes,
+  um login manual bem-sucedido mantinha o gate/cooldown de 48h do RGV587 ativo.
+- **Sessão inválida não desarma mais o gate (`libs/session.js`):** `validateAndRefresh`
+  remove a sessão expirada preservando os campos anti-bot do `session_meta.json`
+  (`clearSession({ preserveAntiBotMeta: true })`), em vez de apagar o meta inteiro e
+  reabrir o login automático na execução seguinte.
+
+### Testes
+
+- Novos `tests/manual_login.test.js` (detecção TTY/GUI, menu/timeout, espera do ticket,
+  reaproveitamento da janela, salvamento e fechamento) e casos em `tests/config.test.js`,
+  `tests/session.test.js` e `tests/captcha_cooldown.test.js` (config/CLI, limpeza total do
+  freshLogin, preservação do gate, notificação com tentativa manual). Suíte completa verde;
+  lint/format limpos.
 
 ## [1.7.4] - 2026-10-13
 

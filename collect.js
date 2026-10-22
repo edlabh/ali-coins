@@ -27,7 +27,13 @@ const {
   getBalanceDesktop,
   getCheckinCoinsFromStreak,
   shouldReuseDesktopContext,
-  closeCachedDesktopContext
+  closeCachedDesktopContext,
+  isManualLoginAvailable,
+  shouldOfferManualLogin,
+  manualLoginReason,
+  askLoginChoice,
+  performManualLogin,
+  CHOICE_MANUAL
 } = require('./libs/ui');
 const { renderCheckinReport, resolveStreakDays } = require('./libs/report');
 const { version: APP_VERSION } = require('./package.json');
@@ -276,7 +282,7 @@ async function runCheckin(options = {}) {
 
     // 3. Inicializar contexto mobile. `newPage` fica DENTRO do try que fecha o contexto:
     // se falhar (contexto morto), o finally fecha o contexto em vez de deixá-lo órfão.
-    const context = await newMobileContext(
+    let context = await newMobileContext(
       browser,
       hasValidSession ? sessionData || currentSessionPath : null,
       {
@@ -285,6 +291,61 @@ async function runCheckin(options = {}) {
     );
     let page = null;
     let attemptedLogin = false;
+    let manualLoginDone = false;
+    let postFailureManualPrompted = false;
+    const manualLoginMode = ['auto', 'never', 'always'].includes(config.MANUAL_LOGIN)
+      ? config.MANUAL_LOGIN
+      : 'auto';
+    // Checado uma vez por conta: em cron/VM/CI (sem TTY/GUI) permanece false e o fluxo
+    // segue 100% headless, sem menus nem janelas.
+    const manualLoginAvailable = isManualLoginAvailable({ mode: manualLoginMode });
+    if (manualLoginMode === 'always' && !manualLoginAvailable) {
+      logger.warn(
+        'MANUAL_LOGIN=always, mas não há TTY/interface gráfica disponível; mantendo o login automático headless.'
+      );
+    }
+    const mobileCoinUrl = 'https://m.aliexpress.com/p/coin-index/index.html';
+
+    // Após um login manual bem-sucedido, o contexto headless original ainda tem a sessão
+    // velha. Fecha e recria com o storageState novo para o restante do fluxo usar os
+    // cookies recém-salvos. Em HEADLESS=false a própria janela já é a context principal.
+    const resumeAfterManualLogin = async () => {
+      if (!config.HEADLESS) {
+        if (page && !page.url().includes('coin-index')) {
+          await gotoWithRetry(page, mobileCoinUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: config.NAV_TIMEOUT
+          }).catch(() => {});
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          await page.waitForTimeout(1000).catch(() => {});
+        }
+        await closeCachedDesktopContext().catch(() => {});
+        return;
+      }
+
+      await closeContextWithDiagnostics(context, {
+        failed: false,
+        name: 'checkin-mobile-manual-login'
+      }).catch(() => {});
+      context = await newMobileContext(browser, sessionData, {
+        allowMedia: config.ALLOW_MEDIA
+      });
+      page = await context.newPage();
+      await gotoWithRetry(page, mobileCoinUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: config.NAV_TIMEOUT
+      });
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
+      await page.waitForTimeout(1000).catch(() => {});
+      if (!page.url().includes('coin-index')) {
+        await gotoWithRetry(page, mobileCoinUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: config.NAV_TIMEOUT_SHORT
+        }).catch(() => {});
+        await page.waitForTimeout(1000).catch(() => {});
+      }
+      await closeCachedDesktopContext().catch(() => {});
+    };
 
     try {
       page = await context.newPage();
@@ -292,7 +353,6 @@ async function runCheckin(options = {}) {
       // a visita prévia ao mycoin desktop era descartada na linha seguinte — desperdiçava
       // 3-6s de rede/CPU e ~25-40 MB de heap por conta processando o DOM desktop em
       // viewport mobile.
-      const mobileCoinUrl = 'https://m.aliexpress.com/p/coin-index/index.html';
       await gotoWithRetry(page, mobileCoinUrl, {
         waitUntil: 'domcontentloaded',
         timeout: config.NAV_TIMEOUT
@@ -369,7 +429,68 @@ async function runCheckin(options = {}) {
             '--force: cooldown pós-captcha ignorado; tentando autenticar mesmo assim.'
           );
         }
-        if (manualRequired && !captchaForced) {
+
+        // Login manual opcional (2.0.0): antes de bloquear/autenticar, oferece ao
+        // operador a opção de abrir uma janela visível para resolver login/captcha.
+        // Sem TTY/GUI (cron/VM/CI) nada é perguntado; o fluxo abaixo segue igual.
+        if (
+          manualLoginAvailable &&
+          shouldOfferManualLogin({
+            hasValidLogin: hasValidSession,
+            needsLogin,
+            passwordVisible,
+            cooldown: captchaCooldown,
+            mode: manualLoginMode
+          })
+        ) {
+          const reason = manualLoginReason({
+            hasValidLogin: hasValidSession,
+            passwordVisible,
+            cooldown: captchaCooldown
+          });
+          let choice = CHOICE_MANUAL;
+          if (manualLoginMode !== 'always') {
+            logger.info({ reason }, 'Login manual disponível: exibindo menu de escolha.');
+            const answer = await askLoginChoice({
+              account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+              reason,
+              timeoutMs: config.MANUAL_LOGIN_PROMPT_TIMEOUT_MS
+            });
+            choice = answer.choice;
+            if (answer.nonInteractive) {
+              logger.info('Login manual indisponível neste ambiente; seguindo headless.');
+            } else if (answer.timedOut) {
+              logger.info('Menu de login manual expirou sem resposta; seguindo headless.');
+            } else if (answer.aborted) {
+              logger.info('Menu de login manual cancelado; seguindo headless.');
+            }
+          }
+
+          if (choice === CHOICE_MANUAL) {
+            try {
+              const manual = await performManualLogin({
+                config,
+                sessionOpts,
+                account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+                storageState: hasValidSession ? sessionData || currentSessionPath : null,
+                existingPage: config.HEADLESS ? null : page,
+                existingContext: config.HEADLESS ? null : context
+              });
+              sessionData = manual.sessionData;
+              manualLoginDone = true;
+              logger.info(
+                { user: maskUser(userEmail) },
+                'Login manual concluído; sessão renovada e fluxo headless retomado.'
+              );
+            } catch (manualErr) {
+              manualErr.manualAttempted = true;
+              manualErr.isManualLoginRequired = true;
+              throw manualErr;
+            }
+          }
+        }
+
+        if (!manualLoginDone && manualRequired && !captchaForced) {
           logger.warn(
             { until: captchaCooldown.until, hours: captchaCooldown.hours },
             'Login remoto suspenso: sessão precisa ser renovada manualmente (pós-bloqueio RGV587).'
@@ -378,11 +499,12 @@ async function runCheckin(options = {}) {
             'Login remoto suspenso após bloqueio anti-bot (RGV587): faça o login na máquina local, resolva o captcha e importe a sessão (node import_session.js).'
           );
           gateErr.isManualLoginRequired = true;
+          gateErr.isRiskControl = captchaCooldown.riskControl === true;
           gateErr.cooldownHours = captchaCooldown.hours;
           gateErr.cooldownUntil = captchaCooldown.until;
           throw gateErr;
         }
-        if (captchaBlocked) {
+        if (!manualLoginDone && captchaBlocked) {
           logger.warn(
             { lastCaptchaAt: captchaCooldown.lastCaptchaAt, until: captchaCooldown.until },
             'Login pausado pelo cooldown pós-captcha; nenhuma tentativa será feita nesta execução.'
@@ -400,58 +522,137 @@ async function runCheckin(options = {}) {
           throw cooldownErr;
         }
 
-        if (isImportedSession) {
-          logger.warn(
-            '[Sessão Remota] Autenticação necessária com sessão importada. Em servidores remotos (VPS/nuvem), desafios de segurança anti-bot podem impedir o login automático.'
-          );
-        }
-        try {
-          sessionData = await performMobileLogin(page, context, config, sessionOpts);
-        } catch (loginErr) {
-          // Desafio anti-bot (captcha): registra o instante para o cooldown das próximas
-          // execuções (não re-registra quando a falha É o próprio cooldown).
-          // RGV587 usa cooldown customizado de 48h gravado no meta da conta.
-          if (loginErr.isCaptchaChallenge && !loginErr.isCaptchaCooldown) {
-            await recordCaptchaChallenge(sessionOpts, new Date(), {
-              cooldownHours: loginErr.captchaCooldownHours || null,
-              requireManualLogin: loginErr.isRiskControl === true
-            }).catch(() => {});
-            if (loginErr.isRiskControl) {
-              const hours = loginErr.captchaCooldownHours || config.CAPTCHA_COOLDOWN_HOURS;
-              loginErr.cooldownHours = hours;
-              loginErr.cooldownUntil = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+        if (!manualLoginDone) {
+          if (isImportedSession) {
+            logger.warn(
+              '[Sessão Remota] Autenticação necessária com sessão importada. Em servidores remotos (VPS/nuvem), desafios de segurança anti-bot podem impedir o login automático.'
+            );
+          }
+          try {
+            sessionData = await performMobileLogin(page, context, config, sessionOpts);
+          } catch (loginErr) {
+            // Desafio anti-bot (captcha): registra o instante para o cooldown das próximas
+            // execuções (não re-registra quando a falha É o próprio cooldown).
+            // RGV587 usa cooldown customizado de 48h gravado no meta da conta.
+            if (loginErr.isCaptchaChallenge && !loginErr.isCaptchaCooldown) {
+              await recordCaptchaChallenge(sessionOpts, new Date(), {
+                cooldownHours: loginErr.captchaCooldownHours || null,
+                requireManualLogin: loginErr.isRiskControl === true
+              }).catch(() => {});
+              if (loginErr.isRiskControl) {
+                const hours = loginErr.captchaCooldownHours || config.CAPTCHA_COOLDOWN_HOURS;
+                loginErr.cooldownHours = hours;
+                loginErr.cooldownUntil = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+              }
+            }
+            if (isImportedSession) {
+              logger.error(
+                '[Sessão Remota Expirada] Falha ao autenticar no AliExpress. A sessão importada de outro host expirou ou foi invalidada. ' +
+                  'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+              );
+              loginErr.isImportedSessionExpired = true;
+            }
+
+            // Segunda chance manual: o login automático acabou de detectar captcha/RGV587.
+            // O cooldown já foi registrado acima; se o operador resolver na janela, o
+            // `freshLogin` limpa o gate e o fluxo retoma headless.
+            if (
+              !postFailureManualPrompted &&
+              manualLoginAvailable &&
+              (loginErr.isCaptchaChallenge || loginErr.isRiskControl)
+            ) {
+              postFailureManualPrompted = true;
+              const reason = loginErr.isRiskControl
+                ? 'bloqueio anti-bot (RGV587) detectado no login automático'
+                : 'captcha/desafio não superado no login automático';
+              let choice = CHOICE_MANUAL;
+              if (manualLoginMode !== 'always') {
+                logger.info(
+                  { reason },
+                  'Login automático bloqueado: exibindo menu de login manual.'
+                );
+                const answer = await askLoginChoice({
+                  account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+                  reason,
+                  timeoutMs: config.MANUAL_LOGIN_PROMPT_TIMEOUT_MS
+                });
+                choice = answer.choice;
+                if (answer.nonInteractive) {
+                  logger.info('Login manual indisponível neste ambiente; mantendo a falha.');
+                } else if (answer.timedOut) {
+                  logger.info('Menu de login manual expirou sem resposta; mantendo a falha.');
+                } else if (answer.aborted) {
+                  logger.info('Menu de login manual cancelado; mantendo a falha.');
+                }
+              }
+
+              if (choice === CHOICE_MANUAL) {
+                try {
+                  const manual = await performManualLogin({
+                    config,
+                    sessionOpts,
+                    account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+                    storageState: hasValidSession ? sessionData || currentSessionPath : null,
+                    existingPage: config.HEADLESS ? null : page,
+                    existingContext: config.HEADLESS ? null : context
+                  });
+                  sessionData = manual.sessionData;
+                  manualLoginDone = true;
+                  logger.info(
+                    { user: maskUser(userEmail) },
+                    'Login manual concluído após bloqueio; sessão renovada e fluxo headless retomado.'
+                  );
+                } catch (manualErr) {
+                  manualErr.manualAttempted = true;
+                  manualErr.isManualLoginRequired = true;
+                  if (loginErr.isRiskControl) {
+                    manualErr.isRiskControl = true;
+                    manualErr.cooldownHours = loginErr.cooldownHours;
+                    manualErr.cooldownUntil = loginErr.cooldownUntil;
+                  }
+                  throw manualErr;
+                }
+              }
+            }
+
+            if (!manualLoginDone) {
+              // RGV587 exige sessão renovada manualmente (o cooldown de 48h já foi
+              // registrado). Marca como intervenção manual para sair com 7 e evitar o
+              // retry automático do run_all.sh, que só reencontraria o gate.
+              if (loginErr.isRiskControl) {
+                loginErr.isManualLoginRequired = true;
+              }
+              throw loginErr;
             }
           }
-          if (isImportedSession) {
-            logger.error(
-              '[Sessão Remota Expirada] Falha ao autenticar no AliExpress. A sessão importada de outro host expirou ou foi invalidada. ' +
-                'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
-            );
-            loginErr.isImportedSessionExpired = true;
-          }
-          throw loginErr;
         }
 
-        // Aguardar o redirecionamento pós-login concluir e assegurar navegação para o coin-index.
-        // 'networkidle' foi removido: no msite ele pode esperar até 30s por requisições de
-        // telemetria e carrega bookkeeping pesado no Playwright; a estabilização do SPA é
-        // garantida pelos waits explícitos de seletor/login-pending logo abaixo.
-        await page.waitForURL(/coin-index/, { timeout: config.NAV_TIMEOUT_SHORT }).catch(() => {});
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(1000).catch(() => {});
-
-        if (!page.url().includes('coin-index')) {
-          await gotoWithRetry(page, 'https://m.aliexpress.com/p/coin-index/index.html', {
-            waitUntil: 'domcontentloaded',
-            timeout: config.NAV_TIMEOUT
-          }).catch(() => {});
+        if (manualLoginDone) {
+          await resumeAfterManualLogin();
+        } else {
+          // Aguardar o redirecionamento pós-login concluir e assegurar navegação para o coin-index.
+          // 'networkidle' foi removido: no msite ele pode esperar até 30s por requisições de
+          // telemetria e carrega bookkeeping pesado no Playwright; a estabilização do SPA é
+          // garantida pelos waits explícitos de seletor/login-pending logo abaixo.
+          await page
+            .waitForURL(/coin-index/, { timeout: config.NAV_TIMEOUT_SHORT })
+            .catch(() => {});
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
           await page.waitForTimeout(1000).catch(() => {});
-        }
 
-        // Sessão NOVA: o contexto desktop cacheado ainda tem os cookies antigos
-        // (a leitura prévia pode tê-lo cacheado antes do login). Invalida para que as
-        // leituras seguintes usem o storageState atualizado.
-        await closeCachedDesktopContext().catch(() => {});
+          if (!page.url().includes('coin-index')) {
+            await gotoWithRetry(page, mobileCoinUrl, {
+              waitUntil: 'domcontentloaded',
+              timeout: config.NAV_TIMEOUT
+            }).catch(() => {});
+            await page.waitForTimeout(1000).catch(() => {});
+          }
+
+          // Sessão NOVA: o contexto desktop cacheado ainda tem os cookies antigos
+          // (a leitura prévia pode tê-lo cacheado antes do login). Invalida para que as
+          // leituras seguintes usem o storageState atualizado.
+          await closeCachedDesktopContext().catch(() => {});
+        }
       }
 
       await page
@@ -1042,8 +1243,16 @@ if (require.main === module) {
         );
       }
       logger.error({ err: err.message }, 'Falha no check-in diário.');
-      await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
-      await flushAndExit(1);
+      await sendTelegram({
+        config: cfg,
+        event: err.isManualLoginRequired
+          ? 'manual_login_required'
+          : err.isRiskControl
+            ? 'risk_blocked'
+            : 'failure',
+        error: err
+      }).catch(() => {});
+      await flushAndExit(err.isManualLoginRequired ? 7 : 1);
     }
   })().catch(async (err) => {
     // Erros fora do try principal (ex: loadConfig inválido em --dry-run) não devem
