@@ -85,6 +85,32 @@ test('Unix Scripts - run*.sh usam heap adaptativo e respeitam ALI_HEAP_MB/NODE_O
   }
 });
 
+test('Unix Scripts - run_all.sh preserva o stdin do Node em background (--manual-login)', () => {
+  // Requer bash; em ambientes sem bash (Windows sem Git Bash/CI) o teste é pulado.
+  try {
+    execSync('bash --version', { stdio: 'ignore' });
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.status === 127) return;
+    throw err;
+  }
+
+  // Sem job control, o bash liga o stdin de `cmd &` a /dev/null; o --manual-login exige
+  // stdin TTY. Aqui `node` vira um stub que ecoa o stdin: se o run_all_node() perder o
+  // stdin, a saída fica vazia.
+  const content = fs.readFileSync(path.join(__dirname, '..', 'run_all.sh'), 'utf8');
+  const start = content.indexOf('run_all_node() {');
+  const end = content.indexOf('\n}\n', start);
+  assert.ok(start >= 0 && end > start, 'run_all.sh deve definir run_all_node()');
+
+  const fn = content.slice(start, end + 2);
+  const res = spawnSync('bash', ['-c', `node() { cat; }\nSCRIPT_DIR=.\n${fn}\nrun_all_node`], {
+    input: 'stdin-preservado',
+    encoding: 'utf8'
+  });
+  assert.strictEqual(res.status, 0, `bash falhou: ${res.stderr}`);
+  assert.strictEqual(res.stdout, 'stdin-preservado');
+});
+
 test('Unix Scripts - setup_linux.sh e setup_macos.sh lógica de geração de SESSION_SECRET', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('unix-setup-test-');

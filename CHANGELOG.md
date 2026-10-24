@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+### Corrigido
+
+- **`run_all.sh` desligava o `--manual-login`:** o Node roda em background (para repassar
+  TERM/INT) e, sem job control, o bash liga o stdin de comandos assíncronos a `/dev/null`.
+  `isManualLoginAvailable()` via stdin não-TTY e mantinha o login headless mesmo num
+  terminal interativo. O stdin agora é preservado com `<&0`; cron/launchd/systemd seguem
+  inalterados (stdin já não é TTY).
+
 ## [2.1.0] - 2026-10-22
 
 ### Por que esta release
