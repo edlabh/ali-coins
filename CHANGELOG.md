@@ -11,6 +11,16 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+### Corrigido
+
+- **Sessão expirada não era detectada nas telas de login novas (out/2026):** com a sessão
+  invalidada no servidor, o coin-index mobile passou a mostrar só "COINS" + botão
+  "Log in" (mesma URL, sem campos) e o `mycoin.html` desktop a tela "Register/Sign in".
+  Nenhuma das duas era reconhecida: a execução falhava com "não foi possível obter streak
+  e saldo" (`attemptedLogin: false`, `loginPromptDetected: false`) e o `--manual-login`
+  nunca era oferecido. `shouldAttemptLogin()` agora trata a portaria mobile
+  (`isLoginGateText()`) e `isLoginPromptText()` reconhece a tela desktop.
+
 ## [2.1.0] - 2026-10-22
 
 ### Por que esta release

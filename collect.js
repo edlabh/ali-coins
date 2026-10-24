@@ -25,6 +25,7 @@ const {
   performMobileLogin,
   getStreakFromCoinPage,
   getBalanceDesktop,
+  isLoginGateText,
   getCheckinCoinsFromStreak,
   shouldReuseDesktopContext,
   closeCachedDesktopContext,
@@ -148,6 +149,8 @@ function shouldReuseEarlyDesktop({ justCollected = false, earlyDesktop = null } 
  *  - **Campo de senha visível → true** (prompt de reautenticação in-page do AliExpress,
  *    que pede só a senha na MESMA URL do coin-index — sem isso o login nunca era tentado);
  *  - Sem sessão válida → true (fluxo completo);
+ *  - Coin-index virou a portaria "COINS / Log in" (sessão expirada no servidor, mesma
+ *    URL, sem campos) → true;
  *  - URL de login/passport + campo de usuário ou textos clássicos → true (comportamento
  *    histórico, preservado);
  *  - Caso contrário → false (sessão válida em página normal: evita re-login desnecessário).
@@ -169,6 +172,7 @@ function shouldAttemptLogin({
 } = {}) {
   if (passwordVisible) return true;
   if (!hasValidSession) return true;
+  if (isLoginGateText(bodyText)) return true;
   if (loginUrl && usernameVisible) return true;
   if (
     loginUrl &&

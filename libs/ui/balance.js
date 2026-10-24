@@ -21,7 +21,9 @@ const STREAK_PATTERNS = [
 
 /**
  * Indica se o texto da página é um prompt de login/reautenticação do AliExpress —
- * inclusive o fluxo in-page que reconhece a conta e pede APENAS a senha sem mudar a URL.
+ * inclusive o fluxo in-page que reconhece a conta e pede APENAS a senha sem mudar a URL,
+ * e a tela "Register/Sign in" que o mycoin.html desktop passou a exibir (out/2026) com
+ * sessão expirada.
  * @param {string} text
  * @returns {boolean}
  */
@@ -32,9 +34,25 @@ function isLoginPromptText(text) {
     t.includes('sign in with email code') ||
     t.includes('switch account') ||
     t.includes('trocar de conta') ||
+    t.includes('register/sign in') ||
+    t.includes('trouble signing in') ||
+    t.includes('email or phone number') ||
     ((t.includes('forgot password') || t.includes('esqueci minha senha')) &&
       (t.includes('password') || t.includes('senha')))
   );
+}
+
+/**
+ * Indica se o coin-index mobile virou a "portaria" de login (out/2026): com a sessão
+ * expirada no servidor, a MESMA URL mostra só o título "COINS" e um botão "Log in", sem
+ * campo de usuário/senha. Exige a linha isolada do botão E nenhum dígito na página — o
+ * coin-index autenticado sempre exibe saldo/sequência, então não há falso positivo nele.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isLoginGateText(text) {
+  if (!text || typeof text !== 'string') return false;
+  return /^\s*(?:log in|sign in|entrar)\s*$/im.test(text) && !/[0-9]/.test(text);
 }
 
 /**
@@ -575,5 +593,6 @@ module.exports = {
   getStreakFromCheckinCoins,
   getCheckinCoinsFromStreak,
   getStreakFromDesktopHistory,
-  isLoginPromptText
+  isLoginPromptText,
+  isLoginGateText
 };

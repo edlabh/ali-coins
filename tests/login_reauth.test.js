@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { performMobileLogin } = require('../libs/ui/login');
-const { isLoginPromptText } = require('../libs/ui/balance');
+const { isLoginPromptText, isLoginGateText } = require('../libs/ui/balance');
 const { shouldAttemptLogin } = require('../collect');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
@@ -162,6 +162,42 @@ test('libs/ui/balance.js - isLoginPromptText reconhece o prompt de reautenticaç
   assert.strictEqual(isLoginPromptText('Minhas moedas\n521\nCheck-in diário no app\n+40'), false);
   assert.strictEqual(isLoginPromptText(''), false);
   assert.strictEqual(isLoginPromptText(null), false);
+});
+
+test('collect.js - shouldAttemptLogin detecta a portaria "COINS / Log in" com sessão expirada', () => {
+  // Cenário de out/2026: sessão local "válida", mesma URL do coin-index, sem campos de
+  // login — só o título e o botão. Antes caía em "não foi possível obter streak e saldo"
+  // com attemptedLogin=false e o --manual-login nunca era oferecido.
+  assert.strictEqual(
+    shouldAttemptLogin({
+      hasValidSession: true,
+      passwordVisible: false,
+      loginUrl: false,
+      usernameVisible: false,
+      bodyText: 'COINS\nLog in'
+    }),
+    true
+  );
+});
+
+test('libs/ui/balance.js - isLoginGateText só reconhece a portaria sem saldo', () => {
+  assert.strictEqual(isLoginGateText('COINS\nLog in'), true);
+  assert.strictEqual(isLoginGateText('  COINS \n  Log in  \n'), true);
+
+  // Coin-index autenticado sempre tem dígitos (saldo/sequência), mesmo com um "Log in" solto.
+  assert.strictEqual(isLoginGateText('COINS\nLog in\nMinhas moedas\n521'), false);
+  // "Log in" dentro de uma frase não é o botão da portaria.
+  assert.strictEqual(isLoginGateText('COINS\nLog in to see your coins'), false);
+  assert.strictEqual(isLoginGateText(''), false);
+  assert.strictEqual(isLoginGateText(null), false);
+});
+
+test('libs/ui/balance.js - isLoginPromptText reconhece a tela "Register/Sign in" do desktop', () => {
+  const telaDesktop =
+    'Download the AliExpress app\nRegister/Sign in\nYour information is protected\n' +
+    'Continue\nTrouble signing in?\nOr continue with\nPasskey\nGoogle\nFacebook\n' +
+    'More options\nLocation: Brazil';
+  assert.strictEqual(isLoginPromptText(telaDesktop), true);
 });
 
 test('libs/ui/login.js - login somente-senha (prompt in-page) autentica sem campo de usuário', async () => {
