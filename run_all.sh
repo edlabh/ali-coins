@@ -36,8 +36,10 @@ fi
 
 # Executa o Node em background encaminhando TERM/INT para ele, de modo que um
 # `kill <script>` ou stop do systemd não deixe o Node/Chromium órfãos.
+# `<&0` é obrigatório: sem job control, o bash liga o stdin de comandos em background
+# a /dev/null, o que desliga o --manual-login (exige stdin TTY) mesmo num terminal.
 run_all_node() {
-  node "$SCRIPT_DIR/all.js" "$@" &
+  node "$SCRIPT_DIR/all.js" "$@" <&0 &
   RUN_ALL_CHILD=$!
   trap 'kill -TERM "$RUN_ALL_CHILD" 2>/dev/null' TERM INT
   wait "$RUN_ALL_CHILD"

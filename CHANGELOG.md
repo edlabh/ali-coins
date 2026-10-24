@@ -20,6 +20,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   e saldo" (`attemptedLogin: false`, `loginPromptDetected: false`) e o `--manual-login`
   nunca era oferecido. `shouldAttemptLogin()` agora trata a portaria mobile
   (`isLoginGateText()`) e `isLoginPromptText()` reconhece a tela desktop.
+- **`run_all.sh` desligava o `--manual-login`:** o Node roda em background (para repassar
+  TERM/INT) e, sem job control, o bash liga o stdin de comandos assíncronos a `/dev/null`.
+  `isManualLoginAvailable()` via stdin não-TTY e mantinha o login headless mesmo num
+  terminal interativo. O stdin agora é preservado com `<&0`; cron/launchd/systemd seguem
+  inalterados (stdin já não é TTY).
 
 ## [2.1.0] - 2026-10-22
 
