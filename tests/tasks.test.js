@@ -82,6 +82,55 @@ test('tasks - executeSearchTask preenche termo de busca com mock page', async ()
   }
 });
 
+test('tasks - executeSearchTask usa o atalho de busca embutido (aecoin-searchNow) e fecha a aba do resultado', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    let searchNowClicked = false;
+    let resultClosed = false;
+    const resultPage = {
+      waitForLoadState: async () => {},
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      close: async () => {
+        resultClosed = true;
+      },
+      on: () => {},
+      off: () => {}
+    };
+    const mockContext = {
+      waitForEvent: async (eventName) => {
+        assert.strictEqual(eventName, 'page');
+        // A aba do resultado só existe depois do clique
+        while (!searchNowClicked) await new Promise((r) => setImmediate(r));
+        return resultPage;
+      }
+    };
+    const searchNowBtn = {
+      click: async () => {
+        searchNowClicked = true;
+      }
+    };
+    const mockPage = {
+      $: async (selector) => (String(selector).includes('aecoin-searchNow-') ? searchNowBtn : null),
+      $$: async () => [],
+      $eval: async () => 'Rx 580 8gb',
+      context: () => mockContext,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      on: () => {},
+      off: () => {}
+    };
+
+    const result = await executeSearchTask({ page: mockPage, scrollWaitSeconds: 0 });
+
+    assert.strictEqual(result, true);
+    assert.strictEqual(searchNowClicked, true, 'Deve clicar no botão de busca embutido');
+    assert.strictEqual(resultClosed, true, 'Deve fechar a aba aberta pelo resultado da busca');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
 test('tasks - executePrizeLandTask clica no botão de rega se presente', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
@@ -1819,6 +1868,52 @@ test('tasks - ensureMainPage recupera página fechada ou em URL incorreta criand
 
     assert.strictEqual(unnecessaryGoto, false, 'Não deve efetuar goto se já estiver na central');
     assert.strictEqual(healthyResult, healthyPage);
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - ensureMainPage recria página cujo renderer caiu (isClosed false, evaluate falha)', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    const { ensureMainPage, isPageResponsive } = require('../libs/tasks/verifier');
+
+    let crashedClosed = false;
+    const crashedPage = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      evaluate: async () => {
+        throw new Error('Target crashed');
+      },
+      close: async () => {
+        crashedClosed = true;
+      }
+    };
+    const freshPage = {
+      isClosed: () => false,
+      url: () => 'https://m.aliexpress.com/p/coin-index/index.html',
+      goto: async () => {}
+    };
+    let newPageCalls = 0;
+    const mockContext = {
+      newPage: async () => {
+        newPageCalls++;
+        return freshPage;
+      }
+    };
+
+    assert.strictEqual(await isPageResponsive(crashedPage, 50), false);
+    assert.strictEqual(await isPageResponsive(freshPage), true, 'Mock sem evaluate é saudável');
+
+    const recovered = await ensureMainPage({ page: crashedPage, context: mockContext });
+
+    assert.strictEqual(recovered, freshPage, 'Deve trocar a página caída por uma nova');
+    assert.strictEqual(newPageCalls, 1);
+    assert.strictEqual(crashedClosed, true, 'Deve fechar a página caída');
+
+    // Página travada (evaluate nunca resolve) também é recriada pelo teto de tempo
+    const hungPage = { isClosed: () => false, evaluate: () => new Promise(() => {}) };
+    assert.strictEqual(await isPageResponsive(hungPage, 20), false);
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }
