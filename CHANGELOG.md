@@ -11,6 +11,31 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+## [1.7.1-v4] - 2026-10-25
+
+> **Release comemorativa (pré-release).** Edição especial para **não deixar a versão
+> lendária 1.7.1 morrer**: o código é **inteiramente baseado na tag `v2.3.0`** — só mudam
+> o número de versão e este registro. Publicada como **pré-release**; a `2.3.0` continua
+> sendo a versão estável/latest.
+
+### Por que existe
+
+A linha **1.7.1** foi uma das mais marcantes do projeto. Esta edição mantém o nome vivo,
+agora com todo o conteúdo da **2.3.0**: busca embutida da central de moedas, recuperação
+de renderer caído/travado, sequência real do calendário e registro da maior sequência.
+
+### Conteúdo
+
+- Código idêntico ao da tag `v2.3.0` (commit `aca0b4f`): correções de busca/tarefas,
+  estabilidade da aba principal, `longestStreakDays` e todos os ajustes da 2.3.0.
+- Nenhuma alteração funcional em relação à `2.3.0`.
+
+### Notas
+
+- Versão: `1.7.1-v4` (pré-release de `1.7.1`).
+- Base: tag `v2.3.0` (commit `aca0b4f`).
+- Publicada em 2026-10-25.
+
 ## [2.3.0] - 2026-10-25
 
 ### Corrigido
