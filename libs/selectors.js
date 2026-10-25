@@ -71,6 +71,10 @@ const SELECTORS = {
     taskRight: '[class*="aecoin-taskItemRight-"], .e2e_normal_task_right',
     openDrawerBtn:
       'button.aecoin-taskButton-3V41b, [class*="taskButton"], button[class*="aecoin-signButton"], .aecoin-signButtonWrapper-3p3NS button, [class*="signButtonWrapper"] button, div[class*="aecoin-signButton"], button:has-text("Earn more coins"), button:has-text("Ganhe mais moedas")',
+    // Busca embutida na central de moedas (out/2026): não há <input>; o termo sugerido fica
+    // num <span> e o botão "buscar agora" abre coin-search/result.html em nova aba.
+    searchEntrance: '[class*="aecoin-searchEntrance-"]',
+    searchNow: '[class*="aecoin-searchNow-"]',
     productCard: '.feeds-discount-card',
     waterBtn:
       '.Footer--waterCollectedButtonBg--2jKL1c5, [class*="waterCollected"], button:has-text("regar"), button:has-text("Water")'

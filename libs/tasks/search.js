@@ -1,5 +1,52 @@
 const { waitWithScroll } = require('../../browser');
+const { SELECTORS } = require('../selectors');
 const defaultLogger = require('../../logger');
+
+/**
+ * Busca pelo atalho embutido na central de moedas (layout aecoin-*, out/2026). Não existe
+ * campo de texto: o botão "buscar agora" pesquisa o termo sugerido e abre o resultado
+ * (coin-search/result.html) em NOVA aba. Retorna a página onde o resultado abriu, ou null
+ * se o atalho não existir.
+ * @param {import('playwright').Page} page
+ * @param {object} logger
+ * @returns {Promise<import('playwright').Page|null>}
+ */
+async function clickInlineSearchShortcut(page, logger) {
+  const searchNowBtn = await page.$(SELECTORS.tasks.searchNow).catch(() => null);
+  if (!searchNowBtn) return null;
+
+  const keyword =
+    typeof page.$eval === 'function'
+      ? await page
+          .$eval(SELECTORS.tasks.searchEntrance, (el) => (el.textContent || '').trim())
+          .catch(() => '')
+      : '';
+  logger.info(`Busca embutida da central de moedas detectada; pesquisando "${keyword}"...`);
+
+  const context = typeof page.context === 'function' ? page.context() : null;
+  const popupPromise =
+    context && typeof context.waitForEvent === 'function'
+      ? context.waitForEvent('page', { timeout: 8000 }).catch(() => null)
+      : Promise.resolve(null);
+
+  if (typeof searchNowBtn.click === 'function') {
+    await searchNowBtn.click({ timeout: 3000 }).catch(async () => {
+      if (typeof searchNowBtn.evaluate === 'function') {
+        await searchNowBtn.evaluate((el) => el.click()).catch(() => {});
+      }
+    });
+  } else if (typeof searchNowBtn.evaluate === 'function') {
+    await searchNowBtn.evaluate((el) => el.click()).catch(() => {});
+  }
+
+  const popup = await popupPromise;
+  if (popup) {
+    await popup.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+    return popup;
+  }
+  // Sem nova aba: o resultado pode ter aberto na mesma página
+  return page;
+}
 
 /**
  * Executa tarefa de busca por produtos
@@ -40,18 +87,33 @@ async function executeSearchTask({
       }
     }
   }
+
+  let resultPage = page;
   if (searchInput) {
     if (searchInput.fill) await searchInput.fill(query).catch(() => {});
     if (searchInput.press) await searchInput.press('Enter').catch(() => {});
   } else {
-    logger.warn('Campo de busca não localizado na página; tarefa de busca não iniciada.');
+    const shortcutPage = await clickInlineSearchShortcut(page, logger);
+    if (shortcutPage) {
+      resultPage = shortcutPage;
+    } else {
+      logger.warn('Campo de busca não localizado na página; tarefa de busca não iniciada.');
+    }
   }
-  if (typeof waitWithScroll === 'function') {
-    await waitWithScroll(page, scrollWaitSeconds, {
-      taskScrollMaxMs: config?.TASK_SCROLL_MAX_MS,
-      earlyExitOnNoProgress: true,
-      abortSignal: signal
-    });
+
+  try {
+    if (typeof waitWithScroll === 'function') {
+      await waitWithScroll(resultPage, scrollWaitSeconds, {
+        taskScrollMaxMs: config?.TASK_SCROLL_MAX_MS,
+        earlyExitOnNoProgress: true,
+        abortSignal: signal
+      });
+    }
+  } finally {
+    // A aba do resultado é nossa: fecha para o painel ser relido na página principal
+    if (resultPage !== page && typeof resultPage.close === 'function') {
+      await resultPage.close().catch(() => {});
+    }
   }
   return true;
 }

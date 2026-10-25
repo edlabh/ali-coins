@@ -342,6 +342,8 @@ module.exports = {
       'Page stuck in loading skeleton. Reloading page (reload)...',
     'Página principal fechada ou indisponível. Recriando página principal...':
       'Home page closed or unavailable. Recreating main page...',
+    'Página principal não responde (renderer travado ou caiu). Recriando...':
+      'Main page is unresponsive (renderer hung or crashed). Recreating...',
     'Realizando check-in diário...': 'Performing daily check-in...',
     'Removendo lockfile órfão de processo anterior finalizado.':
       'Removing orphaned lockfile from previous terminated process.',
@@ -505,6 +507,10 @@ module.exports = {
       'Failed to validate the configuration variables in credentials.env.'
   },
   templates: [
+    {
+      pt: 'Busca embutida da central de moedas detectada; pesquisando "{{0}}"...',
+      en: 'Coin center inline search detected; searching "{{0}}"...'
+    },
     {
       pt: '\n--- Executando: "{{0}}" ({{1}}){{2}} ---',
       en: '\n--- Running: "{{0}}" ({{1}}){{2}} ---'

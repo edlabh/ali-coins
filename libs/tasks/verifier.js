@@ -419,6 +419,36 @@ async function findTaskElement(page, targetTitle, fallbackIndex = 0) {
 }
 
 /**
+ * Sonda barata de saúde da página: um evaluate trivial com teto de tempo. Repete uma vez
+ * para não confundir uma navegação em curso (contexto de execução destruído) com crash.
+ * Mocks sem evaluate são considerados saudáveis.
+ * @param {object|import('playwright').Page} page
+ * @param {number} [timeoutMs=3000]
+ * @returns {Promise<boolean>}
+ */
+async function isPageResponsive(page, timeoutMs = 3000) {
+  if (!page || typeof page.evaluate !== 'function') return true;
+  for (let probe = 0; probe < 2; probe++) {
+    let timer;
+    const ok = await Promise.race([
+      Promise.resolve()
+        .then(() => page.evaluate(() => true))
+        .then(
+          () => true,
+          () => false
+        ),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      })
+    ]);
+    clearTimeout(timer);
+    if (ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
+/**
  * Garante que a página principal esteja aberta e na URL da central de moedas.
  * Se a página foi fechada ou travou, cria uma nova página a partir do context
  * e navega até a central de moedas.
@@ -439,7 +469,14 @@ async function ensureMainPage({
   logger = defaultLogger,
   gotoFn = null
 } = {}) {
-  const isPageClosed = !page || (typeof page.isClosed === 'function' && page.isClosed());
+  let isPageClosed = !page || (typeof page.isClosed === 'function' && page.isClosed());
+  // Renderer que caiu (ex.: OOM com o heap JS limitado) não fecha a página: isClosed()
+  // segue false e toda chamada falha na hora, o que esgotava as retentativas do painel em ms.
+  if (!isPageClosed && !(await isPageResponsive(page))) {
+    logger.warn('Página principal não responde (renderer travado ou caiu). Recriando...');
+    if (typeof page.close === 'function') await page.close().catch(() => {});
+    isPageClosed = true;
+  }
   if (isPageClosed) {
     logger.warn('Página principal fechada ou indisponível. Recriando página principal...');
     if (!context || typeof context.newPage !== 'function') {
@@ -563,5 +600,6 @@ module.exports = {
   extractTasksFromDrawer,
   findTaskElement,
   ensureMainPage,
+  isPageResponsive,
   getDrawerTasksWithRetry
 };
