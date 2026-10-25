@@ -189,6 +189,8 @@ module.exports = [
   ['📅 <b>Data:</b>', '📅 <b>Date:</b>'],
   ['➔ <b>Hoje:</b>', '➔ <b>Today:</b>'],
   ['📅 Sequência:', '📅 Streak:'],
+  ['🏆 Maior sequência:', '🏆 Longest streak:'],
+  ['(recorde:', '(record:'],
   ['/ tarefas +0)', '/ tasks +0)'],
   ['Já Coletado', 'Already Collected'],
   ['/ tarefas +', '/ tasks +'],

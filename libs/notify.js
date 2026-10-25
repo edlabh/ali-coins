@@ -328,6 +328,8 @@ function buildMultiAccountMessage({ report, event, error = null, safeHost, now }
       }
 
       const streak = toSafeStreak(acc.checkin?.streakDays);
+      const longest = toSafeStreak(acc.checkin?.longestStreakDays);
+      const streakText = longest !== 'N/D' ? `${streak} (recorde: ${longest})` : streak;
       // Fonte única de cálculo centralizada em report.js
       const checkinCoins = toSafeInt(
         acc.meta?.checkinCoinsGained ?? computeCheckinCoinsGained(acc.checkin)
@@ -360,7 +362,7 @@ function buildMultiAccountMessage({ report, event, error = null, safeHost, now }
         (acc.checkin?.totalBalance ? `${acc.checkin.totalBalance} moedas` : 'N/D');
 
       lines.push(
-        `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${escapeHtml(streak)}`
+        `[${idx + 1}] <code>${userMasked}</code>: 💰 <b>${escapeHtml(balance)}</b> | 🪙 +${totalCoins} (+${checkinCoins}/+${tasksCoins}) | Streak: ${escapeHtml(streakText)}`
       );
     });
   }
@@ -800,6 +802,7 @@ function buildMessageInternal({
       report.checkin?.streakDays !== undefined && report.checkin?.streakDays !== null
         ? String(report.checkin.streakDays)
         : 'N/D';
+    const longestStreak = toSafeStreak(report.checkin?.longestStreakDays);
 
     let saldoDisplay = 'N/D';
     const rawBalance =
@@ -844,6 +847,7 @@ function buildMessageInternal({
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${totalCoins} moedas (check-in +${checkinCoins} / tarefas +${tasksCoins})`,
       `📅 Sequência: ${escapeHtml(streakDays)} dias`,
+      ...(longestStreak !== 'N/D' ? [`🏆 Maior sequência: ${escapeHtml(longestStreak)}`] : []),
       `💰 Saldo: ${escapeHtml(saldoDisplay)}`,
       `⏱️ Duração: ${escapeHtml(totalDuration)}`
     ];
@@ -874,6 +878,7 @@ function buildMessageInternal({
       report.streakDays !== undefined && report.streakDays !== null
         ? String(report.streakDays)
         : 'N/D';
+    const longestStreak = toSafeStreak(report.longestStreakDays);
 
     let saldoDisplay = 'N/D';
     if (report.totalBalance && report.totalBalance !== 'N/D') {
@@ -897,6 +902,7 @@ function buildMessageInternal({
       `🖥️ <b>Host:</b> <code>${safeHost}</code>`,
       `🪙 Ganhas hoje: +${checkinCoins} moedas (check-in +${checkinCoins} / tarefas +0)`,
       `📅 Sequência: ${escapeHtml(streakDays)} dias`,
+      ...(longestStreak !== 'N/D' ? [`🏆 Maior sequência: ${escapeHtml(longestStreak)}`] : []),
       `💰 Saldo: ${escapeHtml(saldoDisplay)}`,
       `⏱️ Duração: ${escapeHtml(duration)}`
     ];

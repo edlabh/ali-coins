@@ -379,6 +379,93 @@ async function getStreakFromCoinPage(page) {
 }
 
 /**
+ * Interpreta o calendário "Daily coins" da central de moedas mobile (out/2026).
+ *
+ * O innerText traz uma janela de ~9 dias, com rótulos "Day N" nos dias passados/futuros e
+ * "Today"/"Tomorrow" nos dois do meio (ex.: "Day 4 ✓ +1 / Day 5 ✓ +1 / Today ✓ +1 /
+ * Tomorrow / Day 8 ..."). Quando o layout conta a sequência real (sem ciclo semanal), os
+ * rótulos passam de 7 — um ciclo semanal nunca passaria de "Day 7".
+ *
+ * @param {string} text innerText da página
+ * @returns {{ todayDay: number|null, maxDay: number }|null} `todayDay` é o dia da sequência
+ *   que o calendário atribui a HOJE; `maxDay` é o maior "Day N" visível. null sem "Today".
+ */
+function parseCheckinCalendar(text) {
+  if (!text || typeof text !== 'string') return null;
+  const dayRe = /^(?:Day|Dia)\s+([0-9]+)$/i;
+  const todayRe = /^(?:Today|Hoje)$/i;
+  const tomorrowRe = /^(?:Tomorrow|Amanh[ãa])$/i;
+
+  const labels = [];
+  let maxDay = 0;
+  let sawToday = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const day = line.match(dayRe);
+    if (day) {
+      const n = parseInt(day[1], 10);
+      labels.push({ type: 'day', n });
+      if (n > maxDay) maxDay = n;
+    } else if (!sawToday && todayRe.test(line)) {
+      labels.push({ type: 'today' });
+      sawToday = true;
+    } else if (sawToday && tomorrowRe.test(line)) {
+      labels.push({ type: 'tomorrow' });
+    }
+  }
+
+  const todayPos = labels.findIndex((l) => l.type === 'today');
+  if (todayPos === -1) return null;
+
+  let todayDay = null;
+  const before = labels[todayPos - 1];
+  if (before && before.type === 'day') {
+    todayDay = before.n + 1;
+  } else if (todayPos === 0) {
+    // "Today" é o primeiro slot: o dia seguinte rotulado ("Day N") vem depois de "Tomorrow",
+    // portanto N = hoje + 2. Sem nenhum rótulo adiante, hoje é o dia 1 do calendário.
+    const after = labels.slice(todayPos + 1).find((l) => l.type === 'day');
+    todayDay = after ? after.n - 2 : 1;
+  }
+  if (todayDay !== null && todayDay < 1) todayDay = null;
+  return { todayDay, maxDay };
+}
+
+/**
+ * Indica se a leitura "N days streak" da tela é a sequência REAL do AliExpress (e não um
+ * dia dentro de um ciclo semanal): o calendário precisa mostrar rótulos acima de 7 e
+ * atribuir a HOJE exatamente o mesmo número lido. Só então uma leitura menor que o
+ * histórico local é uma quebra verdadeira (e não ruído do ciclo semanal).
+ *
+ * @param {number|string|null} detectedStreak
+ * @param {{ todayDay: number|null, maxDay: number }|null} calendar
+ * @returns {boolean}
+ */
+function isRealStreakReading(detectedStreak, calendar) {
+  if (!calendar || typeof calendar !== 'object') return false;
+  const detected =
+    typeof detectedStreak === 'number'
+      ? detectedStreak
+      : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+  if (isNaN(detected) || detected < 1) return false;
+  return calendar.maxDay > 7 && calendar.todayDay === detected;
+}
+
+/**
+ * Lê o calendário "Daily coins" da página mobile já aberta.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<{ todayDay: number|null, maxDay: number }|null>}
+ */
+async function getCheckinCalendarFromCoinPage(page) {
+  try {
+    const text = await page.evaluate(() => (document.body ? document.body.innerText || '' : ''));
+    return parseCheckinCalendar(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Consulta saldo total e histórico de check-in no desktop via AliExpress My Coin
  * @param {import('playwright').Browser} browser
  * @param {string|object} sessionPathOrData Caminho para session.json ou objeto de storageState
@@ -585,6 +672,9 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
 
 module.exports = {
   getStreakFromCoinPage,
+  getCheckinCalendarFromCoinPage,
+  parseCheckinCalendar,
+  isRealStreakReading,
   getBalanceDesktop,
   closeCachedDesktopContext,
   shouldReuseDesktopContext,

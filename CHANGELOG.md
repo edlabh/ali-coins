@@ -11,6 +11,27 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+### Corrigido
+
+- **Sequência (streak) local seguia crescendo depois de o AliExpress zerá-la:** qualquer leitura
+  `<= 7` com histórico `> 7` era tratada como "ciclo semanal espúrio" e substituída por
+  `histórico + 1`. No layout atual (out/2026) a tela já mostra a sequência real (calendário
+  "Daily coins" com rótulos acima de "Day 7"), então uma quebra de verdade (ex.: conta
+  bloqueada por 11 dias, sequência reiniciada em 1) nunca era refletida: a conta aparecia com
+  28 dias enquanto o AliExpress mostrava 6. Agora o calendário é lido (`parseCheckinCalendar`)
+  e, quando não é um ciclo semanal e o dia de HOJE coincide com o número lido
+  (`isRealStreakReading`), `resolveStreakDays({ trustDetected: true })` adota a leitura da
+  tela mesmo quando é menor que o histórico. Sem calendário (ou com ciclo semanal) o
+  comportamento anterior é mantido.
+
+### Adicionado
+
+- **Maior sequência registrada (`longestStreakDays`):** gravada em `session_meta.json` junto de
+  `lastStreakDays`, exibida no relatório de log ("Maior sequência (recorde)"), nas mensagens do
+  Telegram ("Streak: 6 dias (recorde: 23 dias)" / "🏆 Maior sequência") e no JSON do relatório.
+  O recorde começa a valer a partir da primeira execução com esta versão e nunca é semeado por
+  `lastStreakDays` (que pode ter herdado um contador inflado).
+
 ## [2.2.0] - 2026-10-24
 
 ### Adicionado

@@ -21,6 +21,7 @@ const unifiedReportSchema = z.object({
       coinsGainedToday: z.string(),
       streakDays: z.union([z.number(), z.string()]),
       previousStreakDays: z.union([z.number(), z.string()]).optional().nullable(),
+      longestStreakDays: z.union([z.number(), z.string()]).optional().nullable(),
       totalBalance: z.string(),
       duration: z.string()
     })
@@ -72,6 +73,7 @@ const multiAccountReportSchema = z.object({
           coinsGainedToday: z.string(),
           streakDays: z.union([z.number(), z.string()]),
           previousStreakDays: z.union([z.number(), z.string()]).optional().nullable(),
+          longestStreakDays: z.union([z.number(), z.string()]).optional().nullable(),
           totalBalance: z.string(),
           duration: z.string()
         })
@@ -177,6 +179,12 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
  * @param {boolean} [params.confirmedByLedger=false] Extrato confirma o "Bônus diário" de hoje
  * @param {number|null} [params.statementStreak=null] Sequência lida no extrato desktop
  *   (usada para desmentir leituras de 1 na virada do dia)
+ * @param {boolean} [params.trustDetected=false] A leitura da tela é a sequência REAL do
+ *   AliExpress (calendário sem ciclo semanal e coerente com o número lido, ver
+ *   `isRealStreakReading`). O valor lido vale como está — inclusive quando é MENOR que o
+ *   histórico local, o que é uma quebra verdadeira. Sem isso, qualquer leitura <= 7 com
+ *   histórico > 7 era tratada como ciclo semanal e o contador local seguia crescendo (+1
+ *   por dia) para sempre, mesmo depois de o AliExpress zerar a sequência.
  * @returns {{ streakDays: number|string, baseStreak: number|null }}
  */
 function resolveStreakDays({
@@ -186,8 +194,25 @@ function resolveStreakDays({
   justCollected = false,
   alreadyCollected = false,
   confirmedByLedger = false,
-  statementStreak = null
+  statementStreak = null,
+  trustDetected = false
 }) {
+  if (trustDetected === true) {
+    const trusted =
+      typeof detectedStreak === 'number'
+        ? detectedStreak
+        : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(trusted) && trusted >= 1) {
+      const candidates = [previousStreakDays, earlyDesktopStreak].filter(
+        (v) => typeof v === 'number' && v > 0
+      );
+      return {
+        streakDays: trusted,
+        baseStreak: candidates.length > 0 ? Math.max(...candidates) : null
+      };
+    }
+  }
+
   const numericCandidates = [previousStreakDays, earlyDesktopStreak].filter(
     (v) => typeof v === 'number' && v > 0
   );
@@ -441,6 +466,7 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
           coinsGainedToday: checkinResult.coinsGainedToday,
           streakDays: checkinResult.streakDays,
           previousStreakDays: checkinResult.previousStreakDays,
+          longestStreakDays: checkinResult.longestStreakDays,
           totalBalance: checkinResult.totalBalance,
           duration: checkinResult.duration
         }
@@ -894,6 +920,9 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
     logger.info(
       `Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${dailyTier} moedas/dia)`
     );
+    if (typeof checkinResult.longestStreakDays === 'number') {
+      logger.info(`Maior sequência (recorde): ${checkinResult.longestStreakDays} dias`);
+    }
     const checkinGained =
       jsonOutput.meta.checkinCoinsGained ?? computeCheckinCoinsGained(checkinResult);
     // Crédito vindo do extrato conta mesmo com alreadyCollected=true (feito no app);
@@ -987,6 +1016,7 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
             coinsGainedToday: checkin.coinsGainedToday,
             streakDays: checkin.streakDays,
             previousStreakDays: checkin.previousStreakDays,
+            longestStreakDays: checkin.longestStreakDays,
             totalBalance: checkin.totalBalance,
             duration: checkin.duration
           }
@@ -1096,6 +1126,9 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
       logger.info(
         `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${dailyTier} moedas/dia)`
       );
+      if (typeof res.checkinResult.longestStreakDays === 'number') {
+        logger.info(`  • Maior sequência (recorde): ${res.checkinResult.longestStreakDays} dias`);
+      }
       const accCheckinGained =
         accMeta?.checkinCoinsGained ?? computeCheckinCoinsGained(res.checkinResult);
       const accHasLedgerCredit =

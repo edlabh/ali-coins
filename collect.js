@@ -24,6 +24,8 @@ const {
   closeModals,
   performMobileLogin,
   getStreakFromCoinPage,
+  getCheckinCalendarFromCoinPage,
+  isRealStreakReading,
   getBalanceDesktop,
   isLoginGateText,
   getCheckinCoinsFromStreak,
@@ -257,6 +259,11 @@ async function runCheckin(options = {}) {
         ? sessionStatus.previousMeta?.lastStreakDays
         : null) ??
       null;
+    // Maior sequência já registrada para ESTA conta (meta local). Não herda de outro usuário.
+    const previousLongestStreakDays =
+      typeof sessionStatus.metaData?.longestStreakDays === 'number'
+        ? sessionStatus.metaData.longestStreakDays
+        : null;
 
     // 2. Checagem prévia rápida no desktop se já foi coletado hoje
     let earlyDesktopStreak = null;
@@ -680,6 +687,7 @@ async function runCheckin(options = {}) {
       let alreadyCollected = isCheckedInitial || wasAlreadyCollectedToday;
       let justCollected = false;
       let mobileStreak = null;
+      let checkinCalendar = null;
 
       if (!alreadyCollected) {
         for (const sel of SELECTORS.checkin.collectButtonList) {
@@ -782,6 +790,10 @@ async function runCheckin(options = {}) {
       if (mobileStreak === null) {
         mobileStreak = await getStreakFromCoinPage(page);
       }
+
+      // Calendário "Daily coins": distingue a sequência REAL do AliExpress (rótulos acima de
+      // "Day 7") de um ciclo semanal, para a leitura da tela poder prevalecer sobre o histórico.
+      checkinCalendar = await getCheckinCalendarFromCoinPage(page);
 
       try {
         const updatedStorage = await context.storageState();
@@ -912,7 +924,26 @@ async function runCheckin(options = {}) {
       // Resolve o streak final (incremento determinístico, preservação em re-execução,
       // proteção contra ciclo semanal espúrio, confirmação pelo extrato e fallback para
       // a leitura do desktop).
+      // A leitura da tela é a sequência REAL quando o calendário não é um ciclo semanal e
+      // atribui a HOJE o mesmo número. Leitura 1 continua passando pela confirmação do extrato
+      // (a UI pode mostrar 1 transitoriamente na virada do dia).
+      const trustDetectedStreak =
+        mobileStreak !== null &&
+        mobileStreak !== 'N/D' &&
+        isRealStreakReading(mobileStreak, checkinCalendar) &&
+        (Number(mobileStreak) !== 1 || !(statementStreakDays > 1));
+      if (trustDetectedStreak && typeof previousStreakDays === 'number') {
+        const detectedNum = Number(mobileStreak);
+        if (detectedNum < previousStreakDays) {
+          logger.warn(
+            { account: maskUser(userEmail), detectedStreak: detectedNum, previousStreakDays },
+            'A sequência lida no calendário é menor que o histórico local; adotando a sequência real do AliExpress.'
+          );
+        }
+      }
+
       const { streakDays } = resolveStreakDays({
+        trustDetected: trustDetectedStreak,
         detectedStreak,
         previousStreakDays,
         earlyDesktopStreak:
@@ -1063,18 +1094,26 @@ async function runCheckin(options = {}) {
         throw loginErr;
       }
 
+      let longestStreakDays = previousLongestStreakDays;
       if (streakDays !== 'N/D' && streakDays !== null) {
         const numStreak =
           typeof streakDays === 'number'
             ? streakDays
             : parseInt(String(streakDays).replace(/[^0-9]/g, ''), 10);
         if (
+          trustDetectedStreak ||
           typeof previousStreakDays !== 'number' ||
           previousStreakDays <= 7 ||
           numStreak > 7 ||
           numStreak === 1
         ) {
-          await updateSessionStreak(streakDays, sessionOpts);
+          const updatedMeta = await updateSessionStreak(streakDays, sessionOpts);
+          if (typeof updatedMeta?.longestStreakDays === 'number') {
+            longestStreakDays = updatedMeta.longestStreakDays;
+          }
+        }
+        if (!isNaN(numStreak)) {
+          longestStreakDays = Math.max(longestStreakDays ?? 0, numStreak);
         }
       }
 
@@ -1095,6 +1134,7 @@ async function runCheckin(options = {}) {
         totalBalance,
         streakDays,
         previousStreakDays,
+        longestStreakDays,
         startTime: checkinStartTime,
         endTime: checkinEndTime,
         duration: checkinDuration,

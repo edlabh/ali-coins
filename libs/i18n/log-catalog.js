@@ -136,6 +136,8 @@ module.exports = {
       'Execution of surprise items canceled due to timeout.',
     'Exportação parcial: algumas contas não foram exportadas.':
       'Partial export: Some accounts were not exported.',
+    'A sequência lida no calendário é menor que o histórico local; adotando a sequência real do AliExpress.':
+      'The streak read from the calendar is lower than the local history; adopting the real AliExpress streak.',
     'Extrato desmente a quebra (sequência do extrato > 1); preservando o streak real.':
       'Statement disproves the break (streak in the statement > 1); preserving the real streak.',
     'Extrato não desmente a quebra (sequência do extrato <= 1 ou indisponível).':
@@ -586,6 +588,14 @@ module.exports = {
     {
       pt: '  • Sequência (Streak): {{0}} dias (+{{1}} moedas/dia)',
       en: '  • Streak: {{0}} days (+{{1}} coins/day)'
+    },
+    {
+      pt: '  • Maior sequência (recorde): {{0}} dias',
+      en: '  • Longest streak (record): {{0}} days'
+    },
+    {
+      pt: 'Maior sequência (recorde): {{0}} dias',
+      en: 'Longest streak (record): {{0}} days'
     },
     {
       pt: '  • Status: FALHA ({{0}})',

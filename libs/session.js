@@ -611,6 +611,7 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
         : parseInt(String(options.streakDays).replace(/[^0-9]/g, ''), 10);
     if (!isNaN(num) && num >= 0) {
       metaData.lastStreakDays = num;
+      metaData.longestStreakDays = nextLongestStreak(metaData.longestStreakDays, num);
       metaData.lastCheckinDate = new Date().toISOString();
     }
   }
@@ -661,7 +662,21 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
 }
 
 /**
- * Atualiza lastStreakDays e lastCheckinDate em session_meta.json de forma segura (0o600)
+ * Maior sequência já registrada: o recorde anterior (se for um número válido) ou o valor
+ * atual. Não é semeado a partir de `lastStreakDays`: aquele campo pode ter herdado um
+ * contador inflado de versões antigas, e o recorde passaria a ser falso para sempre.
+ * @param {unknown} previousLongest
+ * @param {number} current
+ * @returns {number}
+ */
+function nextLongestStreak(previousLongest, current) {
+  return typeof previousLongest === 'number' && previousLongest > current
+    ? previousLongest
+    : current;
+}
+
+/**
+ * Atualiza lastStreakDays, longestStreakDays e lastCheckinDate em session_meta.json de forma segura (0o600)
  * @param {number|string} streakDays Quantidade de dias da sequência
  * @param {object} [options={}] Opções de caminho de sessão
  * @returns {Promise<object|null>} Metadados atualizados ou null
@@ -680,6 +695,7 @@ async function updateSessionStreakUnlocked(streakDays, options = {}) {
 
     if (!isNaN(num) && num >= 0) {
       meta.lastStreakDays = num;
+      meta.longestStreakDays = nextLongestStreak(meta.longestStreakDays, num);
       meta.lastCheckinDate = new Date().toISOString();
       await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8', { durable: false });
       safeChmod600(mPath);
