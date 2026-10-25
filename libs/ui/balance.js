@@ -397,25 +397,39 @@ function parseCheckinCalendar(text) {
   const tomorrowRe = /^(?:Tomorrow|Amanh[ãa])$/i;
 
   const labels = [];
-  let maxDay = 0;
   let sawToday = false;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
+  const rawLines = text.split('\n');
+  for (let lineIndex = 0; lineIndex < rawLines.length; lineIndex++) {
+    const line = rawLines[lineIndex].trim();
     const day = line.match(dayRe);
     if (day) {
       const n = parseInt(day[1], 10);
-      labels.push({ type: 'day', n });
-      if (n > maxDay) maxDay = n;
+      labels.push({ type: 'day', n, line: lineIndex });
     } else if (!sawToday && todayRe.test(line)) {
-      labels.push({ type: 'today' });
+      labels.push({ type: 'today', line: lineIndex });
       sawToday = true;
     } else if (sawToday && tomorrowRe.test(line)) {
-      labels.push({ type: 'tomorrow' });
+      labels.push({ type: 'tomorrow', line: lineIndex });
     }
   }
 
   const todayPos = labels.findIndex((l) => l.type === 'today');
   if (todayPos === -1) return null;
+
+  // Evita que um "Day N" promocional/fora do calendário (mais adiante no innerText
+  // da página) infle maxDay e faça o ciclo semanal parecer uma sequência real.
+  // Considera apenas os rótulos próximos de "Today", tanto em quantidade quanto em
+  // distância de linhas.
+  const todayLine = labels[todayPos].line;
+  const windowStart = Math.max(0, todayPos - 4);
+  const windowEnd = Math.min(labels.length, todayPos + 11);
+  let maxDay = 0;
+  for (let i = windowStart; i < windowEnd; i++) {
+    const label = labels[i];
+    if (label.type === 'day' && Math.abs(label.line - todayLine) <= 80 && label.n > maxDay) {
+      maxDay = label.n;
+    }
+  }
 
   let todayDay = null;
   const before = labels[todayPos - 1];
@@ -458,7 +472,24 @@ function isRealStreakReading(detectedStreak, calendar) {
  */
 async function getCheckinCalendarFromCoinPage(page) {
   try {
-    const text = await page.evaluate(() => (document.body ? document.body.innerText || '' : ''));
+    const text = await page.evaluate(() => {
+      const bodyText = document.body ? document.body.innerText || '' : '';
+      const hasCalendar = (value) =>
+        /(?:Today|Hoje)/i.test(value) && (value.match(/(?:Day|Dia)\s+\d+/gi) || []).length >= 3;
+      if (typeof document.querySelectorAll !== 'function') return bodyText;
+
+      // Prefere o menor contêiner que tenha Today + pelo menos 3 rótulos Day/Dia.
+      // Isso evita "Day N" de banners/produtos fora do calendário inflando maxDay.
+      const candidates = [];
+      for (const element of document.querySelectorAll(
+        '[class*="aecoin-"], [class*="calendar"], [class*="checkin"], [class*="sign"]'
+      )) {
+        const value = element.innerText || '';
+        if (hasCalendar(value)) candidates.push(value);
+      }
+      candidates.sort((a, b) => a.length - b.length);
+      return candidates[0] || bodyText;
+    });
     return parseCheckinCalendar(text);
   } catch {
     return null;

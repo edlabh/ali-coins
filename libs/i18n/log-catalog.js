@@ -506,7 +506,13 @@ module.exports = {
     'Falha ao analisar JSON da sessão legada.': 'Failed to parse legacy session JSON.',
     'Falha na verificação da migração para .enc.': 'Failed to verify migration to .enc.',
     'Falha na validação das variáveis de configuração em credentials.env.':
-      'Failed to validate the configuration variables in credentials.env.'
+      'Failed to validate the configuration variables in credentials.env.',
+    'Campo/atalho de busca não disponível ou resultado não confirmado; tarefa de busca não iniciada.':
+      'Search field/shortcut unavailable or result not confirmed; search task not started.',
+    'A busca embutida abriu uma aba que não é a página de resultados esperada; fechando.':
+      'The inline search opened a tab that is not the expected results page; closing it.',
+    'A busca embutida não abriu a página de resultados esperada.':
+      'The inline search did not open the expected results page.'
   },
   templates: [
     {

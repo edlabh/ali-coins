@@ -822,6 +822,9 @@ function renderCheckinReport(checkinResult, options = {}) {
   logger.info(reportLine1);
   logger.info(reportLine2);
   logger.info(reportLine3);
+  if (typeof checkinResult.longestStreakDays === 'number') {
+    logger.info(`Maior sequência (recorde): ${checkinResult.longestStreakDays} dias`);
+  }
   logger.info('---------------------------------------------------------------');
   logger.info(`Data:                ${formatDate(checkinResult.startTime)}`);
   logger.info(`Hora de Início:      ${formatTime(checkinResult.startTime)}`);

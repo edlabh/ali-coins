@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isInteractiveOrAppOnly, executeTaskAction } = require('../libs/tasks/dispatcher');
 const { openTaskDrawer, extractTasksFromDrawer } = require('../libs/tasks/verifier');
-const { executeSearchTask } = require('../libs/tasks/search');
+const { executeSearchTask, isCoinSearchResultUrl } = require('../libs/tasks/search');
 const { executePrizeLandTask } = require('../libs/tasks/prizeland');
 const { executeSurpriseItems } = require('../libs/tasks/surprise');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
@@ -91,6 +91,7 @@ test('tasks - executeSearchTask usa o atalho de busca embutido (aecoin-searchNow
       waitForLoadState: async () => {},
       evaluate: async () => {},
       waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/coin-search/result.html?search_query=rx%20580',
       close: async () => {
         resultClosed = true;
       },
@@ -126,6 +127,69 @@ test('tasks - executeSearchTask usa o atalho de busca embutido (aecoin-searchNow
     assert.strictEqual(result, true);
     assert.strictEqual(searchNowClicked, true, 'Deve clicar no botão de busca embutido');
     assert.strictEqual(resultClosed, true, 'Deve fechar a aba aberta pelo resultado da busca');
+  } finally {
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('tasks - executeSearchTask rejeita popup que não é a página de resultados', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  try {
+    assert.strictEqual(
+      isCoinSearchResultUrl('https://m.aliexpress.com/p/coin-search/result.html?search_query=x'),
+      true
+    );
+    assert.strictEqual(isCoinSearchResultUrl('https://m.aliexpress.com/p/ad.html'), false);
+
+    let searchNowClicked = false;
+    let resultClosed = false;
+    const warnings = [];
+    const resultPage = {
+      waitForLoadState: async () => {},
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      url: () => 'https://m.aliexpress.com/p/ad.html',
+      close: async () => {
+        resultClosed = true;
+      },
+      on: () => {},
+      off: () => {}
+    };
+    const mockContext = {
+      waitForEvent: async (eventName) => {
+        assert.strictEqual(eventName, 'page');
+        while (!searchNowClicked) await new Promise((resolve) => setImmediate(resolve));
+        return resultPage;
+      }
+    };
+    const searchNowBtn = {
+      click: async () => {
+        searchNowClicked = true;
+      }
+    };
+    const mockPage = {
+      $: async (selector) => (String(selector).includes('aecoin-searchNow-') ? searchNowBtn : null),
+      $$: async () => [],
+      $eval: async () => 'Rx 580 8gb',
+      context: () => mockContext,
+      evaluate: async () => {},
+      waitForTimeout: async () => {},
+      on: () => {},
+      off: () => {}
+    };
+
+    const result = await executeSearchTask({
+      page: mockPage,
+      scrollWaitSeconds: 0,
+      logger: { info: () => {}, warn: (message) => warnings.push(message) }
+    });
+
+    assert.strictEqual(result, true);
+    assert.strictEqual(resultClosed, true, 'Popup inesperado deve ser fechado');
+    assert.ok(
+      warnings.some((message) => message.includes('não é a página de resultados')),
+      `Esperava aviso de popup inesperado; recebido: ${warnings.join(' | ')}`
+    );
   } finally {
     assertRealFilesUntouched(realFilesSnapshot);
   }

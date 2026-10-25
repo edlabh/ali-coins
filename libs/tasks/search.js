@@ -3,6 +3,20 @@ const { SELECTORS } = require('../selectors');
 const defaultLogger = require('../../logger');
 
 /**
+ * Confere se a URL é a página de resultados da busca embutida da central de moedas.
+ * Evita aceitar/rolar uma aba inesperada (anúncio, login, about:blank) como sucesso.
+ * @param {string} rawUrl
+ * @returns {boolean}
+ */
+function isCoinSearchResultUrl(rawUrl) {
+  try {
+    return /\/coin-search\/result\.html$/i.test(new URL(String(rawUrl || '')).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Busca pelo atalho embutido na central de moedas (layout aecoin-*, out/2026). Não existe
  * campo de texto: o botão "buscar agora" pesquisa o termo sugerido e abre o resultado
  * (coin-search/result.html) em NOVA aba. Retorna a página onde o resultado abriu, ou null
@@ -42,10 +56,21 @@ async function clickInlineSearchShortcut(page, logger) {
   const popup = await popupPromise;
   if (popup) {
     await popup.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+    const popupUrl = typeof popup.url === 'function' ? popup.url() : '';
+    if (!isCoinSearchResultUrl(popupUrl)) {
+      logger.warn(
+        'A busca embutida abriu uma aba que não é a página de resultados esperada; fechando.'
+      );
+      await popup.close().catch(() => {});
+      return null;
+    }
     return popup;
   }
-  // Sem nova aba: o resultado pode ter aberto na mesma página
-  return page;
+  // Sem nova aba: só aceita se a própria página já estiver no resultado esperado.
+  const currentUrl = typeof page.url === 'function' ? page.url() : '';
+  if (isCoinSearchResultUrl(currentUrl)) return page;
+  logger.warn('A busca embutida não abriu a página de resultados esperada.');
+  return null;
 }
 
 /**
@@ -97,7 +122,9 @@ async function executeSearchTask({
     if (shortcutPage) {
       resultPage = shortcutPage;
     } else {
-      logger.warn('Campo de busca não localizado na página; tarefa de busca não iniciada.');
+      logger.warn(
+        'Campo/atalho de busca não disponível ou resultado não confirmado; tarefa de busca não iniciada.'
+      );
     }
   }
 
@@ -119,5 +146,6 @@ async function executeSearchTask({
 }
 
 module.exports = {
-  executeSearchTask
+  executeSearchTask,
+  isCoinSearchResultUrl
 };

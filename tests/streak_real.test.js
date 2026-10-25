@@ -3,9 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { parseCheckinCalendar, isRealStreakReading } = require('../libs/ui/balance');
-const { resolveStreakDays } = require('../libs/report');
+const { resolveStreakDays, renderCheckinReport } = require('../libs/report');
 const { updateSessionStreak, saveSession } = require('../libs/session');
 const { buildMessage } = require('../libs/notify');
+const logger = require('../logger');
+const i18n = require('../libs/i18n');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -322,4 +324,44 @@ test('notify.js - Telegram mostra a maior sequência (multi-conta e conta única
     }
   });
   assert.doesNotMatch(legacy, /Maior sequência/);
+});
+
+test('balance.js - ignora "Day N" promocional distante do calendário', () => {
+  const noisy =
+    CALENDAR_AFTER_RESET +
+    '\n' +
+    Array.from({ length: 100 }, (_, index) => `promo ${index}`).join('\n') +
+    '\nDay 99';
+  assert.deepStrictEqual(parseCheckinCalendar(noisy), { todayDay: 6, maxDay: 12 });
+});
+
+test('report.js - renderCheckinReport inclui o recorde no log do check-in isolado', () => {
+  const previousLanguage = i18n.getLanguage();
+  const originalInfo = logger.info;
+  const lines = [];
+  i18n.setLanguage('pt-BR');
+  logger.info = (...args) => lines.push(String(args[args.length - 1]));
+  try {
+    renderCheckinReport(
+      {
+        userEmail: 'user@example.com',
+        alreadyCollected: false,
+        coinsGainedToday: '1',
+        streakDays: 6,
+        longestStreakDays: 23,
+        totalBalance: '100',
+        duration: '1s',
+        startTime: new Date('2026-09-14T10:00:00Z'),
+        endTime: new Date('2026-09-14T10:00:01Z')
+      },
+      { skipWebhook: true }
+    );
+  } finally {
+    logger.info = originalInfo;
+    i18n.setLanguage(previousLanguage);
+  }
+  assert.ok(
+    lines.some((line) => line.includes('Maior sequência (recorde): 23 dias')),
+    `log não incluiu o recorde: ${lines.join(' | ')}`
+  );
 });
