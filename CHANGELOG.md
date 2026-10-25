@@ -11,6 +11,8 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+## [2.3.0] - 2026-10-25
+
 ### Corrigido
 
 - **Sequência (streak) local seguia crescendo depois de o AliExpress zerá-la:** qualquer leitura
@@ -23,14 +25,33 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   (`isRealStreakReading`), `resolveStreakDays({ trustDetected: true })` adota a leitura da
   tela mesmo quando é menor que o histórico. Sem calendário (ou com ciclo semanal) o
   comportamento anterior é mantido.
+  O parser ignora rótulos `Day N` distantes do calendário e prioriza o menor contêiner que
+  contém "Today" + pelo menos três dias, evitando falsos positivos de conteúdo promocional.
+- **Busca embutida da central de moedas (layout aecoin-\*, out/2026):** quando não há
+  `<input>`, o bot agora clica em `aecoin-searchNow-*`, captura a aba de
+  `coin-search/result.html`, rola o resultado e fecha a aba, preservando o caminho antigo.
+  A aba só é aceita se a URL for realmente a página de resultados esperada.
+- **Renderer da aba principal caído/travado:** `ensureMainPage` agora testa a
+  responsividade da página com um `evaluate` limitado a 3 s; se o renderer caiu (mesmo com
+  `isClosed()` false), fecha e recria a página em vez de esgotar as tentativas em
+  milissegundos.
 
 ### Adicionado
 
 - **Maior sequência registrada (`longestStreakDays`):** gravada em `session_meta.json` junto de
-  `lastStreakDays`, exibida no relatório de log ("Maior sequência (recorde)"), nas mensagens do
-  Telegram ("Streak: 6 dias (recorde: 23 dias)" / "🏆 Maior sequência") e no JSON do relatório.
+  `lastStreakDays`, exibida no relatório de log do fluxo unificado e do check-in isolado
+  ("Maior sequência (recorde)"), nas mensagens do Telegram
+  ("Streak: 6 dias (recorde: 23 dias)" / "🏆 Maior sequência") e no JSON do relatório.
   O recorde começa a valer a partir da primeira execução com esta versão e nunca é semeado por
   `lastStreakDays` (que pode ter herdado um contador inflado).
+
+### Testes
+
+- `tests/streak_real.test.js`: calendários reais, reset, ciclo semanal, parser com ruído
+  promocional, recorde em `session_meta.json`, relatório do check-in e Telegram.
+- `tests/tasks.test.js`: atalho de busca embutido, rejeição de popup inesperado e
+  recuperação de renderer caído/travado.
+- Suíte completa, lint e Prettier verdes.
 
 ## [2.2.0] - 2026-10-24
 
