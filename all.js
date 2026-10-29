@@ -1,6 +1,7 @@
 const {
   loadConfig,
   handleDryRun,
+  isCheckSession,
   isForce,
   isDryRun,
   isNoDelay,
@@ -128,6 +129,14 @@ async function main() {
   // 1. Suporte a validação sem abrir navegador
   if (await handleDryRun()) {
     await flushAndExit(0);
+  }
+
+  // 1b. Checagem somente leitura da sessão (não faz check-in nem tarefas).
+  if (isCheckSession()) {
+    const { runSessionCheckCli } = require('./libs/session-check');
+    const code = await runSessionCheckCli({ allAccounts: true });
+    await flushAndExit(code);
+    return;
   }
 
   const { runCheckin } = require('./collect');
@@ -504,7 +513,8 @@ async function main() {
       const streakBroken = isStreakBreak(
         !isNaN(currentStreak) ? currentStreak : null,
         previousStreak,
-        checkinResult?.alreadyCollected
+        checkinResult?.alreadyCollected,
+        { trustDetected: checkinResult?.trustDetected === true }
       );
 
       if (streakBroken) {
@@ -717,7 +727,8 @@ async function main() {
           accStreakBroken = isStreakBreak(
             !isNaN(accCurrentStreak) ? accCurrentStreak : null,
             accPreviousStreak,
-            accCheckin?.alreadyCollected
+            accCheckin?.alreadyCollected,
+            { trustDetected: accCheckin?.trustDetected === true }
           );
 
           if (accStreakBroken) {

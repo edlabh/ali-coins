@@ -2,6 +2,7 @@ const {
   loadConfig,
   sessionPath,
   handleDryRun,
+  isCheckSession,
   isForce,
   isJson,
   checkAndDisplayHelp,
@@ -28,6 +29,7 @@ const {
   isRealStreakReading,
   getBalanceDesktop,
   isLoginGateText,
+  isLoginGateVisible,
   getCheckinCoinsFromStreak,
   shouldReuseDesktopContext,
   closeCachedDesktopContext,
@@ -163,6 +165,7 @@ function shouldReuseEarlyDesktop({ justCollected = false, earlyDesktop = null } 
  * @param {boolean} [params.loginUrl]
  * @param {boolean} [params.usernameVisible]
  * @param {string} [params.bodyText]
+ * @param {boolean} [params.gateVisible=false] Portaria detectada por DOM (prioritária)
  * @returns {boolean}
  */
 function shouldAttemptLogin({
@@ -170,11 +173,12 @@ function shouldAttemptLogin({
   passwordVisible = false,
   loginUrl = false,
   usernameVisible = false,
-  bodyText = ''
+  bodyText = '',
+  gateVisible = false
 } = {}) {
   if (passwordVisible) return true;
   if (!hasValidSession) return true;
-  if (isLoginGateText(bodyText)) return true;
+  if (gateVisible || isLoginGateText(bodyText)) return true;
   if (loginUrl && usernameVisible) return true;
   if (
     loginUrl &&
@@ -403,12 +407,14 @@ async function runCheckin(options = {}) {
       const passwordVisible = await isSelectorVisible(page, SELECTORS.login.passwordInput);
       const bodyText = await page.innerText('body').catch(() => '');
       const loginUrl = /login|sign-?in|passport/i.test(page.url());
+      const gateVisible = await isLoginGateVisible(page);
       const needsLogin = shouldAttemptLogin({
         hasValidSession,
         passwordVisible,
         loginUrl,
         usernameVisible: loginInput !== null,
-        bodyText
+        bodyText,
+        gateVisible
       });
 
       if (needsLogin) {
@@ -1107,12 +1113,17 @@ async function runCheckin(options = {}) {
           numStreak > 7 ||
           numStreak === 1
         ) {
-          const updatedMeta = await updateSessionStreak(streakDays, sessionOpts);
+          const updatedMeta = await updateSessionStreak(streakDays, {
+            ...sessionOpts,
+            trusted: trustDetectedStreak
+          });
           if (typeof updatedMeta?.longestStreakDays === 'number') {
             longestStreakDays = updatedMeta.longestStreakDays;
+          } else if (!isNaN(numStreak)) {
+            longestStreakDays = Math.max(longestStreakDays ?? 0, numStreak);
           }
-        }
-        if (!isNaN(numStreak)) {
+        } else if (!isNaN(numStreak)) {
+          // Sem persistência (leitura não confiável/legada): mantém o recorde conhecido.
           longestStreakDays = Math.max(longestStreakDays ?? 0, numStreak);
         }
       }
@@ -1135,6 +1146,9 @@ async function runCheckin(options = {}) {
         streakDays,
         previousStreakDays,
         longestStreakDays,
+        // Sinaliza que a leitura veio do calendário real (sem ciclo semanal). O chamador
+        // usa isso para distinguir uma queda real (ex.: 27 -> 6) do ciclo semanal.
+        trustDetected: trustDetectedStreak,
         startTime: checkinStartTime,
         endTime: checkinEndTime,
         duration: checkinDuration,
@@ -1207,6 +1221,13 @@ if (require.main === module) {
   (async () => {
     if (await handleDryRun()) {
       await flushAndExit(0);
+    }
+
+    if (isCheckSession()) {
+      const { runSessionCheckCli } = require('./libs/session-check');
+      const code = await runSessionCheckCli({ allAccounts: false });
+      await flushAndExit(code);
+      return;
     }
 
     const { sendTelegram } = require('./libs/notify');

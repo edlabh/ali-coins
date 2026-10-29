@@ -9,11 +9,16 @@ const { t, isEnglish, translateValue } = require('./i18n');
 // Teto de payload enviado a webhooks externos (32 KB): protege memória e destinos.
 const WEBHOOK_MAX_PAYLOAD_BYTES = 32 * 1024;
 
+// Versão do contrato JSON dos relatórios. Incrementar apenas em mudanças incompatíveis
+// para que consumidores (webhooks, dashboards, Telegram) possam evoluir sem quebrar.
+const REPORT_SCHEMA_VERSION = 1;
+
 /**
  * Esquema Zod de validação do contrato JSON do relatório unificado
  */
 const unifiedReportSchema = z.object({
   type: z.literal('unified_report'),
+  schemaVersion: z.number().int().positive().optional(),
   user: z.string().optional(),
   checkin: z
     .object({
@@ -64,6 +69,7 @@ const unifiedReportSchema = z.object({
  */
 const multiAccountReportSchema = z.object({
   type: z.literal('multi_account_report'),
+  schemaVersion: z.number().int().positive().optional(),
   accounts: z.array(
     z.object({
       user: z.string(),
@@ -133,13 +139,18 @@ const multiAccountReportSchema = z.object({
  * 4. No AliExpress, um streak quebrado sempre reseta para o Dia 1 (+10 moedas).
  *    Leituras intermediárias como 7 quando o streak anterior era > 7 (ex: 212 -> 7) são leituras do widget de 7 dias da semana,
  *    NUNCA uma quebra de sequência real.
- * 5. Quebra real: currentStreak === 1 quando previousStreak > 1 e !alreadyCollected.
+ * 5. Reset catastrófico: currentStreak === 1 quando previousStreak > 1.
+ * 6. Queda CONFIÁVEL: quando a leitura vem do calendário real (`trustDetected`), qualquer
+ *    valor menor que o histórico é uma quebra verdadeira — inclusive quedas intermediárias
+ *    (ex.: 27 -> 6). Sem essa confiança, leituras <= 7 com histórico > 7 continuam sendo
+ *    tratadas como ciclo semanal e NÃO geram alerta.
  * @param {number|null} currentStreak
  * @param {number|null} previousStreak
  * @param {boolean} [alreadyCollected=false]
+ * @param {{trustDetected?: boolean}} [options={}]
  * @returns {boolean}
  */
-function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) {
+function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false, options = {}) {
   if (typeof currentStreak !== 'number' || isNaN(currentStreak)) return false;
   if (typeof previousStreak !== 'number' || isNaN(previousStreak)) return false;
   if (previousStreak <= 1) return false;
@@ -149,17 +160,18 @@ function isStreakBreak(currentStreak, previousStreak, alreadyCollected = false) 
     return false;
   }
 
-  // Leituras intermediárias (ex: 7 quando anterior era 212) são do ciclo semanal de 7 dias do AliExpress, nunca quebra real
+  // Leitura real do calendário: queda para qualquer valor > 1 também é quebra.
+  if (options.trustDetected === true && currentStreak < previousStreak) {
+    return true;
+  }
+
+  // Sem confiança na leitura, valores intermediários ainda podem ser o ciclo semanal.
   if (currentStreak > 1 && currentStreak < previousStreak) {
     return false;
   }
 
   // Quebra real de sequência: retorno ao dia 1 após histórico anterior > 1
-  if (currentStreak === 1 && previousStreak > 1) {
-    return true;
-  }
-
-  return false;
+  return currentStreak === 1 && previousStreak > 1;
 }
 
 /**
@@ -319,6 +331,36 @@ function computeCheckinCoinsGained(checkin) {
 }
 
 /**
+ * Resolve o valor diário exibido ao lado da sequência no relatório.
+ *
+ * O tier (`getCheckinCoinsFromStreak`) é apenas uma ESTIMATIVA pelo dia da sequência.
+ * Quando o check-in trouxe o valor real creditado (extrato/UI), esse valor tem prioridade:
+ * uma conta que recebeu +1 não pode ser exibida como +40 apenas porque o streak é alto.
+ *
+ * @param {object|null} checkin
+ * @returns {{ coins: number|string, source: 'real'|'estimated'|'unknown' }}
+ */
+function resolveDailyCheckinCoins(checkin) {
+  if (!checkin) return { coins: 'N/D', source: 'unknown' };
+
+  const raw = checkin.coinsGainedToday;
+  const hasRaw = raw !== undefined && raw !== null && String(raw).trim() !== '' && raw !== 'N/D';
+  const parsedRaw = hasRaw ? parseInt(String(raw).replace(/[^0-9]/g, ''), 10) : NaN;
+  if (hasRaw && !isNaN(parsedRaw) && parsedRaw > 0) {
+    return { coins: parsedRaw, source: 'real' };
+  }
+
+  if (checkin.streakDays && checkin.streakDays !== 'N/D') {
+    const fromStreak = getCheckinCoinsFromStreak(checkin.streakDays);
+    if (typeof fromStreak === 'number' && fromStreak > 0) {
+      return { coins: fromStreak, source: 'estimated' };
+    }
+  }
+
+  return { coins: hasRaw ? raw : 'N/D', source: 'unknown' };
+}
+
+/**
  * Calcula as moedas ganhas pelas tarefas, de forma ISOLADA do check-in.
  *
  * Como o ganho das tarefas é medido por diferença de saldo (final - inicial) e o
@@ -457,6 +499,7 @@ function buildUnifiedReportPayload(checkinResult, tasksResult, meta = {}) {
 
   const payload = {
     type: 'unified_report',
+    schemaVersion: REPORT_SCHEMA_VERSION,
     user:
       meta.user ||
       (checkinResult ? checkinResult.userEmail : tasksResult ? tasksResult.userEmail : undefined),
@@ -911,17 +954,11 @@ function renderUnifiedReport(checkinResult, tasksResult, meta = {}, options = {}
   logger.info('===============================================================');
 
   if (checkinResult) {
-    const dailyTier =
-      (checkinResult.streakDays && checkinResult.streakDays !== 'N/D'
-        ? getCheckinCoinsFromStreak(checkinResult.streakDays)
-        : null) ||
-      (checkinResult.coinsGainedToday && checkinResult.coinsGainedToday !== '0'
-        ? checkinResult.coinsGainedToday
-        : 'N/D');
+    const dailyCoins = resolveDailyCheckinCoins(checkinResult).coins;
 
     logger.info(`Conta: ${maskUser(checkinResult.userEmail)}`);
     logger.info(
-      `Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${dailyTier} moedas/dia)`
+      `Sequência (Streak): ${checkinResult.streakDays} dias seguidos (+${dailyCoins} moedas/dia)`
     );
     if (typeof checkinResult.longestStreakDays === 'number') {
       logger.info(`Maior sequência (recorde): ${checkinResult.longestStreakDays} dias`);
@@ -1073,6 +1110,7 @@ function buildMultiAccountReportPayload(accountResults = [], meta = {}) {
 
   const payload = {
     type: 'multi_account_report',
+    schemaVersion: REPORT_SCHEMA_VERSION,
     accounts,
     meta: {
       startTime: meta.mainStartTime ? meta.mainStartTime.toISOString() : undefined,
@@ -1118,16 +1156,10 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
     const accMeta = jsonOutput.accounts[idx]?.meta;
 
     if (res.checkinResult) {
-      const dailyTier =
-        (res.checkinResult.streakDays && res.checkinResult.streakDays !== 'N/D'
-          ? getCheckinCoinsFromStreak(res.checkinResult.streakDays)
-          : null) ||
-        (res.checkinResult.coinsGainedToday && res.checkinResult.coinsGainedToday !== '0'
-          ? res.checkinResult.coinsGainedToday
-          : 'N/D');
+      const dailyCoins = resolveDailyCheckinCoins(res.checkinResult).coins;
 
       logger.info(
-        `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${dailyTier} moedas/dia)`
+        `  • Sequência (Streak): ${res.checkinResult.streakDays} dias (+${dailyCoins} moedas/dia)`
       );
       if (typeof res.checkinResult.longestStreakDays === 'number') {
         logger.info(`  • Maior sequência (recorde): ${res.checkinResult.longestStreakDays} dias`);
@@ -1193,9 +1225,11 @@ function renderMultiAccountReport(accountResults = [], meta = {}, options = {}) 
 }
 
 module.exports = {
+  REPORT_SCHEMA_VERSION,
   unifiedReportSchema,
   multiAccountReportSchema,
   computeCheckinCoinsGained,
+  resolveDailyCheckinCoins,
   computeTasksCoinsGained,
   computeFinalBalance,
   buildUnifiedReportPayload,

@@ -44,29 +44,42 @@ Requires **Node.js >= 22** (`.nvmrc: 22`).
 
 The CLI supports the following unified flags (via `commander`):
 
-| Flag                 | Description                                                                                                                      |
-| :------------------- | :------------------------------------------------------------------------------------------------------------------------------- |
-| `-d, --dry-run`      | Runs the full credentials and environment validation without launching Chromium.                                                 |
-| `-f, --force`        | Forces execution: overrides an active lockfile **and ignores the post-captcha cooldown** (attempts login even during the pause). |
-| `--no-delay`         | Does not apply the random initial delay (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS`) in this run (manual/retry runs).             |
-| `--json`             | Emits the execution report, diagnostics, and validation in pure JSON format.                                                     |
-| `--lang <pt-BR\|en>` | Interface and log language: `pt-BR` (default) or `en` (English). Can also be set via `APP_LANGUAGE`.                             |
-| `--notify`           | Forces Telegram notifications for the current run.                                                                               |
-| `--no-notify`        | Disables Telegram notifications for the current run.                                                                             |
-| `--manual-login`     | Opens a manual login window when needed (equivalent to `MANUAL_LOGIN=always`).                                                   |
-| `--no-manual-login`  | Never offers manual login; keeps execution 100% headless (equivalent to `MANUAL_LOGIN=never`).                                   |
-| `--heartbeat`        | Forces heartbeat / dead man's switch for the current run.                                                                        |
-| `--no-heartbeat`     | Disables heartbeat / dead man's switch for the current run.                                                                      |
-| `--all`              | Processes all configured accounts (used by `export_session.js`/`import_session.js`).                                             |
-| `--account <id>`     | Selects the account by index or email in the session CLIs.                                                                       |
-| `--plaintext`        | Allows saving the session without encryption (explicit at-rest opt-out).                                                         |
-| `--keep-tokens`      | Does not remove `session_token*.txt` after multi-account import.                                                                 |
-| `--rotate`           | Re-encrypts sessions with the new key (`SESSION_SECRET_NEW`/`SESSION_SECRET_OLD`).                                               |
-| `--migrate`          | Migrates legacy `session.json` to `session.json.enc` via `import_session.js`.                                                    |
-| `--version`          | Displays the project version.                                                                                                    |
-| `--show-token`       | Displays the encrypted token in the terminal output during `export_session.js`.                                                  |
-| `--from-file <path>` | Reads the encrypted token from the specified file during `import_session.js`.                                                    |
-| `-h, --help`         | Displays the help message with the list of available parameters.                                                                 |
+| Flag                 | Description                                                                                                                                    |
+| :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-d, --dry-run`      | Runs the full credentials and environment validation without launching Chromium.                                                               |
+| `--check-session`    | **Read-only** check: opens the coin center and reports whether the session is still authenticated (balance/streak), with no check-in or tasks. |
+| `-f, --force`        | Forces execution: overrides an active lockfile **and ignores the post-captcha cooldown** (attempts login even during the pause).               |
+| `--no-delay`         | Does not apply the random initial delay (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS`) in this run (manual/retry runs).                           |
+| `--json`             | Emits the execution report, diagnostics, and validation in pure JSON format.                                                                   |
+| `--lang <pt-BR\|en>` | Interface and log language: `pt-BR` (default) or `en` (English). Can also be set via `APP_LANGUAGE`.                                           |
+| `--notify`           | Forces Telegram notifications for the current run.                                                                                             |
+| `--no-notify`        | Disables Telegram notifications for the current run.                                                                                           |
+| `--manual-login`     | Opens a manual login window when needed (equivalent to `MANUAL_LOGIN=always`).                                                                 |
+| `--no-manual-login`  | Never offers manual login; keeps execution 100% headless (equivalent to `MANUAL_LOGIN=never`).                                                 |
+| `--heartbeat`        | Forces heartbeat / dead man's switch for the current run.                                                                                      |
+| `--no-heartbeat`     | Disables heartbeat / dead man's switch for the current run.                                                                                    |
+| `--all`              | Processes all configured accounts (used by `export_session.js`/`import_session.js`).                                                           |
+| `--account <id>`     | Selects the account by index or email in the session CLIs.                                                                                     |
+| `--plaintext`        | Allows saving the session without encryption (explicit at-rest opt-out).                                                                       |
+| `--keep-tokens`      | Does not remove `session_token*.txt` after import (batch or `--from-file`).                                                                    |
+| `--allow-expired`    | Allows importing a token whose estimated validity (`expiresAt`, ~90 days) has already passed. Use with caution.                                |
+| `--rotate`           | Re-encrypts sessions with the new key (`SESSION_SECRET_NEW`/`SESSION_SECRET_OLD`).                                                             |
+| `--migrate`          | Migrates legacy `session.json` to `session.json.enc` via `import_session.js`.                                                                  |
+| `--version`          | Displays the project version.                                                                                                                  |
+| `--show-token`       | Displays the encrypted token in the terminal output during `export_session.js`.                                                                |
+| `--from-file <path>` | Reads the encrypted token from the specified file during `import_session.js`.                                                                  |
+| `-h, --help`         | Displays the help message with the list of available parameters.                                                                               |
+
+Side-effect-free diagnostic example:
+
+```bash
+npm start -- --check-session            # all configured accounts
+npm start -- --check-session --json     # JSON output (type=session_check)
+node collect.js --check-session         # single account / --account <id>
+```
+
+The exit code is `0` when every session is valid and `1` when any check fails.
+No check-in, task, notification, or heartbeat runs in this mode.
 
 ---
 
@@ -368,7 +381,9 @@ Cloud providers have datacenter IPs that AliExpress identifies as high risk, blo
 
    > ⚠️ **Security Warning:** For security, the script refuses to accept tokens via the command line (`argv`), since that would expose credentials in the shell history (`history`) and in the system process listing (`ps aux`). The importer performs **smart auto-routing**, saving the corresponding account's session without ever overwriting other accounts.
    >
-   > 🧹 **Token Hygiene:** in batch import (`--all`), `session_token*.txt` files are removed after each successful import (single use). Use `--keep-tokens` (or `KEEP_SESSION_TOKENS=true`) to preserve them.
+   > 🧹 **Token Hygiene:** token files are single-use. In batch import (`--all`) and in `--from-file` mode, the file is removed after a successful import (STDIN exposes no path and is not removed). Use `--keep-tokens` (or `KEEP_SESSION_TOKENS=true`) to preserve them.
+   >
+   > ⏳ **Token Validity:** exported tokens have an estimated validity of ~90 days (`expiresAt`). Import rejects expired tokens by default; use `--allow-expired` only if you know the cookies still work.
 
 3. Run `./run_all.sh` in the cloud. The session will remain valid for weeks/months without requiring login.
 

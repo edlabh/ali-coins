@@ -504,6 +504,12 @@ function createCliProgram() {
     .version(pkg.version)
     .option('-d, --dry-run', t('Valida credenciais e ambiente sem abrir navegador'))
     .option(
+      '--check-session',
+      t(
+        'Verifica somente leitura se a sessão ainda está autenticada no AliExpress (não faz check-in nem tarefas)'
+      )
+    )
+    .option(
       '-f, --force',
       t(
         'Força a execução: sobrescreve lockfile ativo e ignora o cooldown pós-captcha (tenta o login)'
@@ -550,6 +556,12 @@ function createCliProgram() {
       '--keep-tokens',
       t('Mantém os arquivos session_token*.txt após a importação em lote (padrão: remover)')
     )
+    .option(
+      '--allow-expired',
+      t(
+        'Permite importar um token cuja validade estimada já expirou (import_session; use com cautela)'
+      )
+    )
     .option('--migrate', t('Migra session.json legado para session.json.enc (import_session)'))
     .option(
       '--rotate',
@@ -576,6 +588,10 @@ function parseCliOptions(argv = process.argv) {
 
 function isDryRun() {
   return process.argv.includes('--dry-run') || process.argv.includes('-d');
+}
+
+function isCheckSession() {
+  return process.argv.includes('--check-session');
 }
 
 function isForce() {
@@ -1298,6 +1314,7 @@ module.exports = {
   ConfigValidationError,
   loadConfig,
   isDryRun,
+  isCheckSession,
   isForce,
   isNoDelay,
   shouldApplyStartDelay,

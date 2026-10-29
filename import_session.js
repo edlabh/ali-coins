@@ -12,7 +12,8 @@ const {
 const {
   resolveSessionPaths,
   getEncryptionConfig,
-  migrateLegacySession: migrateLegacySessionCanonical
+  migrateLegacySession: migrateLegacySessionCanonical,
+  SESSION_META_SCHEMA_VERSION
 } = require('./libs/session');
 const { flushAndExit } = require('./libs/exit');
 const logger = require('./logger');
@@ -27,6 +28,21 @@ class ImportSessionError extends Error {
     super(message);
     this.name = 'ImportSessionError';
   }
+}
+
+/**
+ * Indica se a validade estimada do token (`meta.expiresAt`) já passou.
+ * Tokens antigos podem continuar funcionando enquanto os cookies viverem, mas importar
+ * um token vencido sem aviso esconde uma sessão provavelmente morta. A CLI rejeita por
+ * padrão e permite opt-out explícito com `--allow-expired`.
+ * @param {object|null|undefined} meta
+ * @param {Date} [now=new Date()]
+ * @returns {boolean}
+ */
+function isSessionTokenExpired(meta, now = new Date()) {
+  if (!meta || !meta.expiresAt) return false;
+  const expiry = new Date(meta.expiresAt).getTime();
+  return !isNaN(expiry) && now.getTime() > expiry;
 }
 
 // Lê um arquivo com timeout, limpando o timer em ambos os casos (evita vazar timer
@@ -205,6 +221,9 @@ async function importSession(options = {}) {
   }
 
   const baseDir = options.baseDir || __dirname;
+  // Arquivo de origem explícito (--from-file): usado para a higiene pós-importação.
+  // STDIN/pipe não expõe o caminho e não é removido aqui.
+  const sourceTokenFile = options.fromFile || getFromFile();
   const encConfig = getEncryptionConfig(options);
   const isPlaintextOptOut = Boolean(
     options.plaintext ||
@@ -304,6 +323,7 @@ async function importSession(options = {}) {
 
   const metaData = {
     ...(validated.meta || {}),
+    schemaVersion: SESSION_META_SCHEMA_VERSION,
     user: tokenUser,
     isImported: true,
     importedAt: new Date().toISOString(),
@@ -317,6 +337,18 @@ async function importSession(options = {}) {
   delete metaData.captchaCooldownHours;
   delete metaData.captchaRiskControl;
   delete metaData.captchaRequireManualLogin;
+
+  const allowExpired = Boolean(
+    options.allowExpired ||
+    process.argv.includes('--allow-expired') ||
+    /^(1|true|on)$/i.test(process.env.ALLOW_EXPIRED_SESSION || '')
+  );
+  if (isSessionTokenExpired(metaData) && !allowExpired) {
+    throw new ImportSessionError(
+      `O token de sessão expirou em ${metaData.expiresAt} (validade estimada de 90 dias). ` +
+        'Gere um novo token com "node export_session.js" ou use --allow-expired conscientemente.'
+    );
+  }
 
   if (metaData.exportedAt) {
     const exportedTime = new Date(metaData.exportedAt).getTime();
@@ -388,6 +420,30 @@ async function importSession(options = {}) {
   logger.info('Automação pronta para execução com: ./run_all.sh (ou npm start)');
   logger.info('===================================================================');
 
+  // Higiene: o token é de uso único. No fluxo unitário via --from-file, remove o arquivo
+  // após a importação bem-sucedida (o lote já fazia isso). --keep-tokens preserva.
+  const keepTokens = Boolean(
+    options.keepTokens ||
+    process.argv.includes('--keep-tokens') ||
+    /^(1|true|on)$/i.test(process.env.KEEP_SESSION_TOKENS || '')
+  );
+  if (!keepTokens && sourceTokenFile) {
+    try {
+      await fs.promises.unlink(sourceTokenFile);
+      logger.info(
+        { file: path.basename(sourceTokenFile) },
+        'Token de sessão removido após importação bem-sucedida (use --keep-tokens para preservar).'
+      );
+    } catch (unlinkErr) {
+      if (unlinkErr.code !== 'ENOENT') {
+        logger.warn(
+          { file: path.basename(sourceTokenFile), err: unlinkErr.message },
+          'Não foi possível remover o arquivo de token após a importação.'
+        );
+      }
+    }
+  }
+
   return {
     user: metaData.user,
     cookiesCount: sessionData.cookies.length,
@@ -451,6 +507,8 @@ async function importAllSessions(options = {}) {
         ...options,
         baseDir,
         fromFile: tPath,
+        // O lote controla a remoção no fim (respeitando --keep-tokens); evita unlink duplo.
+        keepTokens: true,
         sessionPath: undefined,
         sessionMetaPath: undefined
       });
@@ -557,6 +615,7 @@ module.exports = {
   importAllSessions,
   migrateLegacySession,
   normalizeImportCliResult,
+  isSessionTokenExpired,
   ImportSessionError,
   readTokenFromInput
 };

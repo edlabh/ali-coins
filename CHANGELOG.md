@@ -11,6 +11,68 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+## [2.4.0] - 2026-10-29
+
+### Adicionado
+
+- **`--check-session` (somente leitura):** abre a central de moedas e informa se a sessão
+  continua autenticada, exibindo saldo e streak sem executar check-in, tarefas,
+  notificações ou heartbeat. Em `all.js` verifica todas as contas; em `collect.js`
+  respeita `--account`. Com `--json`, emite `type: "session_check"` e `schemaVersion`.
+  Código de saída `0` quando todas as sessões são válidas e `1` quando alguma falha.
+- **`schemaVersion` nos contratos JSON:** relatórios unificados/multi-conta
+  (`REPORT_SCHEMA_VERSION = 1`), `session_check` e `session_meta.json`
+  (`SESSION_META_SCHEMA_VERSION = 1`), permitindo evolução compatível de webhooks,
+  dashboards e consumidores externos.
+- **`longestStreakSource` em `session_meta.json`:** registra se o recorde veio de leitura
+  confiável do calendário (`trusted`) ou de estimativa, permitindo recalibrar recordes
+  legados sem perder recordes já confirmados.
+- **`--allow-expired`:** opt-out explícito para importar tokens cuja validade estimada
+  (`expiresAt`, ~90 dias) já passou. O padrão continua rejeitando tokens vencidos.
+- **`resolveDailyCheckinCoins`:** prioriza o valor realmente creditado no check-in
+  (`coinsGainedToday`) e usa o tier da sequência apenas como estimativa de fallback.
+
+### Corrigido
+
+- **Moedas/dia exibidas no relatório usavam apenas o tier da sequência:** uma conta que
+  recebeu `+1` podia aparecer como `+40 moedas/dia` só porque o streak era alto. O valor
+  real creditado agora tem prioridade; o tier é usado somente quando o valor real não
+  está disponível.
+- **Quebra de streak em quedas intermediárias confiáveis:** `isStreakBreak` agora aceita
+  `{ trustDetected: true }` e trata qualquer redução real do calendário (ex.: `27 -> 6`)
+  como quebra, mantendo a proteção contra o ciclo semanal quando a leitura não é
+  confiável. `all.js` propaga o sinal vindo do check-in.
+- **Recorde inflado por leitura não confiável:** `nextLongestStreak` recalibra um recorde
+  legado apenas quando chega uma leitura confiável e o recorde anterior nunca foi
+  confirmado; recordes `trusted` nunca diminuem.
+- **Gate de login detectado apenas por heurística de texto:** `isLoginGateVisible` passa a
+  verificar o DOM (botão de login visível + ausência do saldo) e é consultado antes de
+  decidir por re-login, reduzindo falsos positivos e falsos negativos.
+- **Popup da busca embutida aceitava qualquer host:** `isCoinSearchResultUrl` exige agora
+  HTTPS e host AliExpress (`.aliexpress.com`), impedindo que um popup externo que imite
+  `/coin-search/result.html` receba rolagem/interação.
+- **Fechamento de popup podia travar a tarefa:** `closePopupWithTimeout` limita o
+  `close()` a 3 s, evitando execução pendurada com renderer travado.
+- **Tokens de sessão vencidos eram importados silenciosamente:** `importSession` rejeita
+  tokens com `expiresAt` no passado (`ImportSessionError`), com opt-out via
+  `--allow-expired`.
+- **Token de uso único permanecia no disco no modo `--from-file`:** o arquivo é removido
+  após importação bem-sucedida (o lote já fazia isso); `--keep-tokens` /
+  `KEEP_SESSION_TOKENS=true` preservam. STDIN continua sem remoção por não expor caminho.
+
+### Documentação
+
+- `README.md`, `README.en.md` e `README.es.md` documentam `--check-session`,
+  `--allow-expired`, a saída JSON e a higiene/validade dos tokens.
+
+### Testes
+
+- `tests/reliability_240.test.js`: valor real de moedas/dia, quebra confiável de streak,
+  recalibração de recorde, `schemaVersion`, validação de host/HTTPS da busca, timeout de
+  fechamento de popup, classificação do `--check-session`, gate de login por DOM,
+  rejeição/opt-out de token expirado e limpeza de token com `--from-file`/`--keep-tokens`.
+- Suíte completa (521 testes), lint e Prettier verdes.
+
 ## [2.3.0] - 2026-10-25
 
 ### Corrigido

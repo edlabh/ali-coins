@@ -19,6 +19,10 @@ const {
 const { filterStorageState, shouldFilterStorage } = require('./storage_filter');
 const logger = require('../logger');
 
+// Versão do contrato de session_meta.json. Campos novos podem ser adicionados de forma
+// compatível; consumidores devem usar este número para decidir como interpretar o arquivo.
+const SESSION_META_SCHEMA_VERSION = 1;
+
 /**
  * Erro de migração de sessão legada (modo estrito, usado pela CLI de importação).
  */
@@ -579,6 +583,7 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
 
   const metaData = {
     ...prevMeta,
+    schemaVersion: SESSION_META_SCHEMA_VERSION,
     user,
     savedAt: new Date().toISOString(),
     encrypted: shouldEncrypt
@@ -610,8 +615,18 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
         ? options.streakDays
         : parseInt(String(options.streakDays).replace(/[^0-9]/g, ''), 10);
     if (!isNaN(num) && num >= 0) {
+      const trusted = options.streakTrusted === true;
+      const previousSource = metaData.longestStreakSource;
       metaData.lastStreakDays = num;
-      metaData.longestStreakDays = nextLongestStreak(metaData.longestStreakDays, num);
+      metaData.longestStreakDays = nextLongestStreak(metaData.longestStreakDays, num, {
+        trusted,
+        previousSource
+      });
+      if (trusted) {
+        metaData.longestStreakSource = 'trusted';
+      } else if (!previousSource) {
+        metaData.longestStreakSource = 'estimate';
+      }
       metaData.lastCheckinDate = new Date().toISOString();
     }
   }
@@ -665,14 +680,30 @@ async function saveSessionUnlocked(storageState, user, options = {}) {
  * Maior sequência já registrada: o recorde anterior (se for um número válido) ou o valor
  * atual. Não é semeado a partir de `lastStreakDays`: aquele campo pode ter herdado um
  * contador inflado de versões antigas, e o recorde passaria a ser falso para sempre.
+ *
+ * Correção de recorde legado: quando chega uma leitura CONFIÁVEL do calendário
+ * (`trusted: true`) menor que um recorde que nunca teve origem confiável, o recorde é
+ * recalibrado para o valor real. Recordes já marcados como `trusted` nunca diminuem por
+ * uma leitura isolada — só crescem.
  * @param {unknown} previousLongest
  * @param {number} current
+ * @param {{trusted?: boolean, previousSource?: string}} [options={}]
  * @returns {number}
  */
-function nextLongestStreak(previousLongest, current) {
-  return typeof previousLongest === 'number' && previousLongest > current
-    ? previousLongest
-    : current;
+function nextLongestStreak(previousLongest, current, options = {}) {
+  if (typeof current !== 'number' || isNaN(current) || current < 0) {
+    return typeof previousLongest === 'number' && !isNaN(previousLongest) ? previousLongest : 0;
+  }
+  const previous =
+    typeof previousLongest === 'number' && !isNaN(previousLongest) ? previousLongest : null;
+  if (previous === null) return current;
+
+  const trusted = options.trusted === true;
+  const previousTrusted = options.previousSource === 'trusted';
+  if (trusted && !previousTrusted && previous > current) {
+    return current;
+  }
+  return previous > current ? previous : current;
 }
 
 /**
@@ -694,8 +725,19 @@ async function updateSessionStreakUnlocked(streakDays, options = {}) {
         : parseInt(String(streakDays).replace(/[^0-9]/g, ''), 10);
 
     if (!isNaN(num) && num >= 0) {
+      const trusted = options.trusted === true;
+      const previousSource = meta.longestStreakSource;
+      meta.schemaVersion = SESSION_META_SCHEMA_VERSION;
       meta.lastStreakDays = num;
-      meta.longestStreakDays = nextLongestStreak(meta.longestStreakDays, num);
+      meta.longestStreakDays = nextLongestStreak(meta.longestStreakDays, num, {
+        trusted,
+        previousSource
+      });
+      if (trusted) {
+        meta.longestStreakSource = 'trusted';
+      } else if (!previousSource) {
+        meta.longestStreakSource = 'estimate';
+      }
       meta.lastCheckinDate = new Date().toISOString();
       await safeWriteFile(mPath, JSON.stringify(meta, null, 2), 'utf-8', { durable: false });
       safeChmod600(mPath);
@@ -1303,6 +1345,8 @@ function rotateSessionSecret(options = {}) {
 }
 
 module.exports = {
+  SESSION_META_SCHEMA_VERSION,
+  nextLongestStreak,
   loadSessionFiles,
   clearSession,
   validateAndRefresh,

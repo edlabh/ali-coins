@@ -56,6 +56,35 @@ function isLoginGateText(text) {
 }
 
 /**
+ * Detecta a portaria de login priorizando o DOM (botão visível) em vez de heurística de
+ * texto. Só considera páginas da central de moedas e exige ausência do saldo: um link
+ * "Log in" no rodapé de uma página autenticada não pode disparar re-login.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<boolean>}
+ */
+async function isLoginGateVisible(page) {
+  if (!page || typeof page.$ !== 'function') return false;
+  let url = '';
+  try {
+    url = typeof page.url === 'function' ? page.url() : '';
+  } catch {
+    return false;
+  }
+  if (!/coin-index|mycoin/i.test(String(url))) return false;
+
+  try {
+    const loginButton = await page.$(
+      'a:has-text("Log in"), button:has-text("Log in"), a:has-text("Entrar"), button:has-text("Entrar"), button:has-text("Sign in"), a:has-text("Sign in")'
+    );
+    if (!loginButton) return false;
+    const balance = await page.$('text=/My coins|Minhas moedas/i');
+    return balance === null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Extrai número de dias de sequência a partir de uma string de texto qualquer
  * @param {string} text
  * @returns {number|null}
@@ -715,5 +744,6 @@ module.exports = {
   getCheckinCoinsFromStreak,
   getStreakFromDesktopHistory,
   isLoginPromptText,
-  isLoginGateText
+  isLoginGateText,
+  isLoginGateVisible
 };

@@ -42,29 +42,42 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 
 A CLI suporta as seguintes flags unificadas (via `commander`):
 
-| Flag                    | Descrição                                                                                                                    |
-| :---------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
-| `-d, --dry-run`         | Executa a validação completa de credenciais e ambiente sem inicializar o Chromium.                                           |
-| `-f, --force`           | Força a execução: sobrescreve um lockfile ativo **e ignora o cooldown pós-captcha** (tenta o login mesmo com a pausa ativa). |
-| `--no-delay`            | Não aplica o atraso inicial aleatório (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS`) nesta execução (manuais/retentativas).     |
-| `--json`                | Emite o relatório de execução, diagnósticos e validação em formato JSON puro.                                                |
-| `--lang <pt-BR\|en>`    | Idioma da interface e dos logs: `pt-BR` (padrão) ou `en` (English). Também pode ser definido por `APP_LANGUAGE`.             |
-| `--notify`              | Força o envio de notificações via Telegram para a execução atual.                                                            |
-| `--no-notify`           | Desativa o envio de notificações via Telegram para a execução atual.                                                         |
-| `--manual-login`        | Abre uma janela para login manual quando necessário (equivale a `MANUAL_LOGIN=always`).                                      |
-| `--no-manual-login`     | Nunca oferece login manual; mantém 100% headless (equivale a `MANUAL_LOGIN=never`).                                          |
-| `--heartbeat`           | Força o envio de heartbeat / dead man's switch para a execução atual.                                                        |
-| `--no-heartbeat`        | Desativa o envio de heartbeat / dead man's switch para a execução atual.                                                     |
-| `--all`                 | Processa todas as contas configuradas (usado por `export_session.js`/`import_session.js`).                                   |
-| `--account <id>`        | Seleciona a conta por índice ou e-mail nas CLIs de sessão.                                                                   |
-| `--plaintext`           | Permite gravar a sessão sem criptografia (opt-out explícito do at-rest).                                                     |
-| `--keep-tokens`         | Não remove os `session_token*.txt` após a importação multi-conta.                                                            |
-| `--rotate`              | Re-criptografa as sessões com a nova chave (`SESSION_SECRET_NEW`/`SESSION_SECRET_OLD`).                                      |
-| `--migrate`             | Migra `session.json` legado para `session.json.enc` via `import_session.js`.                                                 |
-| `--version`             | Exibe a versão do projeto.                                                                                                   |
-| `--show-token`          | Exibe o token criptografado na saída do terminal durante o `export_session.js`.                                              |
-| `--from-file <caminho>` | Lê o token criptografado a partir do arquivo especificado durante o `import_session.js`.                                     |
-| `-h, --help`            | Exibe a mensagem de ajuda com a lista de parâmetros disponíveis.                                                             |
+| Flag                    | Descrição                                                                                                                                   |
+| :---------------------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-d, --dry-run`         | Executa a validação completa de credenciais e ambiente sem inicializar o Chromium.                                                          |
+| `--check-session`       | Checagem **somente leitura**: abre a central de moedas e informa se a sessão continua autenticada (saldo/streak), sem check-in nem tarefas. |
+| `-f, --force`           | Força a execução: sobrescreve um lockfile ativo **e ignora o cooldown pós-captcha** (tenta o login mesmo com a pausa ativa).                |
+| `--no-delay`            | Não aplica o atraso inicial aleatório (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS`) nesta execução (manuais/retentativas).                    |
+| `--json`                | Emite o relatório de execução, diagnósticos e validação em formato JSON puro.                                                               |
+| `--lang <pt-BR\|en>`    | Idioma da interface e dos logs: `pt-BR` (padrão) ou `en` (English). Também pode ser definido por `APP_LANGUAGE`.                            |
+| `--notify`              | Força o envio de notificações via Telegram para a execução atual.                                                                           |
+| `--no-notify`           | Desativa o envio de notificações via Telegram para a execução atual.                                                                        |
+| `--manual-login`        | Abre uma janela para login manual quando necessário (equivale a `MANUAL_LOGIN=always`).                                                     |
+| `--no-manual-login`     | Nunca oferece login manual; mantém 100% headless (equivale a `MANUAL_LOGIN=never`).                                                         |
+| `--heartbeat`           | Força o envio de heartbeat / dead man's switch para a execução atual.                                                                       |
+| `--no-heartbeat`        | Desativa o envio de heartbeat / dead man's switch para a execução atual.                                                                    |
+| `--all`                 | Processa todas as contas configuradas (usado por `export_session.js`/`import_session.js`).                                                  |
+| `--account <id>`        | Seleciona a conta por índice ou e-mail nas CLIs de sessão.                                                                                  |
+| `--plaintext`           | Permite gravar a sessão sem criptografia (opt-out explícito do at-rest).                                                                    |
+| `--keep-tokens`         | Não remove os `session_token*.txt` após a importação (lote ou `--from-file`).                                                               |
+| `--allow-expired`       | Permite importar um token cuja validade estimada (`expiresAt`, ~90 dias) já passou. Use com cautela.                                        |
+| `--rotate`              | Re-criptografa as sessões com a nova chave (`SESSION_SECRET_NEW`/`SESSION_SECRET_OLD`).                                                     |
+| `--migrate`             | Migra `session.json` legado para `session.json.enc` via `import_session.js`.                                                                |
+| `--version`             | Exibe a versão do projeto.                                                                                                                  |
+| `--show-token`          | Exibe o token criptografado na saída do terminal durante o `export_session.js`.                                                             |
+| `--from-file <caminho>` | Lê o token criptografado a partir do arquivo especificado durante o `import_session.js`.                                                    |
+| `-h, --help`            | Exibe a mensagem de ajuda com a lista de parâmetros disponíveis.                                                                            |
+
+Exemplo de diagnóstico sem efeitos colaterais:
+
+```bash
+npm start -- --check-session            # todas as contas configuradas
+npm start -- --check-session --json     # saída JSON (type=session_check)
+node collect.js --check-session         # conta única / --account <id>
+```
+
+O código de saída é `0` quando todas as sessões estão válidas e `1` quando alguma falha.
+Nenhum check-in, tarefa, notificação ou heartbeat é executado nesse modo.
 
 ---
 
@@ -366,7 +379,9 @@ Provedores de nuvem possuem IPs de Datacenter que o AliExpress identifica com ri
 
    > ⚠️ **Aviso de Segurança:** Por segurança, o script recusa a passagem de tokens via linha de comando (`argv`), pois isso exporia credenciais no histórico do shell (`history`) e na listagem de processos do sistema (`ps aux`). O importador realiza **auto-roteamento inteligente**, salvando a sessão da conta correspondente sem nunca sobrescrever outras contas.
    >
-   > 🧹 **Higiene de Tokens:** na importação em lote (`--all`), os arquivos `session_token*.txt` são removidos após cada importação bem-sucedida (uso único). Use `--keep-tokens` (ou `KEEP_SESSION_TOKENS=true`) para preservá-los.
+   > 🧹 **Higiene de Tokens:** os arquivos de token são de uso único. Na importação em lote (`--all`) e no modo `--from-file`, o arquivo é removido após a importação bem-sucedida (STDIN não expõe caminho e não é removido). Use `--keep-tokens` (ou `KEEP_SESSION_TOKENS=true`) para preservá-los.
+   >
+   > ⏳ **Validade do Token:** tokens exportados têm validade estimada de ~90 dias (`expiresAt`). A importação recusa tokens vencidos por padrão; use `--allow-expired` apenas se souber que os cookies ainda funcionam.
 
 3. Execute `./run_all.sh` na nuvem. A sessão permanecerá válida por semanas/meses sem exigir login.
 

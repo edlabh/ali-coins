@@ -3,17 +3,61 @@ const { SELECTORS } = require('../selectors');
 const defaultLogger = require('../../logger');
 
 /**
+ * Hosts AliExpress aceitos para o popup da busca embutida. O sufixo `.aliexpress.com`
+ * cobre variantes regionais (`m.`, `www.`, `es.`, `pt.`), mas NUNCA hosts externos que
+ * apenas contenham o nome (ex.: `aliexpress.com.evil.example` ou `evil-aliexpress.com`).
+ * @param {string} hostname
+ * @returns {boolean}
+ */
+function isAllowedAliExpressHost(hostname) {
+  const host = String(hostname || '')
+    .toLowerCase()
+    .replace(/\.$/, '');
+  return host === 'aliexpress.com' || host.endsWith('.aliexpress.com');
+}
+
+/**
  * Confere se a URL é a página de resultados da busca embutida da central de moedas.
  * Evita aceitar/rolar uma aba inesperada (anúncio, login, about:blank) como sucesso.
+ * Exige HTTPS e host AliExpress: só o pathname não basta, pois um popup externo poderia
+ * imitar `/coin-search/result.html` e receber rolagem/interação.
  * @param {string} rawUrl
  * @returns {boolean}
  */
 function isCoinSearchResultUrl(rawUrl) {
   try {
-    return /\/coin-search\/result\.html$/i.test(new URL(String(rawUrl || '')).pathname);
+    const parsed = new URL(String(rawUrl || ''));
+    if (parsed.protocol !== 'https:') return false;
+    if (!isAllowedAliExpressHost(parsed.hostname)) return false;
+    return /\/coin-search\/result\.html$/i.test(parsed.pathname);
   } catch {
     return false;
   }
+}
+
+/**
+ * Fecha uma aba/popup com timeout rígido. `close().catch()` sozinho pode ficar pendurado
+ * se o renderer estiver travado, prendendo a execução da tarefa indefinidamente.
+ * @param {{close?: () => Promise<void>}|null} popup
+ * @param {number} [timeoutMs=3000]
+ * @returns {Promise<void>}
+ */
+async function closePopupWithTimeout(popup, timeoutMs = 3000) {
+  if (!popup || typeof popup.close !== 'function') return;
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    Promise.resolve()
+      .then(() => popup.close())
+      .catch(() => {})
+      .then(finish);
+  });
 }
 
 /**
@@ -61,7 +105,7 @@ async function clickInlineSearchShortcut(page, logger) {
       logger.warn(
         'A busca embutida abriu uma aba que não é a página de resultados esperada; fechando.'
       );
-      await popup.close().catch(() => {});
+      await closePopupWithTimeout(popup);
       return null;
     }
     return popup;
@@ -139,7 +183,7 @@ async function executeSearchTask({
   } finally {
     // A aba do resultado é nossa: fecha para o painel ser relido na página principal
     if (resultPage !== page && typeof resultPage.close === 'function') {
-      await resultPage.close().catch(() => {});
+      await closePopupWithTimeout(resultPage);
     }
   }
   return true;
@@ -147,5 +191,7 @@ async function executeSearchTask({
 
 module.exports = {
   executeSearchTask,
-  isCoinSearchResultUrl
+  isCoinSearchResultUrl,
+  isAllowedAliExpressHost,
+  closePopupWithTimeout
 };

@@ -7,6 +7,10 @@ module.exports = {
   exact: {
     '\n--- COMO IMPORTAR NO SEU SERVIDOR REMOTO ---':
       '\n--- HOW TO IMPORT ON YOUR REMOTE SERVER ---',
+    '[Sessão Inválida] A checagem somente leitura falhou.':
+      '[Invalid Session] The read-only check failed.',
+    'Conta não encontrada para --check-session.': 'Account not found for --check-session.',
+    'Sessão válida (somente leitura).': 'Valid session (read-only).',
     '\n---------------------------------------------------------------':
       '\n---------------------------------------------------------------',
     '\n================ RESUMO DAS TAREFAS ================':
@@ -1102,6 +1106,10 @@ module.exports = {
     {
       pt: 'Concluída ({{0}})',
       en: 'Completed ({{0}})'
+    },
+    {
+      pt: '[{{0}}] {{1}} — {{2}}',
+      en: '[{{0}}] {{1}} — {{2}}'
     }
   ]
 };

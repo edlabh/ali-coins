@@ -47,6 +47,7 @@ La CLI admite las siguientes flags unificadas (mediante `commander`):
 | Flag                 | Descripción                                                                                                                                    |
 | :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-d, --dry-run`      | Ejecuta la validación completa de credenciales y entorno sin iniciar Chromium.                                                                 |
+| `--check-session`    | Comprobación **de solo lectura**: abre la central de monedas e indica si la sesión sigue autenticada (saldo/racha), sin check-in ni tareas.    |
 | `-f, --force`        | Fuerza la ejecución: sobrescribe un lockfile activo **e ignora el cooldown posterior al captcha** (intenta el login incluso durante la pausa). |
 | `--no-delay`         | No aplica el retraso inicial aleatorio (`START_DELAY_MIN_MS`/`START_DELAY_MAX_MS`) en esta ejecución (manuales/reintentos).                    |
 | `--json`             | Emite el informe de ejecución, diagnósticos y validación en formato JSON puro.                                                                 |
@@ -60,13 +61,25 @@ La CLI admite las siguientes flags unificadas (mediante `commander`):
 | `--all`              | Procesa todas las cuentas configuradas (usado por `export_session.js`/`import_session.js`).                                                    |
 | `--account <id>`     | Selecciona la cuenta por índice o correo electrónico en las CLI de sesión.                                                                     |
 | `--plaintext`        | Permite guardar la sesión sin cifrado (opt-out explícito del at-rest).                                                                         |
-| `--keep-tokens`      | No elimina los `session_token*.txt` tras la importación multicuenta.                                                                           |
+| `--keep-tokens`      | No elimina los `session_token*.txt` tras la importación (lote o `--from-file`).                                                                |
+| `--allow-expired`    | Permite importar un token cuya validez estimada (`expiresAt`, ~90 días) ya pasó. Úsalo con cautela.                                            |
 | `--rotate`           | Vuelve a cifrar las sesiones con la nueva clave (`SESSION_SECRET_NEW`/`SESSION_SECRET_OLD`).                                                   |
 | `--migrate`          | Migra `session.json` heredado a `session.json.enc` mediante `import_session.js`.                                                               |
 | `--version`          | Muestra la versión del proyecto.                                                                                                               |
 | `--show-token`       | Muestra el token cifrado en la salida del terminal durante `export_session.js`.                                                                |
 | `--from-file <ruta>` | Lee el token cifrado desde el archivo especificado durante `import_session.js`.                                                                |
 | `-h, --help`         | Muestra el mensaje de ayuda con la lista de parámetros disponibles.                                                                            |
+
+Ejemplo de diagnóstico sin efectos secundarios:
+
+```bash
+npm start -- --check-session            # todas las cuentas configuradas
+npm start -- --check-session --json     # salida JSON (type=session_check)
+node collect.js --check-session         # cuenta única / --account <id>
+```
+
+El código de salida es `0` cuando todas las sesiones son válidas y `1` cuando alguna falla.
+En este modo no se ejecuta ningún check-in, tarea, notificación ni heartbeat.
 
 ---
 
@@ -368,7 +381,9 @@ Los proveedores de nube tienen IPs de datacenter que AliExpress identifica como 
 
    > ⚠️ **Aviso de seguridad:** por seguridad, el script rechaza el paso de tokens mediante la línea de comandos (`argv`), ya que expondría credenciales en el historial del shell (`history`) y en el listado de procesos del sistema (`ps aux`). El importador realiza **enrutamiento automático inteligente**, guardando la sesión de la cuenta correspondiente sin sobrescribir nunca otras cuentas.
    >
-   > 🧹 **Higiene de tokens:** en la importación por lotes (`--all`), los archivos `session_token*.txt` se eliminan tras cada importación correcta (uso único). Usa `--keep-tokens` (o `KEEP_SESSION_TOKENS=true`) para conservarlos.
+   > 🧹 **Higiene de tokens:** los archivos de token son de uso único. En la importación por lotes (`--all`) y en el modo `--from-file`, el archivo se elimina tras una importación correcta (STDIN no expone ruta y no se elimina). Usa `--keep-tokens` (o `KEEP_SESSION_TOKENS=true`) para conservarlos.
+   >
+   > ⏳ **Validez del token:** los tokens exportados tienen una validez estimada de ~90 días (`expiresAt`). La importación rechaza tokens vencidos por defecto; usa `--allow-expired` solo si sabes que las cookies siguen funcionando.
 
 3. Ejecuta `./run_all.sh` en la nube. La sesión seguirá siendo válida durante semanas/meses sin requerir login.
 
