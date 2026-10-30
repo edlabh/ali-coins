@@ -132,7 +132,10 @@ async function runSessionCheckCli({ allAccounts = false } = {}) {
         a.index === Number(requested) || a.user.toLowerCase() === String(requested).toLowerCase()
     );
     if (selected.length === 0) {
-      logger.error({ account: requested }, 'Conta não encontrada para --check-session.');
+      logger.error(
+        { account: requested, msgId: 'session.check.not_found' },
+        'Conta não encontrada para --check-session.'
+      );
       return 1;
     }
   } else if (!allAccounts && accounts.length > 1) {
@@ -150,13 +153,14 @@ async function runSessionCheckCli({ allAccounts = false } = {}) {
           {
             account: result.user,
             balance: result.balance,
-            streak: result.streak
+            streak: result.streak,
+            msgId: 'session.check.valid'
           },
           'Sessão válida (somente leitura).'
         );
       } else {
         logger.error(
-          { account: result.user, reason: result.reason },
+          { account: result.user, reason: result.reason, msgId: 'session.check.invalid' },
           '[Sessão Inválida] A checagem somente leitura falhou.'
         );
       }
@@ -184,7 +188,13 @@ async function runSessionCheckCli({ allAccounts = false } = {}) {
       const detail = r.ok
         ? `saldo=${r.balance}; streak=${r.streak ?? 'N/D'}`
         : `motivo=${r.reason}`;
-      logger.info(`[${r.ok ? 'OK' : 'FALHA'}] ${r.user} — ${detail}`);
+      logger.info(
+        {
+          msgId: 'session.check.summary',
+          msgParams: [r.ok ? 'OK' : 'FALHA', r.user, detail]
+        },
+        `[${r.ok ? 'OK' : 'FALHA'}] ${r.user} — ${detail}`
+      );
     }
   }
 

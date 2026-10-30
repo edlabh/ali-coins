@@ -210,7 +210,10 @@ async function migrateLegacySession(options = {}) {
  */
 async function importSession(options = {}) {
   logger.info('===================================================================');
-  logger.info('         IMPORTAÇÃO SEGURA DE SESSÃO ALIEXPRESS (AES-256-GCM)');
+  logger.info(
+    { msgId: 'import.header.single' },
+    '         IMPORTAÇÃO SEGURA DE SESSÃO ALIEXPRESS (AES-256-GCM)'
+  );
   logger.info('===================================================================');
 
   const secret = options.secret !== undefined ? options.secret : process.env.SESSION_SECRET;
@@ -376,18 +379,35 @@ async function importSession(options = {}) {
     }
 
     logger.info(
+      {
+        msgId: 'import.session_valid',
+        msgParams: [maskUser(metaData.user), accountLabel]
+      },
       `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${maskUser(metaData.user)}"${accountLabel}!`
     );
     if (metaData.exportedAt) {
-      logger.info(`[SUCESSO] Data de exportação original: ${metaData.exportedAt}`);
+      logger.info(
+        { msgId: 'import.export_date', msgParams: [metaData.exportedAt] },
+        `[SUCESSO] Data de exportação original: ${metaData.exportedAt}`
+      );
     }
     if (metaData.expiresAt) {
-      logger.info(`[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`);
+      logger.info(
+        { msgId: 'import.validity', msgParams: [metaData.expiresAt] },
+        `[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`
+      );
     }
     logger.info(
+      {
+        msgId: 'import.file_encrypted',
+        msgParams: [path.basename(encPath), sessionData.cookies.length]
+      },
       `[SUCESSO] Arquivo "${path.basename(encPath)}" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, criptografia AES-256-GCM at-rest).`
     );
-    logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
+    logger.info(
+      { msgId: 'import.file', msgParams: [path.basename(mPath)] },
+      `[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`
+    );
   } else {
     await safeWriteFile(sPath, JSON.stringify(sessionData, null, 2), 'utf-8');
     safeChmod600(sPath);
@@ -398,18 +418,35 @@ async function importSession(options = {}) {
     }
 
     logger.info(
+      {
+        msgId: 'import.session_valid',
+        msgParams: [maskUser(metaData.user), accountLabel]
+      },
       `[SUCESSO] Sessão autenticada descriptografada e validada para a conta: "${maskUser(metaData.user)}"${accountLabel}!`
     );
     if (metaData.exportedAt) {
-      logger.info(`[SUCESSO] Data de exportação original: ${metaData.exportedAt}`);
+      logger.info(
+        { msgId: 'import.export_date', msgParams: [metaData.exportedAt] },
+        `[SUCESSO] Data de exportação original: ${metaData.exportedAt}`
+      );
     }
     if (metaData.expiresAt) {
-      logger.info(`[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`);
+      logger.info(
+        { msgId: 'import.validity', msgParams: [metaData.expiresAt] },
+        `[SUCESSO] Validade estimada da sessão: até ${metaData.expiresAt}`
+      );
     }
     logger.info(
+      {
+        msgId: 'import.file_plaintext',
+        msgParams: [path.basename(sPath), sessionData.cookies.length]
+      },
       `[SUCESSO] Arquivo "${path.basename(sPath)}" gravado com permissão 0o600 (${sessionData.cookies.length} cookies, opt-out plaintext at-rest).`
     );
-    logger.info(`[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`);
+    logger.info(
+      { msgId: 'import.file', msgParams: [path.basename(mPath)] },
+      `[SUCESSO] Arquivo "${path.basename(mPath)}" gravado com permissão 0o600.\n`
+    );
   }
 
   // Metadados DEPOIS da sessão: em crash entre as escritas, o par fica sessão-nova +
@@ -431,13 +468,17 @@ async function importSession(options = {}) {
     try {
       await fs.promises.unlink(sourceTokenFile);
       logger.info(
-        { file: path.basename(sourceTokenFile) },
+        { file: path.basename(sourceTokenFile), msgId: 'import.token_removed' },
         'Token de sessão removido após importação bem-sucedida (use --keep-tokens para preservar).'
       );
     } catch (unlinkErr) {
       if (unlinkErr.code !== 'ENOENT') {
         logger.warn(
-          { file: path.basename(sourceTokenFile), err: unlinkErr.message },
+          {
+            file: path.basename(sourceTokenFile),
+            err: unlinkErr.message,
+            msgId: 'import.token_remove_failed'
+          },
           'Não foi possível remover o arquivo de token após a importação.'
         );
       }
@@ -471,7 +512,7 @@ async function importAllSessions(options = {}) {
   );
 
   logger.info('===================================================================');
-  logger.info('   IMPORTAÇÃO MULTI-CONTA DE SESSÕES ALIEXPRESS');
+  logger.info({ msgId: 'import.header.multi' }, '   IMPORTAÇÃO MULTI-CONTA DE SESSÕES ALIEXPRESS');
   logger.info('===================================================================\n');
 
   const tokenFiles = new Set();
@@ -502,7 +543,10 @@ async function importAllSessions(options = {}) {
 
   for (const tPath of tokenFiles) {
     try {
-      logger.info(`Processando arquivo de token: ${path.basename(tPath)}...`);
+      logger.info(
+        { msgId: 'import.processing_token', msgParams: [path.basename(tPath)] },
+        `Processando arquivo de token: ${path.basename(tPath)}...`
+      );
       const res = await importSession({
         ...options,
         baseDir,
@@ -522,12 +566,16 @@ async function importAllSessions(options = {}) {
         try {
           await fs.promises.unlink(tPath);
           logger.info(
-            { file: path.basename(tPath) },
+            { file: path.basename(tPath), msgId: 'import.token_removed' },
             'Token de sessão removido após importação bem-sucedida (use --keep-tokens para preservar).'
           );
         } catch (unlinkErr) {
           logger.warn(
-            { file: path.basename(tPath), err: unlinkErr.message },
+            {
+              file: path.basename(tPath),
+              err: unlinkErr.message,
+              msgId: 'import.token_remove_failed'
+            },
             'Não foi possível remover o arquivo de token após a importação.'
           );
         }
@@ -535,7 +583,7 @@ async function importAllSessions(options = {}) {
     } catch (err) {
       failed.push({ file: path.basename(tPath), error: err.message });
       logger.error(
-        { file: path.basename(tPath), err: err.message },
+        { file: path.basename(tPath), err: err.message, msgId: 'import.file_failed' },
         'Falha ao importar arquivo de token.'
       );
     }
@@ -543,13 +591,25 @@ async function importAllSessions(options = {}) {
 
   if (imported.length > 0) {
     logger.info('===================================================================');
-    logger.info(`   IMPORTAÇÃO CONCLUÍDA: ${imported.length} CONTA(S) IMPORTADA(S)`);
+    logger.info(
+      { msgId: 'import.multi.done', msgParams: [imported.length] },
+      `   IMPORTAÇÃO CONCLUÍDA: ${imported.length} CONTA(S) IMPORTADA(S)`
+    );
     logger.info('===================================================================');
     for (const imp of imported) {
       // Com --migrate o resultado pode não ter sessionPath/accountIndex: pula o resumo
       // detalhado em vez de lançar em path.basename(undefined).
       if (!imp.sessionPath) continue;
       logger.info(
+        {
+          msgId: 'import.multi.account',
+          msgParams: [
+            imp.accountIndex,
+            maskUser(imp.user),
+            imp.tokenFile,
+            path.basename(imp.sessionPath)
+          ]
+        },
         ` • [Conta ${imp.accountIndex}] ${maskUser(imp.user)} <- ${imp.tokenFile} (salvo em ${path.basename(imp.sessionPath)})`
       );
     }
@@ -590,13 +650,13 @@ if (require.main === module) {
     .then((result) => {
       const { imported, failed } = normalizeImportCliResult(result);
       if (imported.length === 0) {
-        logger.error('Nenhuma sessão foi importada.');
+        logger.error({ msgId: 'import.none' }, 'Nenhuma sessão foi importada.');
         flushAndExit(1);
         return;
       }
       if (failed.length > 0) {
         logger.error(
-          { failed: failed.map((f) => f.file) },
+          { failed: failed.map((f) => f.file), msgId: 'import.partial' },
           'Importação parcial: algumas contas não foram importadas.'
         );
         flushAndExit(1);
@@ -605,7 +665,7 @@ if (require.main === module) {
       flushAndExit(0);
     })
     .catch((err) => {
-      logger.error({ err: err.message }, 'Falha na importação da sessão.');
+      logger.error({ err: err.message, msgId: 'import.failed' }, 'Falha na importação da sessão.');
       flushAndExit(1);
     });
 }

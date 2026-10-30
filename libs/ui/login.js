@@ -117,7 +117,10 @@ async function visibleElement(page, selector, timeout = 1200) {
 async function performMobileLogin(page, context, config, options = {}) {
   const username = (options.account && options.account.user) || config.ALI_USER;
   const password = (options.account && options.account.password) || config.ALI_PASSWORD;
-  logger.info(`[Login] Autenticando com credenciais de "${maskUser(username)}"...`);
+  logger.info(
+    { msgId: 'login.credentials', msgParams: [maskUser(username)] },
+    `[Login] Autenticando com credenciais de "${maskUser(username)}"...`
+  );
 
   // Prompt de reautenticação in-page (SPA): o AliExpress reconhece a conta e pede
   // APENAS a senha, na mesma URL do coin-index. Nesse caso não existe campo de usuário —
@@ -125,7 +128,10 @@ async function performMobileLogin(page, context, config, options = {}) {
   let passwordInput = await visibleElement(page, SELECTORS.login.passwordInput, 1200);
   const passwordOnly = passwordInput !== null;
   if (passwordOnly) {
-    logger.info('[Login] Prompt de reautenticação in-page detectado (somente senha).');
+    logger.info(
+      { msgId: 'login.password_prompt' },
+      '[Login] Prompt de reautenticação in-page detectado (somente senha).'
+    );
   }
 
   let loginInput = null;
@@ -199,7 +205,8 @@ async function performMobileLogin(page, context, config, options = {}) {
       {
         user: maskUser(username),
         ret: verdict.items.join(' ').slice(0, 200),
-        screenshot: errScreenshot
+        screenshot: errScreenshot,
+        msgId: 'login.risk_rejected'
       },
       'Login rejeitado pelo controle de risco do AliExpress (RGV587/FAIL_SYS_USER_VALIDATE).'
     );
@@ -258,7 +265,10 @@ async function performMobileLogin(page, context, config, options = {}) {
   const hasVisibleCodeInput =
     codeInput !== null && (await codeInput.isVisible().catch(() => false));
   if (hasVisibleCodeInput) {
-    logger.warn('[Segurança AliExpress] Código de verificação 2FA solicitado pelo AliExpress.');
+    logger.warn(
+      { msgId: 'login.2fa_requested' },
+      '[Segurança AliExpress] Código de verificação 2FA solicitado pelo AliExpress.'
+    );
     if (!process.stdin.isTTY) {
       throw new TwoFactorRequiredNonInteractive();
     }
@@ -310,7 +320,7 @@ async function performMobileLogin(page, context, config, options = {}) {
   if (!authenticated) {
     const errScreenshot = await saveFailureScreenshot(page, 'login_failed');
     logger.error(
-      { user: maskUser(username), screenshot: errScreenshot },
+      { user: maskUser(username), screenshot: errScreenshot, msgId: 'login.failed' },
       'Falha ao autenticar conta no AliExpress (desafio de segurança não superado).'
     );
     const authErr = new Error(
@@ -325,7 +335,10 @@ async function performMobileLogin(page, context, config, options = {}) {
   const rawStorage = await context.storageState();
   // Login resolvido neste host: a sessão deixa de ser "importada" (remove marcadores remotos)
   await saveSession(rawStorage, username, { ...options, freshLogin: true });
-  logger.info('[Login] Nova sessão autenticada salva com sucesso.');
+  logger.info(
+    { msgId: 'login.session_saved' },
+    '[Login] Nova sessão autenticada salva com sucesso.'
+  );
   return rawStorage;
 }
 

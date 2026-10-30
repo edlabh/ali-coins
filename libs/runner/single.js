@@ -594,6 +594,7 @@ async function runCheckin(options = {}) {
               justCollected = confirmed;
               if (!confirmed) {
                 logger.warn(
+                  { msgId: 'checkin.streak.ui_unconfirmed' },
                   'Clique de check-in não confirmado pela UI (marcador de "hoje" ausente). ' +
                     'Não contabilizando como coletado nesta execução.'
                 );
@@ -716,7 +717,10 @@ async function runCheckin(options = {}) {
       let desktopResult;
       if (shouldReuseEarlyDesktop({ justCollected, earlyDesktop: earlyDesktopCheck })) {
         desktopResult = earlyDesktopCheck;
-        logger.info('Saldo/streak reutilizados da checagem inicial do desktop (sem nova leitura).');
+        logger.info(
+          { msgId: 'checkin.streak.reused_early_desktop' },
+          'Saldo/streak reutilizados da checagem inicial do desktop (sem nova leitura).'
+        );
       } else {
         desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
           allowMedia: config.ALLOW_MEDIA,
@@ -755,7 +759,8 @@ async function runCheckin(options = {}) {
           {
             account: maskUser(userEmail),
             detectedStreak,
-            previousStreakDays
+            previousStreakDays,
+            msgId: 'checkin.streak.confirm_statement'
           },
           'Leitura de streak = 1 com histórico anterior > 1; confirmando a quebra pelo extrato desktop...'
         );
@@ -770,18 +775,26 @@ async function runCheckin(options = {}) {
           }
           if (statementStreakDays !== null && statementStreakDays > 1) {
             logger.info(
-              { account: maskUser(userEmail), statementStreak: statementStreakDays },
+              {
+                account: maskUser(userEmail),
+                statementStreak: statementStreakDays,
+                msgId: 'checkin.streak.statement_confirmed'
+              },
               'Extrato desmente a quebra (sequência do extrato > 1); preservando o streak real.'
             );
           } else {
             logger.warn(
-              { account: maskUser(userEmail), statementStreak: statementStreakDays },
+              {
+                account: maskUser(userEmail),
+                statementStreak: statementStreakDays,
+                msgId: 'checkin.streak.statement_not_confirmed'
+              },
               'Extrato não desmente a quebra (sequência do extrato <= 1 ou indisponível).'
             );
           }
         } catch (confirmErr) {
           logger.warn(
-            { err: confirmErr.message },
+            { err: confirmErr.message, msgId: 'checkin.streak.statement_failed' },
             'Falha ao confirmar a quebra de streak pelo extrato; mantendo a leitura da tela.'
           );
         }
@@ -817,7 +830,12 @@ async function runCheckin(options = {}) {
         const detectedNum = Number(mobileStreak);
         if (detectedNum < previousStreakDays) {
           logger.warn(
-            { account: maskUser(userEmail), detectedStreak: detectedNum, previousStreakDays },
+            {
+              account: maskUser(userEmail),
+              detectedStreak: detectedNum,
+              previousStreakDays,
+              msgId: 'checkin.streak.calendar_lower'
+            },
             'A sequência lida no calendário é menor que o histórico local; adotando a sequência real do AliExpress.'
           );
         }
@@ -883,7 +901,8 @@ async function runCheckin(options = {}) {
             tierSuggested,
             credited: checkinCoinsNum,
             streakDays,
-            source: checkinCoinsSource
+            source: checkinCoinsSource,
+            msgId: 'checkin.streak.credited_diff'
           },
           'Valor do check-in creditado difere do tier sugerido pela UI; usando o valor real do extrato.'
         );
@@ -928,7 +947,8 @@ async function runCheckin(options = {}) {
             {
               baseBalance: base,
               checkinCoins: checkinCoinsNum,
-              updatedBalance: totalBalance
+              updatedBalance: totalBalance,
+              msgId: 'checkin.streak.balance_synced'
             },
             'Saldo pós-checkin sincronizado com as moedas recebidas no check-in (ledger defasado).'
           );
@@ -943,6 +963,7 @@ async function runCheckin(options = {}) {
       if (isSessionDataMissing({ totalBalance })) {
         if (isImportedSession) {
           logger.error(
+            { msgId: 'checkin.streak.remote_session_expired' },
             '[Sessão Remota Expirada] Não foi possível obter streak e saldo. A sessão importada de outro host expirou ou foi invalidada pelo AliExpress. ' +
               'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
           );
@@ -954,12 +975,14 @@ async function runCheckin(options = {}) {
             totalBalance,
             coinsGainedToday,
             attemptedLogin,
-            loginPromptDetected: Boolean(desktopResult?.loginPromptDetected)
+            loginPromptDetected: Boolean(desktopResult?.loginPromptDetected),
+            msgId: 'checkin.streak.login_failed'
           },
           'Erro ao efetuar o login: não foi possível obter streak e saldo.'
         );
         if (desktopResult?.loginPromptDetected) {
           logger.error(
+            { msgId: 'checkin.streak.login_prompt' },
             'A página desktop exibiu um prompt de login/reautenticação (sessão inválida) — não é apenas mudança de layout.'
           );
         }

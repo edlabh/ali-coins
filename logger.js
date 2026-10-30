@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 const pino = require('pino');
-const { translateMessage, isEnglish } = require('./libs/i18n');
+const { translateMessage, translateId, isEnglish } = require('./libs/i18n');
 
 // Carregar credentials.env antes de ler LOG_LEVEL para garantir precedência
 const credentialsEnvPath = path.join(__dirname, 'credentials.env');
@@ -261,11 +261,32 @@ const logger = pino(
         ) {
           messageIndex = 1;
         }
-        if (messageIndex !== -1) {
+        const contextObject =
+          inputArgs[0] && typeof inputArgs[0] === 'object' && !(inputArgs[0] instanceof Error)
+            ? inputArgs[0]
+            : null;
+        const msgId = typeof contextObject?.msgId === 'string' ? contextObject.msgId : null;
+        if (msgId) {
+          const byId = translateId(msgId, contextObject.msgParams);
+          if (byId !== null) {
+            if (messageIndex !== -1) {
+              inputArgs[messageIndex] = byId;
+            } else if (typeof contextObject.msg === 'string') {
+              inputArgs[0] = { ...contextObject, msg: byId };
+            } else {
+              inputArgs.splice(1, 0, byId);
+              messageIndex = 1;
+            }
+          } else if (messageIndex !== -1) {
+            // ID desconhecido (ex.: versão antiga de plugin): mantém a compatibilidade
+            // traduzindo pelo texto legado em vez de perder a mensagem.
+            inputArgs[messageIndex] = translateMessage(inputArgs[messageIndex]);
+          }
+        } else if (messageIndex !== -1) {
           inputArgs[messageIndex] = translateMessage(inputArgs[messageIndex]);
         }
         if (inputArgs[0] && typeof inputArgs[0] === 'object' && inputArgs[0] !== null) {
-          if (typeof inputArgs[0].msg === 'string') {
+          if (typeof inputArgs[0].msg === 'string' && !msgId) {
             inputArgs[0] = { ...inputArgs[0], msg: translateMessage(inputArgs[0].msg) };
           }
         }

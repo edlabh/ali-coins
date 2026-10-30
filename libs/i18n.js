@@ -12,6 +12,7 @@
  */
 
 const catalog = require('./i18n/log-catalog');
+const messageCatalog = require('./i18n/messages');
 const valuePairs = require('./i18n/values');
 const uiMessages = require('./i18n/ui');
 const notifyPhrases = require('./i18n/notify-phrases');
@@ -67,6 +68,28 @@ function resolveLanguage(value) {
 const initialLanguage = resolveLanguage(process.env.APP_LANGUAGE || process.env.BOT_LANGUAGE);
 let currentLanguage = initialLanguage || LANG_PT_BR;
 let translationCache = new Map();
+
+// Telemetria da migração PT → IDs: quantas mensagens ainda chegam por texto legado e
+// quantas já usam `msgId`. Fica em memória e é exposta para testes/diagnóstico sem
+// alterar o formato dos logs.
+const telemetry = {
+  idUsage: Object.create(null),
+  legacyUsage: Object.create(null),
+  unknownIds: []
+};
+
+function recordUsage(bucket, key) {
+  bucket[key] = (bucket[key] || 0) + 1;
+}
+
+/**
+ * Registra o uso de uma mensagem que chegou por texto (chave legada).
+ * @param {string} text
+ */
+function recordLegacyUsage(text) {
+  const id = messageCatalog.getMessageIdForText(text);
+  if (id) recordUsage(telemetry.legacyUsage, id);
+}
 
 /** @returns {'pt-BR'|'en'} */
 function getLanguage() {
@@ -235,12 +258,16 @@ function translateMessage(message) {
   if (!isEnglish() || typeof message !== 'string' || !message) return message;
 
   const cached = translationCache.get(message);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    recordLegacyUsage(message);
+    return cached;
+  }
 
   const direct = catalog.exact[message];
   if (direct !== undefined) {
     const translated = applyValueGlossary(direct);
     translationCache.set(message, translated);
+    recordLegacyUsage(message);
     return translated;
   }
 
@@ -253,6 +280,7 @@ function translateMessage(message) {
     if (hit !== undefined) {
       const translated = lead + applyValueGlossary(hit) + trail;
       translationCache.set(message, translated);
+      recordLegacyUsage(message);
       return translated;
     }
   }
@@ -262,6 +290,7 @@ function translateMessage(message) {
     if (translated !== null) {
       const withValues = applyValueGlossary(translated);
       translationCache.set(message, withValues);
+      recordLegacyUsage(message);
       return withValues;
     }
   }
@@ -272,6 +301,7 @@ function translateMessage(message) {
       if (translated !== null) {
         const framed = lead + applyValueGlossary(translated) + trail;
         translationCache.set(message, framed);
+        recordLegacyUsage(message);
         return framed;
       }
     }
@@ -354,6 +384,50 @@ function t(text, vars) {
   );
 }
 
+/**
+ * Resolve o ID registrado de uma mensagem PT (semântico ou legado).
+ * @param {string} text
+ * @returns {string|null}
+ */
+function resolveMessageId(text) {
+  return messageCatalog.getMessageIdForText(text);
+}
+
+/**
+ * Traduz uma mensagem por ID estável, interpolando placeholders posicionais.
+ * Retorna `null` quando o ID não está registrado (o chamador deve usar o fallback).
+ * @param {string} id
+ * @param {unknown[]|Record<string, unknown>} [vars=[]]
+ * @returns {string|null}
+ */
+function translateId(id, vars = []) {
+  const text = messageCatalog.formatMessage(id, isEnglish() ? 'en' : 'pt', vars);
+  if (text === null) {
+    if (!telemetry.unknownIds.includes(id)) telemetry.unknownIds.push(id);
+    return null;
+  }
+  recordUsage(telemetry.idUsage, id);
+  return isEnglish() ? applyValueGlossary(text) : text;
+}
+
+/**
+ * Retorna a telemetria acumulada da migração PT → IDs.
+ * @returns {{idUsage: Record<string, number>, legacyUsage: Record<string, number>, unknownIds: string[]}}
+ */
+function getI18nTelemetry() {
+  return {
+    idUsage: { ...telemetry.idUsage },
+    legacyUsage: { ...telemetry.legacyUsage },
+    unknownIds: [...telemetry.unknownIds]
+  };
+}
+
+function resetI18nTelemetry() {
+  telemetry.idUsage = Object.create(null);
+  telemetry.legacyUsage = Object.create(null);
+  telemetry.unknownIds = [];
+}
+
 module.exports = {
   LANG_PT_BR,
   LANG_EN,
@@ -366,5 +440,9 @@ module.exports = {
   translateMessage,
   translateValue,
   translateNotificationText,
-  t
+  t,
+  resolveMessageId,
+  translateId,
+  getI18nTelemetry,
+  resetI18nTelemetry
 };
