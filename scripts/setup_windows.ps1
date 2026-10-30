@@ -14,7 +14,7 @@ $null = chcp 65001
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $ScriptDir
 
 # Mensagens do instalador no idioma configurado (PT padrao, EN opcional).
@@ -160,7 +160,7 @@ Write-Host "    notepad credentials.env"
 Write-AliMsg "    (A chave SESSION_SECRET ja foi gerada de forma segura com 32 caracteres)." "    (The SESSION_SECRET key has already been generated securely with 32 characters)."
 Write-AliMsg "    Para gerar novas chaves futuramente:" "    To generate new keys in the future:"
 Write-AliMsg "      - Via OpenSSL: openssl rand -base64 32" "      - Via OpenSSL: openssl rand -base64 32"
-Write-AliMsg "      - Sem OpenSSL (Node nativo): .\generate_secret.ps1" "      - Without OpenSSL (native Node): .\generate_secret.ps1"
+Write-AliMsg "      - Sem OpenSSL (Node nativo): .\scripts\generate_secret.ps1" "      - Without OpenSSL (native Node): .\scripts\generate_secret.ps1"
 Write-Host ""
 Write-AliMsg " 2. Execute a automacao unificada (Check-in diario + Tarefas):" " 2. Run the unified automation (daily check-in + tasks):"
 Write-AliMsg "    .\run_all.ps1   (ou run_all.bat)" "    .\run_all.ps1   (or run_all.bat)"

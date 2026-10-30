@@ -1,9 +1,9 @@
 const path = require('path');
 const { loadSessionFiles } = require('./session');
-const { validateSession } = require('../security');
+const { validateSession } = require('./core/security');
 const { getBalanceDesktop } = require('./ui/balance');
-const { maskUser } = require('../config');
-const logger = require('../logger');
+const { maskUser } = require('./core/config');
+const logger = require('./core/logger');
 
 const SESSION_CHECK_SCHEMA_VERSION = 1;
 
@@ -122,8 +122,8 @@ async function checkSessionReadOnly({ browser, account, config }) {
  * @returns {Promise<number>} Código de saída (0 = todas válidas; 1 = alguma inválida)
  */
 async function runSessionCheckCli({ allAccounts = false } = {}) {
-  const { loadConfig, loadAccounts, getAccountArg, isJson } = require('../config');
-  const { launchBrowser } = require('../browser');
+  const { loadConfig, loadAccounts, getAccountArg, isJson } = require('./core/config');
+  const { launchBrowser } = require('./core/browser');
 
   const config = loadConfig(true);
   const accounts = loadAccounts(process.env, path.join(__dirname, '..'));

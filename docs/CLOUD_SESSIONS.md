@@ -302,7 +302,7 @@ Para evitar falhas por memória:
    - `--init` e `--pids-limit=256`: evitam acúmulo de processos filhos do Chromium.
    - `NODE_COMPILE_CACHE=/tmp/node-compile-cache` (já embutido na imagem): com `/tmp` em tmpfs, o cache de bytecode V8 acelera o arranque do processo e do healthcheck.
    - Um exemplo pronto de wrapper de cron, com medição de pico de memória, está em
-     [`docker-run.example.sh`](../docker-run.example.sh).
+     [`scripts/docker-run.example.sh`](../scripts/docker-run.example.sh).
    - Alternativa declarativa: o [`docker-compose.yml`](../docker-compose.yml) já traz os mesmos
      limites (`shm_size: 256m`, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`, 768M).
    - **Lockfile por ambiente:** o lock fica no diretório do projeto (`ali-coins-<uid>.lock`).

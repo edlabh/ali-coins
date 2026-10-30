@@ -13,7 +13,7 @@ const {
   pruneSessionBackups,
   getEncryptionConfig
 } = require('../libs/session');
-const { encryptSession } = require('../security');
+const { encryptSession } = require('../libs/core/security');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -945,7 +945,7 @@ test('libs/session.js - freshLogin limpa marcadores de sessão importada e prese
 test('libs/session.js - logs de sessão mascaram o identificador do usuário (PII)', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('session-log-mask-');
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -1059,7 +1059,7 @@ test('libs/session.js - existingSessionData em memória evita nova descriptograf
 test('libs/session.js - recusa gravar em texto puro quando ENCRYPT_LOCAL_SESSION ativo sem SESSION_SECRET', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('session-plain-warn-');
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalError = logger.error;
   const errors = [];
   const origSecret = process.env.SESSION_SECRET;

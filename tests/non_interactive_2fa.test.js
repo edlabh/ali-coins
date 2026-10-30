@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../security');
+const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../libs/core/security');
 const { performMobileLogin } = require('../libs/ui/login');
 const { buildMessage } = require('../libs/notify');
 const { SELECTORS } = require('../libs/selectors');

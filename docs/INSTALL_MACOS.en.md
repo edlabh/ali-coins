@@ -18,7 +18,7 @@ This manual describes the complete step-by-step process to install, configure, a
 ## Table of Contents
 
 1. [Minimum Requirements](#1-minimum-requirements)
-2. [Method A: Automatic Installation (`setup_macos.sh`)](#2-method-a-automatic-installation-setup_macossh)
+2. [Method A: Automatic Installation](#2-method-a-automatic-installation)
 3. [Method B: Manual Step-by-Step Installation](#3-method-b-manual-step-by-step-installation)
    - [Step 1: Installing Node.js 22 LTS](#step-1-installing-nodejs-22-lts)
    - [Step 2: Download or Clone the Project and Permissions](#step-2-download-or-clone-the-project-and-permissions)
@@ -43,14 +43,14 @@ This manual describes the complete step-by-step process to install, configure, a
 
 ---
 
-## 2. Method A: Automatic Installation (`setup_macos.sh`)
+## 2. Method A: Automatic Installation
 
 The project includes a script that detects your architecture (Apple Silicon or Intel), installs **Node.js** via Homebrew if necessary, downloads the native Chromium binary, grants execution permissions, and prepares your credentials file with automatic generation and pre-configuration of the `SESSION_SECRET` key (AES-256):
 
 ```bash
 cd ali-coins
-chmod +x setup_macos.sh
-./setup_macos.sh
+chmod +x scripts/setup_macos.sh
+./scripts/setup_macos.sh
 ```
 
 After running it, configure your email/password with `nano credentials.env` (the cryptographic key is already pre-configured) and start collecting with `./run_all.sh`.

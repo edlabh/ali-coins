@@ -13,6 +13,7 @@
     "*.sh",
     "*.bat",
     "*.ps1",
+    "scripts/**",
     "Dockerfile",
     ".dockerignore",
     "credentials.env.example",

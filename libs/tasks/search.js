@@ -1,6 +1,6 @@
-const { waitWithScroll } = require('../../browser');
+const { waitWithScroll } = require('../core/browser');
 const { SELECTORS } = require('../selectors');
-const defaultLogger = require('../../logger');
+const defaultLogger = require('../core/logger');
 
 /**
  * Hosts AliExpress aceitos para o popup da busca embutida. O sufixo `.aliexpress.com`

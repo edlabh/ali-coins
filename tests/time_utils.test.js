@@ -7,7 +7,7 @@ const {
   formatDuration,
   calculateAccountBackoff,
   pickPauseMs
-} = require('../time_utils');
+} = require('../libs/core/time_utils');
 
 test('time_utils.js - formatDate formata data no formato DD/MM/AAAA (fuso do relatório)', () => {
   // Instante fixo em UTC; a data exibida é a do fuso do relatório (America/Los_Angeles)
@@ -28,15 +28,15 @@ test('time_utils.js - formatDateTime combina data e hora (fuso do relatório)', 
 test('time_utils.js - REPORT_TIMEZONE permite usar outro fuso', () => {
   // Verificação do mecanismo: com TZ de São Paulo (UTC-3), o instante UTC muda de dia
   const original = process.env.REPORT_TIMEZONE;
-  delete require.cache[require.resolve('../time_utils')];
+  delete require.cache[require.resolve('../libs/core/time_utils')];
   try {
     process.env.REPORT_TIMEZONE = 'UTC';
-    const { formatDateTime } = require('../time_utils');
+    const { formatDateTime } = require('../libs/core/time_utils');
     assert.strictEqual(formatDateTime(new Date('2025-01-05T17:08:07Z')), '05/01/2025 17:08:07');
   } finally {
     if (original !== undefined) process.env.REPORT_TIMEZONE = original;
     else delete process.env.REPORT_TIMEZONE;
-    delete require.cache[require.resolve('../time_utils')];
+    delete require.cache[require.resolve('../libs/core/time_utils')];
   }
 });
 
@@ -91,7 +91,7 @@ test('time_utils.js - pickPauseMs sorteia dentro de [min, max] e desliga com max
 });
 
 test('time_utils.js - composeAccountWaitMs usa a maior espera (nunca soma backoff + pausa)', () => {
-  const { composeAccountWaitMs } = require('../time_utils');
+  const { composeAccountWaitMs } = require('../libs/core/time_utils');
 
   assert.strictEqual(composeAccountWaitMs(3000, 0), 3000, 'só backoff');
   assert.strictEqual(composeAccountWaitMs(0, 9000), 9000, 'só pausa');
@@ -105,14 +105,14 @@ test('time_utils.js - composeAccountWaitMs usa a maior espera (nunca soma backof
 });
 
 test('time_utils.js - getReportTimeZoneLabel devolve rótulo curto do fuso do relatório', () => {
-  const { getReportTimeZoneLabel } = require('../time_utils');
+  const { getReportTimeZoneLabel } = require('../libs/core/time_utils');
   const label = getReportTimeZoneLabel(new Date('2026-09-25T15:00:00Z'));
   assert.strictEqual(typeof label, 'string');
   assert.ok(label.trim().length > 0, 'rótulo do fuso não pode ser vazio');
 });
 
 test('time_utils.js - waitUntilWallClock espera em pedaços até o alvo (relógio injetado)', async () => {
-  const { waitUntilWallClock } = require('../time_utils');
+  const { waitUntilWallClock } = require('../libs/core/time_utils');
   let t = 1000;
   const slept = [];
   const now = () => t;
@@ -126,7 +126,7 @@ test('time_utils.js - waitUntilWallClock espera em pedaços até o alvo (relógi
 });
 
 test('time_utils.js - waitUntilWallClock retorna na hora se o alvo já passou (suspensão)', async () => {
-  const { waitUntilWallClock } = require('../time_utils');
+  const { waitUntilWallClock } = require('../libs/core/time_utils');
   let slept = 0;
   const sleep = async () => {
     slept++;
@@ -137,7 +137,7 @@ test('time_utils.js - waitUntilWallClock retorna na hora se o alvo já passou (s
 });
 
 test('time_utils.js - waitUntilWallClock é interrompível por sinal (AbortSignal)', async () => {
-  const { waitUntilWallClock } = require('../time_utils');
+  const { waitUntilWallClock } = require('../libs/core/time_utils');
 
   // Abortado antes de começar
   let slept = 0;

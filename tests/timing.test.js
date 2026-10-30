@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { startAccountTimer, finishAccountTimer } = require('../libs/timing');
 const { buildUnifiedReportPayload, buildMultiAccountReportPayload } = require('../libs/report');
 const { buildMessage } = require('../libs/notify');
-const { formatDuration } = require('../time_utils');
+const { formatDuration } = require('../libs/core/time_utils');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
 test('libs/timing.js - startAccountTimer calcula duração determinística com datas mockadas (90s -> 1m 30s)', () => {

@@ -162,7 +162,7 @@ test('libs/selectors.js - todos os seletores CSS são válidos e parseáveis no 
     );
     return;
   }
-  const { launchBrowser } = require('../browser');
+  const { launchBrowser } = require('../libs/core/browser');
   const realFilesSnapshot = snapshotRealFiles();
   let browser;
   let page;

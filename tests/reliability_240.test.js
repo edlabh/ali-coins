@@ -15,7 +15,7 @@ const {
 const { classifySessionCheck } = require('../libs/session-check');
 const { importSession, isSessionTokenExpired, ImportSessionError } = require('../import_session');
 const { isLoginGateVisible } = require('../libs/ui/balance');
-const { encryptSession } = require('../security');
+const { encryptSession } = require('../libs/core/security');
 const fs = require('fs');
 const path = require('path');
 const {

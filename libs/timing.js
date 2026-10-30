@@ -1,4 +1,4 @@
-const { formatDuration } = require('../time_utils');
+const { formatDuration } = require('./core/time_utils');
 
 /**
  * Inicia cronômetro para uma conta ou etapa de execução

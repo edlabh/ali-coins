@@ -73,7 +73,7 @@ function measureHelp(script, runs = 3) {
 function measureScrypt(n) {
   const code = `
     const { performance } = require('node:perf_hooks');
-    const { encryptSession, decryptSession } = require('./security');
+    const { encryptSession, decryptSession } = require('./libs/core/security');
     const secret = 'benchmark_secret_with_at_least_32_characters_123';
     const payload = JSON.stringify({
       cookies: Array.from({ length: 20 }, (_, i) => ({

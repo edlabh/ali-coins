@@ -1,5 +1,5 @@
-const logger = require('../logger');
-const { sanitizeSensitiveQueryParams } = require('../logger');
+const logger = require('./core/logger');
+const { sanitizeSensitiveQueryParams } = require('./core/logger');
 const { validateExternalUrl, safeFetch } = require('./url_guard');
 
 const { version: APP_VERSION } = require('../package.json');

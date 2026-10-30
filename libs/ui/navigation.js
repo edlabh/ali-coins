@@ -1,6 +1,6 @@
-const { retry } = require('../../browser');
+const { retry } = require('../core/browser');
 const { SELECTORS } = require('../selectors');
-const logger = require('../../logger');
+const logger = require('../core/logger');
 
 /**
  * Navega para uma URL com retentativas automáticas e backoff exponencial

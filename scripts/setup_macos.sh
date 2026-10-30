@@ -6,7 +6,7 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 # Mensagens do instalador no idioma configurado (PT padrão, EN opcional).
@@ -61,7 +61,7 @@ fi
 
 # 4. Permissões de scripts e arquivo de credenciais
 ali_msg "[4/5] Ajustando permissões e credenciais..." "[4/5] Adjusting permissions and credentials..."
-chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
+chmod +x "$SCRIPT_DIR"/*.sh "$SCRIPT_DIR"/scripts/*.sh 2>/dev/null || true
 
 if [ ! -f "$SCRIPT_DIR/credentials.env" ]; then
   if [ -f "$SCRIPT_DIR/credentials.env.example" ]; then

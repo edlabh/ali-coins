@@ -101,7 +101,7 @@ test('i18n IDs - uso por texto legado é contado para orientar a migração', ()
 test('i18n IDs - logger traduz msgId no processo real', () => {
   const script = `
     process.env.APP_LANGUAGE = 'en';
-    const logger = require('./logger');
+    const logger = require('./libs/core/logger');
     logger.info({ msgId: 'session.check.valid' }, 'Sessão válida (somente leitura).');
     logger.info(
       { msgId: 'session.check.summary', msgParams: ['OK', 'us***@example.com', 'balance=10'] },

@@ -5,8 +5,8 @@ const {
   isForce,
   checkAndDisplayHelp,
   maskUser
-} = require('./config');
-const { acquireLock, LockActiveError } = require('./lockfile');
+} = require('./libs/core/config');
+const { acquireLock, LockActiveError } = require('./libs/core/lockfile');
 const { flushAndExit } = require('./libs/exit');
 const { checkCaptchaCooldownForLogin } = require('./libs/checkin/captcha');
 const { shouldAttemptLogin } = require('./libs/checkin/login-gate');
@@ -18,7 +18,7 @@ const {
 const { isSessionDataMissing } = require('./libs/checkin/result');
 const { createRunMetrics, recordCheckin, logRunMetrics } = require('./libs/observability/metrics');
 const { setRunContext, clearRunContext } = require('./libs/observability/run-context');
-const logger = require('./logger');
+const logger = require('./libs/core/logger');
 
 if (require.main === module) {
   const { setupGlobalCrashHandler } = require('./libs/crash');

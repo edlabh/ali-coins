@@ -1,9 +1,14 @@
 const { z } = require('zod');
-const { formatDate, formatTime, formatDuration, getReportTimeZoneLabel } = require('../time_utils');
-const { maskUser } = require('../config');
+const {
+  formatDate,
+  formatTime,
+  formatDuration,
+  getReportTimeZoneLabel
+} = require('./core/time_utils');
+const { maskUser } = require('./core/config');
 const { getCheckinCoinsFromStreak } = require('./checkin/coins');
 const { validateExternalUrl, safeFetch } = require('./url_guard');
-const logger = require('../logger');
+const logger = require('./core/logger');
 const { t, isEnglish, translateValue } = require('./i18n');
 
 // Teto de payload enviado a webhooks externos (32 KB): protege memória e destinos.

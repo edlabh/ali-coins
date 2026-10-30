@@ -1,5 +1,5 @@
 const { flushAndExit } = require('./libs/exit');
-const logger = require('./logger');
+const logger = require('./libs/core/logger');
 const { main } = require('./libs/runner/multi');
 
 if (require.main === module) {

@@ -8,7 +8,7 @@
 const dns = require('dns').promises;
 const dnsNative = require('node:dns');
 const net = require('net');
-const logger = require('../logger');
+const logger = require('./core/logger');
 
 // undici é opcional: quando disponível, o transporte usa um dispatcher com `lookup`
 // PINADO — o IP validado na checagem é o mesmo usado na conexão, eliminando o TOCTOU

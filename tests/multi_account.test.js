@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { maskUser, loadAccounts, syncAccountSessions } = require('../config');
-const { calculateAccountBackoff } = require('../time_utils');
+const { maskUser, loadAccounts, syncAccountSessions } = require('../libs/core/config');
+const { calculateAccountBackoff } = require('../libs/core/time_utils');
 const { resolveSessionPaths, validateAndRefresh, saveSession } = require('../libs/session');
 const {
   createIsolatedTestDir,

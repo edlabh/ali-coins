@@ -1,4 +1,4 @@
-const { newDesktopContext } = require('../../browser');
+const { newDesktopContext } = require('../core/browser');
 const { SELECTORS } = require('../selectors');
 const { gotoWithRetry } = require('./navigation');
 const { saveFailureScreenshot } = require('./diagnostics');
@@ -16,7 +16,7 @@ const {
   setCachedDesktopPage,
   closeCachedDesktopContext
 } = require('./desktop-cache');
-const logger = require('../../logger');
+const logger = require('../core/logger');
 
 /**
  * Padrões de expressão regular multilíngues (pt, en, es) para detecção de streak/sequência

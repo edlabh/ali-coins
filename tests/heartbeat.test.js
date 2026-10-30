@@ -8,7 +8,7 @@ const {
   pingFail,
   sendHeartbeat
 } = require('../libs/heartbeat');
-const { configSchema, isHeartbeat } = require('../config');
+const { configSchema, isHeartbeat } = require('../libs/core/config');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
 test('libs/heartbeat.js - maskHeartbeatUrl mascara UUID e tokens sem vazar segredos', () => {

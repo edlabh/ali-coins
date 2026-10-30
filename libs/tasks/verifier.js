@@ -3,7 +3,7 @@
  */
 const { SELECTORS } = require('../selectors');
 const { closeModals } = require('../ui/navigation');
-const defaultLogger = require('../../logger');
+const defaultLogger = require('../core/logger');
 
 // Evita repetir o log de detecção do layout inline a cada extração/retry.
 let inlineLayoutLogged = false;

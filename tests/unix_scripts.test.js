@@ -13,7 +13,13 @@ const {
 test('Unix Scripts - setup_linux.sh and setup_macos.sh syntax and anchoring validation', () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
-    const scripts = ['setup_linux.sh', 'setup_macos.sh', 'run.sh', 'run_all.sh', 'run_tasks.sh'];
+    const scripts = [
+      'scripts/setup_linux.sh',
+      'scripts/setup_macos.sh',
+      'run.sh',
+      'run_all.sh',
+      'run_tasks.sh'
+    ];
 
     for (const script of scripts) {
       const scriptPath = path.join(__dirname, '..', script);
@@ -32,7 +38,11 @@ test('Unix Scripts - setup_linux.sh and setup_macos.sh syntax and anchoring vali
 
       // Ancoragem de diretório
       assert.ok(
-        content.includes('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'),
+        content.includes(
+          script.startsWith('scripts/')
+            ? 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"'
+            : 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"'
+        ),
         `${script} deve possuir ancoragem robusta em SCRIPT_DIR`
       );
     }
@@ -116,7 +126,7 @@ test('Unix Scripts - setup_linux.sh e setup_macos.sh lógica de geração de SES
   const tmpDir = createIsolatedTestDir('unix-setup-test-');
 
   try {
-    const scripts = ['setup_linux.sh', 'setup_macos.sh'];
+    const scripts = ['scripts/setup_linux.sh', 'scripts/setup_macos.sh'];
 
     for (const script of scripts) {
       const content = fs.readFileSync(path.join(__dirname, '..', script), 'utf8');

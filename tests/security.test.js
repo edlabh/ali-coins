@@ -22,8 +22,8 @@ const {
   getEffectiveDefaultScryptN,
   SCRYPT_MAX_N,
   sanitizeScryptParams
-} = require('../security');
-const logger = require('../logger');
+} = require('../libs/core/security');
+const logger = require('../libs/core/logger');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -758,7 +758,7 @@ test('security.js - getCgroupMemoryLimitBytes não lança e getEffectiveDefaultS
     getEffectiveDefaultScryptN,
     SCRYPT_LOW_MEMORY_DEFAULT_N,
     SCRYPT_DEFAULT_N
-  } = require('../security');
+  } = require('../libs/core/security');
   const original = process.env.SCRYPT_N;
   try {
     delete process.env.SCRYPT_N;
@@ -785,7 +785,7 @@ test(
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
-    const { safeWriteFile } = require('../security');
+    const { safeWriteFile } = require('../libs/core/security');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'safewrite-symlink-'));
     try {
       const alvoReal = path.join(tmp, 'alvo-real.txt');
@@ -820,7 +820,7 @@ test(
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
-    const { safeChmod600 } = require('../security');
+    const { safeChmod600 } = require('../libs/core/security');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'chmod-symlink-'));
     try {
       const alvo = path.join(tmp, 'alvo.sh');
@@ -837,7 +837,7 @@ test(
 );
 
 test('security.js - encryptSession/decryptSession rejeitam segredos compostos apenas por espaços', () => {
-  const { encryptSession, decryptSession } = require('../security');
+  const { encryptSession, decryptSession } = require('../libs/core/security');
   const whitespaceSecret = ' '.repeat(32);
   const token = 'v3:131072:8:1:AAAA:BBBB:CCCC:DDDD:base64';
 

@@ -534,7 +534,7 @@ test('tasks - executeSurpriseItems suporta múltiplas rodadas com startIndex > 0
 test('tasks - waitWithScroll não encerra prematuramente com tracking', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
-    const { waitWithScroll } = require('../browser');
+    const { waitWithScroll } = require('../libs/core/browser');
     let responseCallback = null;
     const mockPage = {
       on: (evt, cb) => {
@@ -1006,7 +1006,7 @@ test('tasks - timeout por tentativa (TASK_MAX_DURATION_MS) aborta e contabiliza 
 test('tasks - waitWithScroll respeita teto TASK_SCROLL_MAX_MS e saída antecipada sem tracking', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
-    const { waitWithScroll } = require('../browser');
+    const { waitWithScroll } = require('../libs/core/browser');
     const mockPage = {
       on: () => {},
       off: () => {},
@@ -1355,7 +1355,7 @@ test('tasks - withTimeout aborta o AbortSignal para cancelar ação órfã no br
 test('browser.js - waitWithScroll encerra imediatamente ao receber abortSignal', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   try {
-    const { waitWithScroll } = require('../browser');
+    const { waitWithScroll } = require('../libs/core/browser');
     const controller = new AbortController();
     const mockPage = {
       on: () => {},
@@ -2810,7 +2810,7 @@ test('tasks - selectReopenableTasks retorna vazio sem falhas', () => {
 });
 
 test('config.js - TASK_RETRY_UNFINISHED/PASSES/DELAY são validados e desligados por padrão', () => {
-  const { configSchema } = require('../config');
+  const { configSchema } = require('../libs/core/config');
   const base = {
     ALI_USER: 'a@b.co',
     ALI_PASSWORD: 'pwd',

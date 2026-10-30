@@ -9,8 +9,8 @@
  */
 
 const crypto = require('node:crypto');
-const { maskUser } = require('../../config');
-const { formatDuration } = require('../../time_utils');
+const { maskUser } = require('../core/config');
+const { formatDuration } = require('../core/time_utils');
 
 const METRICS_SCHEMA_VERSION = 1;
 

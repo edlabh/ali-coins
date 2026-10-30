@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { acquireLock, isProcessAlive, LockActiveError } = require('../lockfile');
+const { acquireLock, isProcessAlive, LockActiveError } = require('../libs/core/lockfile');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -190,7 +190,7 @@ test('lockfile.js - criação atômica impede dupla aquisição sob concorrênci
   const tmpDir = createIsolatedTestDir('lockfile-race-');
   const tmpLockPath = path.join(tmpDir, 'race.lock');
   const startFile = path.join(tmpDir, 'race.start');
-  const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
+  const lockModule = path.resolve(__dirname, '..', 'libs', 'core', 'lockfile.js');
 
   // Barreira de início: todos os filhos avisam READY e só tentam o lock depois que o
   // pai cria o startFile. Sem isso, um processo que inicia tarde (runner lento do
@@ -285,7 +285,7 @@ test(
     const realFilesSnapshot = snapshotRealFiles();
     const tmpDir = createIsolatedTestDir('lockfile-sigint-');
     const tmpLockPath = path.join(tmpDir, 'sigint.lock');
-    const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
+    const lockModule = path.resolve(__dirname, '..', 'libs', 'core', 'lockfile.js');
 
     const childScript = `
       const { acquireLock } = require(${JSON.stringify(lockModule)});
@@ -388,7 +388,7 @@ test('lockfile.js - stress concorrente: nenhuma sobreposição de posse por leit
   const realFilesSnapshot = snapshotRealFiles();
   const tmpDir = createIsolatedTestDir('lockfile-stress-');
   const tmpLockPath = path.join(tmpDir, 'stress.lock');
-  const lockModule = path.resolve(__dirname, '..', 'lockfile.js');
+  const lockModule = path.resolve(__dirname, '..', 'libs', 'core', 'lockfile.js');
 
   const childScript = `
     const fs = require('fs');

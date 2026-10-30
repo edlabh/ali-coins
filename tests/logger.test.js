@@ -8,7 +8,7 @@ test('logger.js - em modo --json os logs são direcionados para stderr e preserv
   try {
     const script = `
       process.argv.push('--json');
-      const logger = require('./logger');
+      const logger = require('./libs/core/logger');
       logger.info('Log de diagnóstico operacional');
       process.stdout.write(JSON.stringify({ success: true, count: 42 }) + '\\n');
     `;
@@ -38,7 +38,7 @@ test('logger.js - sanitiza parâmetros de busca e tokens de bots sensíveis', ()
   try {
     const script = `
       process.argv.push('--json');
-      const logger = require('./logger');
+      const logger = require('./libs/core/logger');
       logger.info('Acessando URL: https://aliexpress.com?token=secret123&code=456789&user=john');
       logger.info('Chamando bot123456789:ABCdefGhIjkLmNoPqRsTuVwXyZ1234567890/sendMessage');
     `;
@@ -64,7 +64,7 @@ test('logger.js - mascara chaves sensíveis por prefixo/sufixo e em objetos anin
   try {
     const script = `
       process.argv.push('--json');
-      const logger = require('./logger');
+      const logger = require('./libs/core/logger');
       logger.info({
         my_secret_field: 'VALOR_TOPSECRET',
         userToken: 'VALOR_USERTOKEN',
@@ -104,7 +104,7 @@ test('logger.js - erro em registro plano tem a mensagem sanitizada (fast-path)',
   try {
     const script = `
       process.argv.push('--json');
-      const logger = require('./logger');
+      const logger = require('./libs/core/logger');
       const fakeToken = ['TOKEN', 'FALSO', 'DE', 'TESTE'].join('_') + '_1234567890';
       logger.warn({ err: new Error('falha ao acessar https://x/y?token=' + fakeToken) }, 'erro plano');
     `;
@@ -132,7 +132,7 @@ test('logger.js - sanitiza query strings sensíveis em campos estruturados (ex: 
     // Valores montados em runtime (nunca literais no fonte, que são varridos pelo Gitleaks)
     const script = `
       process.argv.push('--json');
-      const logger = require('./logger');
+      const logger = require('./libs/core/logger');
       const fakeToken = ['TOKEN', 'FALSO', 'DE', 'TESTE'].join('_') + '_1234567890';
       const fakeKey = ['APIKEY', 'FALSA', 'DE', 'TESTE'].join('_') + '_9876543210';
       logger.info({ url: 'https://example.com/api/ping?token=' + fakeToken + '&ok=1', nested: { link: 'https://x/y?apikey=' + fakeKey } }, 'teste de url');
@@ -165,7 +165,7 @@ test('logger.js - sem TTY usa JSON estruturado (sem pino-pretty/worker) mesmo fo
   const realFilesSnapshot = snapshotRealFiles();
   try {
     const script = `
-      const logger = require('./logger');
+      const logger = require('./libs/core/logger');
       logger.info({ marker: 'sem-tty' }, 'registro estruturado');
     `;
     const env = { ...process.env };
@@ -190,7 +190,7 @@ test('logger.js - sem TTY usa JSON estruturado (sem pino-pretty/worker) mesmo fo
 });
 
 test('logger.js - mascara chaves sensíveis extras (pass/pwd/accessKey/private_key/bearer/senha)', () => {
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const out = logger.scrubSensitiveFieldsForTest
     ? logger.scrubSensitiveFieldsForTest({
         pass: 'x',
@@ -210,7 +210,7 @@ test('logger.js - mascara chaves sensíveis extras (pass/pwd/accessKey/private_k
 });
 
 test('logger.js - sanitizeSensitiveQueryParams cobre fragmento/Bearer/authorization', () => {
-  const { sanitizeSensitiveQueryParams } = require('../logger');
+  const { sanitizeSensitiveQueryParams } = require('../libs/core/logger');
   assert.ok(!sanitizeSensitiveQueryParams('http://x/#token=ABC').includes('ABC'));
   assert.ok(!sanitizeSensitiveQueryParams('Bearer abc.def.ghi').includes('abc.def.ghi'));
   assert.ok(!sanitizeSensitiveQueryParams('authorization: segredo123').includes('segredo123'));
@@ -218,7 +218,7 @@ test('logger.js - sanitizeSensitiveQueryParams cobre fragmento/Bearer/authorizat
 });
 
 test('logger.js - cookie multivalorado é redigido por inteiro (A8)', () => {
-  const { sanitizeSensitiveQueryParams } = require('../logger');
+  const { sanitizeSensitiveQueryParams } = require('../libs/core/logger');
   const out = sanitizeSensitiveQueryParams(
     'cookie: a=1; xman_us_t=SEGREDO_TOKEN_123; login_aliyunid_ticket=SEGREDO2'
   );
@@ -230,7 +230,7 @@ test('logger.js - cookie multivalorado é redigido por inteiro (A8)', () => {
 
 test('logger.js - modo pretty degrada para stdout quando pino-pretty não está instalado', () => {
   const path = require('path');
-  const loggerPath = path.join(__dirname, '..', 'logger.js');
+  const loggerPath = path.join(__dirname, '..', 'libs', 'core', 'logger.js');
   const script = `
     const Module = require('module');
     const orig = Module._resolveFilename;

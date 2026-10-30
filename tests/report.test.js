@@ -534,7 +534,7 @@ test('report.js - payload multi-conta preserva isImportedSessionExpired para o a
 
 test('report.js - renderUnifiedReport mascara o e-mail do usuário no log (PII)', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -802,7 +802,7 @@ test('report.js - tarefas não absorvem moedas do check-in no extrato (isolament
 
 test('report.js - renderCheckinReport exibe (+0 moedas) quando alreadyCollected=true e valor real quando coletado hoje', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -860,7 +860,7 @@ test('report.js - renderCheckinReport exibe (+0 moedas) quando alreadyCollected=
 
 test('report.js - renderUnifiedReport e renderMultiAccountReport exibem (+0 moedas) quando alreadyCollected=true', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -973,7 +973,7 @@ test('report.js - renderUnifiedReport e renderMultiAccountReport exibem (+0 moed
 
 test('libs/report.js - check-in confirmado pelo extrato e check-in não confirmado (fallback da UI)', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -1084,7 +1084,7 @@ test('libs/report.js - check-in confirmado pelo extrato e check-in não confirma
 
 test('libs/report.js - renderMultiAccountReport exibe a quantidade correta de tarefas executadas (results.length)', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -1262,7 +1262,7 @@ test('libs/report.js - renderTasksReport no modo --json mascara e-mail enviado a
 
 test('libs/report.js - renderMultiAccountReport prioriza totalActions sobre results.length', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 
@@ -1335,7 +1335,7 @@ test('libs/report.js - buildUnifiedReportPayload propaga tasksError no meta', ()
 
 test('libs/report.js - buildUnifiedReportPayload omite tasksError nulo sem divergir do schema', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalWarn = logger.warn;
   const warnings = [];
   logger.warn = (obj, msg) => {
@@ -1879,7 +1879,7 @@ test('libs/report.js - payload de webhook Discord neutraliza menções e markdow
 
 test('libs/report.js - multi-conta inclui a agenda (início/fim/próxima conta) no payload e no render', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalInfo = logger.info;
   const messages = [];
 

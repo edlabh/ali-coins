@@ -6,7 +6,7 @@ const { parseCheckinCalendar, isRealStreakReading } = require('../libs/ui/balanc
 const { resolveStreakDays, renderCheckinReport } = require('../libs/report');
 const { updateSessionStreak, saveSession } = require('../libs/session');
 const { buildMessage } = require('../libs/notify');
-const logger = require('../logger');
+const logger = require('../libs/core/logger');
 const i18n = require('../libs/i18n');
 const {
   createIsolatedTestDir,

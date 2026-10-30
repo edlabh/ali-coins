@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { z } = require('zod');
 const logger = require('./logger');
-const { t } = require('./libs/i18n');
+const { t } = require('../i18n');
 
 // Salt fixo legado para compatibilidade com tokens v1
 const APP_SCRYPT_SALT_V1 = Buffer.from('ali-coins-session-encryption-v1-scrypt-salt', 'utf-8');

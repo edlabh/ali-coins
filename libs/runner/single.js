@@ -6,9 +6,9 @@
  * limpeza); dividir por fases é uma evolução possível, mas exigiria mudanças de
  * comportamento e fica fora deste movimento puro.
  */
-const { loadConfig, sessionPath, isJson, isForce, maskUser } = require('../../config');
-const { formatDateTime, formatDuration } = require('../../time_utils');
-const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('../../browser');
+const { loadConfig, sessionPath, isJson, isForce, maskUser } = require('../core/config');
+const { formatDateTime, formatDuration } = require('../core/time_utils');
+const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('../core/browser');
 const {
   validateAndRefresh,
   saveSession,
@@ -44,7 +44,7 @@ const {
 const { isSessionDataMissing, buildCheckinResult } = require('../checkin/result');
 const { checkCaptchaCooldownForLogin } = require('../checkin/captcha');
 const { version: APP_VERSION } = require('../../package.json');
-const logger = require('../../logger');
+const logger = require('../core/logger');
 
 /**
  * Verifica se um seletor está visível na página (nunca lança).

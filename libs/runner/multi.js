@@ -19,7 +19,7 @@ const {
   loadAccounts,
   syncAccountSessions,
   maskUser
-} = require('../../config');
+} = require('../core/config');
 const {
   formatDateTime,
   formatTime,
@@ -29,9 +29,9 @@ const {
   composeAccountWaitMs,
   getReportTimeZoneLabel,
   waitUntilWallClock
-} = require('../../time_utils');
+} = require('../core/time_utils');
 const { version: APP_VERSION } = require('../../package.json');
-const { acquireLock, LockActiveError } = require('../../lockfile');
+const { acquireLock, LockActiveError } = require('../core/lockfile');
 const {
   renderUnifiedReport,
   renderMultiAccountReport,
@@ -59,7 +59,7 @@ const {
 const { setRunContext, clearRunContext } = require('../observability/run-context');
 const { setupGlobalCrashHandler } = require('../crash');
 const { flushAndExit, signalExitCode } = require('../exit');
-const logger = require('../../logger');
+const logger = require('../core/logger');
 const v8 = require('node:v8');
 
 // Raiz do projeto: os caminhos de contas/sessões continuam relativos ao repositório,
@@ -161,7 +161,7 @@ async function main() {
 
   const { runCheckin } = require('./single');
   const { runTasks } = require('../../do_tasks');
-  const { launchBrowser } = require('../../browser');
+  const { launchBrowser } = require('../core/browser');
 
   const accounts = loadAccounts(process.env, PROJECT_ROOT);
   const isMulti = accounts.length > 1;

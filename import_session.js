@@ -1,14 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
-const { credentialsEnvPath, getFromFile, maskUser } = require('./config');
+const { credentialsEnvPath, getFromFile, maskUser } = require('./libs/core/config');
 const {
   decryptSession,
   encryptSession,
   validateSessionPayload,
   safeWriteFile,
   safeChmod600
-} = require('./security');
+} = require('./libs/core/security');
 const {
   resolveSessionPaths,
   getEncryptionConfig,
@@ -16,7 +16,7 @@ const {
   SESSION_META_SCHEMA_VERSION
 } = require('./libs/session');
 const { flushAndExit } = require('./libs/exit');
-const logger = require('./logger');
+const logger = require('./libs/core/logger');
 
 // Carregar variáveis de ambiente do credentials.env de forma silenciosa
 if (fs.existsSync(credentialsEnvPath)) {
@@ -283,7 +283,7 @@ async function importSession(options = {}) {
   let targetSessionMetaPath = options.sessionMetaPath;
   let matchedAccount = null;
 
-  const { loadAccounts } = require('./config');
+  const { loadAccounts } = require('./libs/core/config');
   const accounts = loadAccounts(process.env, baseDir);
 
   if (options.account) {
@@ -501,7 +501,7 @@ async function importSession(options = {}) {
  */
 async function importAllSessions(options = {}) {
   const baseDir = options.baseDir || __dirname;
-  const { loadAccounts } = require('./config');
+  const { loadAccounts } = require('./libs/core/config');
   const accounts = loadAccounts(process.env, baseDir);
   const imported = [];
   const failed = [];
@@ -635,7 +635,7 @@ function normalizeImportCliResult(result) {
 }
 
 if (require.main === module) {
-  const { checkAndDisplayHelp, isAll, getAccountArg } = require('./config');
+  const { checkAndDisplayHelp, isAll, getAccountArg } = require('./libs/core/config');
   if (checkAndDisplayHelp()) {
     flushAndExit(0);
     return;

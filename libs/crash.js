@@ -1,4 +1,4 @@
-const logger = require('../logger');
+const logger = require('./core/logger');
 const { flushAndExit } = require('./exit');
 
 /**

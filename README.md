@@ -128,9 +128,9 @@ cd ali-coins
 
 Execute o instalador correspondente ao seu sistema operacional:
 
-- **Linux (Ubuntu / Debian):** `./setup_linux.sh` (Guia detalhado: [INSTALL_LINUX.md](docs/INSTALL_LINUX.md))
-- **Windows:** `setup_windows.bat` (CMD / duplo clique) ou `.\setup_windows.ps1` (PowerShell) (Guia detalhado: [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md))
-- **macOS:** `./setup_macos.sh` (Guia detalhado: [INSTALL_MACOS.md](docs/INSTALL_MACOS.md))
+- **Linux (Ubuntu / Debian):** `./scripts/setup_linux.sh` (Guia detalhado: [INSTALL_LINUX.md](docs/INSTALL_LINUX.md))
+- **Windows:** `scripts/setup_windows.bat` (CMD / duplo clique) ou `.\scripts\setup_windows.ps1` (PowerShell) (Guia detalhado: [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md))
+- **macOS:** `./scripts/setup_macos.sh` (Guia detalhado: [INSTALL_MACOS.md](docs/INSTALL_MACOS.md))
 
 _(O instalador verifica o Node.js >= 22, roda `npm install`, baixa o Chromium e prepara as credenciais)._
 
@@ -463,7 +463,7 @@ docker run --rm \
     -e NOTIFY_HOST_LABEL="meu-servidor" \
     ali-coins
   ```
-- **Compose e wrapper de produção:** use `docker-run.example.sh` (wrapper de cron com medição de pico de memória/PIDs) ou `docker-compose.yml` (limites declarativos: `shm_size: 256m`, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`, memória 768M) para não repetir as flags manualmente.
+- **Compose e wrapper de produção:** use `scripts/docker-run.example.sh` (wrapper de cron com medição de pico de memória/PIDs) ou `docker-compose.yml` (limites declarativos: `shm_size: 256m`, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`, memória 768M) para não repetir as flags manualmente.
 - **Persistência At-Rest (`session.json.enc`):** Com `ENCRYPT_LOCAL_SESSION=true` (padrão desde a 0.8), o AliExpress salva a sessão criptografada em `session.json.enc` e os metadados em `session_meta.json`. A montagem desses arquivos garante que a sessão seja persistida entre execuções do container efêmero (`--rm`).
 - **Identificação do Host no Telegram (`NOTIFY_HOST_LABEL`):** Em containers descartáveis, o hostname padrão é o ID aleatório do container. Passe `-e NOTIFY_HOST_LABEL="meu-servidor"` ou a flag `--hostname meu-servidor` para que as notificações identifiquem corretamente o seu servidor.
 - A variável `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` garante o compartilhamento e cache dos navegadores.

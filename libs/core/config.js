@@ -1,5 +1,8 @@
 const path = require('path');
 const fs = require('fs');
+
+// Raiz do projeto (este módulo vive em libs/core).
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
 const os = require('os');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
@@ -7,15 +10,15 @@ const { z } = require('zod');
 const { Command } = require('commander');
 const logger = require('./logger');
 const { safeChmod600 } = require('./security');
-const { allowPrivateTargets } = require('./libs/url_guard');
-const { LANG_PT_BR, LANG_EN, resolveLanguage, setLanguage, isEnglish, t } = require('./libs/i18n');
+const { allowPrivateTargets } = require('../url_guard');
+const { LANG_PT_BR, LANG_EN, resolveLanguage, setLanguage, isEnglish, t } = require('../i18n');
 
 // Caminhos padrão de arquivos
-const credentialsEnvPath = path.join(__dirname, 'credentials.env');
-const sessionPath = path.join(__dirname, 'session.json');
-const sessionMetaPath = path.join(__dirname, 'session_meta.json');
-const sessionTokenPath = path.join(__dirname, 'session_token.txt');
-const scratchDir = path.join(__dirname, 'scratch');
+const credentialsEnvPath = path.join(PROJECT_ROOT, 'credentials.env');
+const sessionPath = path.join(PROJECT_ROOT, 'session.json');
+const sessionMetaPath = path.join(PROJECT_ROOT, 'session_meta.json');
+const sessionTokenPath = path.join(PROJECT_ROOT, 'session_token.txt');
+const scratchDir = path.join(PROJECT_ROOT, 'scratch');
 
 // Lockfile isolado por usuário: em hosts multiusuário, impede que outro usuário
 // bloqueie (ou seja bloqueado por) a execução via /tmp/ali-coins.lock compartilhado.
@@ -30,7 +33,7 @@ const lockUserSuffix =
 // Lock no próprio diretório do projeto (privado do usuário na VM/container).
 // Evita o vetor de DoS/adulteração por outros usuários em diretórios compartilhados como /tmp
 // (ex: criar um diretório no caminho do lock, symlink ou timestamp forjado).
-const lockFilePath = path.join(__dirname, `ali-coins-${lockUserSuffix}.lock`);
+const lockFilePath = path.join(PROJECT_ROOT, `ali-coins-${lockUserSuffix}.lock`);
 
 // Carregar variáveis do arquivo credentials.env se existir.
 // Reforça 0o600 em runtime: o arquivo contém ALI_PASSWORD, SESSION_SECRET e tokens,
@@ -486,7 +489,7 @@ class ConfigValidationError extends Error {
  */
 function createCliProgram() {
   const program = new Command();
-  const pkg = require('./package.json');
+  const pkg = require('../../package.json');
   const helpLines = [
     'Códigos de Saída (Exit Codes):',
     '  0  Sucesso (novas moedas coletadas com sucesso)',
@@ -922,10 +925,10 @@ function maskChatId(chatId) {
 /**
  * Carrega a lista de contas configuradas (ALI_USER/ALI_PASSWORD, ALI_USER_2/ALI_PASSWORD_2, ou accounts.json)
  * @param {object} [env=process.env]
- * @param {string} [baseDir=__dirname]
+ * @param {string} [baseDir=PROJECT_ROOT]
  * @returns {Array<{ index: number, user: string, password: string, maskedUser: string, sessionPath: string, sessionMetaPath: string, lockPath: string }>}
  */
-function loadAccounts(env = process.env, baseDir = __dirname) {
+function loadAccounts(env = process.env, baseDir = PROJECT_ROOT) {
   const accounts = [];
   const accountsFile = path.join(baseDir, 'accounts.json');
 
@@ -1100,9 +1103,9 @@ function loadAccounts(env = process.env, baseDir = __dirname) {
 /**
  * Sincroniza e migra arquivos de sessão quando há reordenação de contas ou transição mono -> multi-conta
  * @param {Array<object>} accounts
- * @param {string} [baseDir=__dirname]
+ * @param {string} [baseDir=PROJECT_ROOT]
  */
-function syncAccountSessions(accounts, baseDir = __dirname) {
+function syncAccountSessions(accounts, baseDir = PROJECT_ROOT) {
   if (!Array.isArray(accounts) || accounts.length === 0) return;
   const legacyMetaPath = path.join(baseDir, 'session_meta.json');
   const legacySessionPath = path.join(baseDir, 'session.json');
@@ -1163,7 +1166,7 @@ function syncAccountSessions(accounts, baseDir = __dirname) {
 async function handleDryRun() {
   if (isDryRun()) {
     const cfg = loadConfig(true);
-    const accounts = loadAccounts(process.env, __dirname);
+    const accounts = loadAccounts(process.env, PROJECT_ROOT);
     const maskedUser = maskUser(cfg.ALI_USER);
     const maskedAccounts = accounts.map((a) => ({
       index: a.index,
@@ -1173,7 +1176,7 @@ async function handleDryRun() {
 
     let telegramTestResult = null;
     if (isNotify() === true) {
-      const { sendTelegram } = require('./libs/notify');
+      const { sendTelegram } = require('../notify');
       telegramTestResult = await sendTelegram({ config: cfg, event: 'dry_run' });
     }
 
@@ -1225,7 +1228,7 @@ async function handleDryRun() {
       };
       process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
     } else {
-      const { maskHeartbeatUrl } = require('./libs/heartbeat');
+      const { maskHeartbeatUrl } = require('../heartbeat');
       logger.info('===============================================================');
       logger.info('                 MODO DE VALIDAÇÃO (DRY-RUN)');
       logger.info('===============================================================');

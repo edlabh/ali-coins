@@ -64,7 +64,7 @@ async function flushStdStreams() {
   }
   try {
     // Em modo --json o pino escreve direto no fd 2 via sonic-boom, fora do process.stderr
-    const logger = require('../logger');
+    const logger = require('./core/logger');
     if (logger && typeof logger.flushLogs === 'function') {
       logger.flushLogs();
     }

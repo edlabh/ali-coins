@@ -1,5 +1,5 @@
 const { SELECTORS } = require('../selectors');
-const defaultLogger = require('../../logger');
+const defaultLogger = require('../core/logger');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');

@@ -1,5 +1,5 @@
 const { SELECTORS } = require('../selectors');
-const defaultLogger = require('../../logger');
+const defaultLogger = require('../core/logger');
 
 /**
  * Executa ação de coletar água na Fazenda Mágica / Prize Land

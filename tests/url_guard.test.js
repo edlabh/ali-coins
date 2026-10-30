@@ -70,7 +70,7 @@ test('libs/url_guard.js - M1: lookup pinado bloqueia IP privado na conexão', as
 
 test('libs/url_guard.js - avisa quando o pinning de DNS (undici) está indisponível (uma vez)', () => {
   const { resolveFetchTransport, _resetUndiciWarningForTest } = require('../libs/url_guard');
-  const logger = require('../logger');
+  const logger = require('../libs/core/logger');
   const originalWarn = logger.warn;
   const captured = [];
   logger.warn = (...args) => {
@@ -229,7 +229,7 @@ test('libs/url_guard.js - safeFetch revalida cada hop e bloqueia redirect para r
 });
 
 test('browser.js - stripUrlCredentials remove credenciais mesmo sem esquema', () => {
-  const { stripUrlCredentials } = require('../browser');
+  const { stripUrlCredentials } = require('../libs/core/browser');
   assert.ok(stripUrlCredentials, 'deve ser exportado');
   assert.strictEqual(stripUrlCredentials('user:pass@proxy.local:8080'), 'proxy.local:8080');
   assert.strictEqual(

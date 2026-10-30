@@ -7,11 +7,11 @@ const {
   formatDuration,
   formatTime,
   getReportTimeZoneLabel
-} = require('../time_utils');
-const { maskUser } = require('../config');
+} = require('./core/time_utils');
+const { maskUser } = require('./core/config');
 const { computeCheckinCoinsGained, computeTasksCoinsGained } = require('./report');
-const logger = require('../logger');
-const { sanitizeSensitiveQueryParams } = require('../logger');
+const logger = require('./core/logger');
+const { sanitizeSensitiveQueryParams } = require('./core/logger');
 const { translateNotificationText } = require('./i18n');
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -188,7 +188,7 @@ function checkIfImportedSessionExpired(error = null, report = null) {
   if (isMultiAccountReport) return false;
 
   try {
-    const { sessionMetaPath } = require('../config');
+    const { sessionMetaPath } = require('./core/config');
     if (sessionMetaPath && fs.existsSync(sessionMetaPath)) {
       const meta = JSON.parse(fs.readFileSync(sessionMetaPath, 'utf-8'));
       if (meta && (meta.isImported || meta.importedAt)) {
@@ -1024,7 +1024,7 @@ async function sendTelegram({
   let cfg = config;
   if (!cfg) {
     try {
-      const { loadConfig } = require('../config');
+      const { loadConfig } = require('./core/config');
       cfg = loadConfig(false);
     } catch {
       cfg = process.env;
@@ -1158,7 +1158,7 @@ function shouldSkipAccountNotification(accountChatId, consolidatedChatId, option
 async function test(customConfig = null) {
   let cfg = customConfig;
   if (!cfg) {
-    const { loadConfig } = require('../config');
+    const { loadConfig } = require('./core/config');
     cfg = { ...loadConfig(false), TELEGRAM_ENABLED: true };
   }
   logger.info('Disparando mensagem de teste para o Telegram...');

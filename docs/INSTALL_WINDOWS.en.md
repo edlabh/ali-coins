@@ -18,7 +18,7 @@ This manual describes the complete step-by-step process to install, configure, a
 ## Table of Contents
 
 1. [Minimum Requirements](#1-minimum-requirements)
-2. [Method A: Automatic Installation (`setup_windows.bat` or `setup_windows.ps1`)](#2-method-a-automatic-installation-setup_windowsbat-or-setup_windowsps1)
+2. [Method A: Automatic Installation](#2-method-a-automatic-installation)
 3. [Method B: Manual Step-by-Step Installation](#3-method-b-manual-step-by-step-installation)
    - [Step 1: Installing Node.js 22 LTS](#step-1-installing-nodejs-22-lts)
    - [Step 2: Download or Clone the Project](#step-2-download-or-clone-the-project)
@@ -45,14 +45,14 @@ This manual describes the complete step-by-step process to install, configure, a
 
 ---
 
-## 2. Method A: Automatic Installation (`setup_windows.bat` or `setup_windows.ps1`)
+## 2. Method A: Automatic Installation
 
 The project includes automated installers that check the Node.js version, run `npm install`, install the Chromium binary, generate the `credentials.env` template, and validate the browser's headless operation.
 
 ### Option 1: Via Command Prompt or Double-Click (CMD)
 
 1. Open the project folder in **File Explorer**.
-2. Double-click the **`setup_windows.bat`** file (or run `setup_windows.bat` in CMD).
+2. Double-click the **`scripts/setup_windows.bat`** file (or run `scripts\setup_windows.bat` in CMD).
 3. Wait for it to finish with the message `INSTALACAO CONCLUIDA COM SUCESSO!`.
 
 ### Option 2: Via PowerShell
@@ -60,7 +60,7 @@ The project includes automated installers that check the Node.js version, run `n
 Open the PowerShell terminal in the project folder and run:
 
 ```powershell
-.\setup_windows.ps1
+.\scripts\setup_windows.ps1
 ```
 
 > If PowerShell displays a script execution disabled error, run this first:
@@ -246,15 +246,15 @@ You can obtain your cryptographic key using any of the following methods:
   This instantly generates a cryptographically secure random 32-byte key in Base64 (44 characters) ready to paste into `credentials.env`.
 - **Option 2 (Via the 1-Click Script):**
   Run the key generator utility included in the project root:
-  - In Command Prompt (CMD): `generate_secret.bat`
-  - In PowerShell: `.\generate_secret.ps1`
+  - In Command Prompt (CMD): `scripts\generate_secret.bat`
+  - In PowerShell: `.\scripts\generate_secret.ps1`
 - **Option 3 (Via OpenSSL - if installed on the system or in Git for Windows):**
   If you already have OpenSSL installed on the system or Git for Windows, run in the terminal:
   ```cmd
   openssl rand -base64 32
   ```
 - **Option 4 (Automatic Generation by the Installer):**
-  If you used the `setup_windows.bat` or `setup_windows.ps1` installer (Method A), the 32-character `SESSION_SECRET` key has already been generated and configured automatically in your `credentials.env` file.
+  If you used the `scripts/setup_windows.bat` or `scripts/setup_windows.ps1` installer (Method A), the 32-character `SESSION_SECRET` key has already been generated and configured automatically in your `credentials.env` file.
 
 ---
 
@@ -375,10 +375,10 @@ Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Tri
   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
   ```
 
-### D. Running `setup_windows.bat` as Administrator changes the working directory
+### D. Running `scripts/setup_windows.bat` as Administrator changes the working directory
 
 - **Cause:** By default, Windows sets `C:\Windows\System32` as the working directory when choosing "Run as Administrator".
-- **Solution:** `setup_windows.bat` already includes the anchoring command `cd /d "%~dp0"` to ensure dependencies are always installed in the correct project folder.
+- **Solution:** `scripts/setup_windows.bat` already includes the anchoring command `cd /d "%~dp0.."` to ensure dependencies are always installed in the correct project folder.
 
 ### E. Windows Defender / SmartScreen Alert
 

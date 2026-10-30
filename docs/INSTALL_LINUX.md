@@ -46,8 +46,8 @@ Se você já clonou o repositório, basta executar o script automatizado incluí
 
 ```bash
 cd ali-coins
-chmod +x setup_linux.sh
-./setup_linux.sh
+chmod +x scripts/setup_linux.sh
+./scripts/setup_linux.sh
 ```
 
 O instalador automático realiza sozinho:

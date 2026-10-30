@@ -12,12 +12,12 @@
  * desafio é resolvido pelo operador.
  */
 const readline = require('node:readline');
-const { launchBrowser, newMobileContext, newDesktopContext } = require('../../browser');
+const { launchBrowser, newMobileContext, newDesktopContext } = require('../core/browser');
 const { SELECTORS } = require('../selectors');
 const { saveSession } = require('../session');
 const { gotoWithRetry } = require('./navigation');
-const { maskUser } = require('../../config');
-const logger = require('../../logger');
+const { maskUser } = require('../core/config');
+const logger = require('../core/logger');
 const { t } = require('../i18n');
 
 const CHOICE_HEADLESS = 1;

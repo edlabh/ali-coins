@@ -10,7 +10,7 @@ const {
   ImportSessionError
 } = require('../import_session');
 const { loadSessionFiles } = require('../libs/session');
-const { safeWriteFile } = require('../security');
+const { safeWriteFile } = require('../libs/core/security');
 const {
   createIsolatedTestDir,
   cleanupIsolatedTestDir,
@@ -343,7 +343,7 @@ test('export_session & import_session - auto-roteamento e isolamento de sessão 
     process.env.ALI_USER_2 = 'secondary@multi-test.com';
     process.env.ALI_PASSWORD_2 = 'secondary_password_123';
 
-    const { loadAccounts } = require('../config');
+    const { loadAccounts } = require('../libs/core/config');
     const accounts = loadAccounts(process.env, tmpDir);
     assert.strictEqual(accounts.length, 2);
 
@@ -453,7 +453,7 @@ test('exportAllSessions & importAllSessions - fluxo completo multi-conta em lote
     process.env.ALI_USER_2 = 'user2@batch-test.com';
     process.env.ALI_PASSWORD_2 = 'pwd2_batch';
 
-    const { loadAccounts } = require('../config');
+    const { loadAccounts } = require('../libs/core/config');
     const accounts = loadAccounts(process.env, tmpDir);
     const [acc1, acc2] = accounts;
 
@@ -684,7 +684,7 @@ test('export_session.js - rotateAllSessions rotaciona todas as contas (não só 
     const realScratch = path.resolve(__dirname, '..', 'scratch');
     const scratchBefore = fs.existsSync(realScratch) ? fs.readdirSync(realScratch).sort() : [];
 
-    const { loadAccounts } = require('../config');
+    const { loadAccounts } = require('../libs/core/config');
     const { rotateAllSessions } = require('../export_session');
     const [acc1, acc2] = loadAccounts(process.env, tmpDir);
 

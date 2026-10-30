@@ -10,11 +10,16 @@ const {
   credentialsEnvPath,
   isShowToken,
   maskUser
-} = require('./config');
-const { encryptSession, safeWriteFile, safeChmod600, validateSession } = require('./security');
+} = require('./libs/core/config');
+const {
+  encryptSession,
+  safeWriteFile,
+  safeChmod600,
+  validateSession
+} = require('./libs/core/security');
 const { flushAndExit } = require('./libs/exit');
 const { t } = require('./libs/i18n');
-const logger = require('./logger');
+const logger = require('./libs/core/logger');
 
 // Carregar variáveis de ambiente do credentials.env de forma silenciosa
 if (fs.existsSync(credentialsEnvPath)) {
@@ -59,7 +64,7 @@ async function exportSession(options = {}) {
   let expectedUser = options.expectedUser || null;
 
   if (options.account) {
-    const { loadAccounts } = require('./config');
+    const { loadAccounts } = require('./libs/core/config');
     const accounts = loadAccounts(process.env, baseDir || __dirname);
     const target =
       accounts.find((a) => a.index === Number(options.account)) ||
@@ -192,7 +197,7 @@ async function exportSession(options = {}) {
  * @returns {Promise<{ exported: Array<{ index: number, user: string, maskedUser: string, token: string, fingerprint: string, tokenFile: string }>, failed: Array<{ index: number, error: string }> }>}
  */
 async function exportAllSessions(options = {}) {
-  const { loadAccounts } = require('./config');
+  const { loadAccounts } = require('./libs/core/config');
   const baseDir = options.baseDir || __dirname;
   const accounts = loadAccounts(process.env, baseDir);
   const exported = [];
@@ -274,7 +279,7 @@ async function exportAllSessions(options = {}) {
  * @returns {Promise<Array<{ success: boolean, skipped?: boolean, user?: string, error?: string, sessionPath: string }>>}
  */
 async function rotateAllSessions(options = {}) {
-  const { loadAccounts } = require('./config');
+  const { loadAccounts } = require('./libs/core/config');
   const { rotateSessionSecret } = require('./libs/session');
   const baseDir = options.baseDir || __dirname;
   const accounts = loadAccounts(process.env, baseDir);
@@ -338,7 +343,7 @@ async function rotateAllSessions(options = {}) {
 }
 
 if (require.main === module) {
-  const { checkAndDisplayHelp, isAll, getAccountArg, loadAccounts } = require('./config');
+  const { checkAndDisplayHelp, isAll, getAccountArg, loadAccounts } = require('./libs/core/config');
   if (checkAndDisplayHelp()) {
     flushAndExit(0);
     return;

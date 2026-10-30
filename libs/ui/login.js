@@ -2,9 +2,9 @@ const { SELECTORS } = require('../selectors');
 const { waitAndClick, trySolveSlider } = require('./navigation');
 const { saveFailureScreenshot } = require('./diagnostics');
 const { saveSession } = require('../session');
-const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../../security');
-const { maskUser } = require('../../config');
-const logger = require('../../logger');
+const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../core/security');
+const { maskUser } = require('../core/config');
+const logger = require('../core/logger');
 
 // Endpoint do login por senha (o /report e o /punish do anti-bot ficam de fora).
 const LOGIN_RESPONSE_URL_RE = /\/user\/buyer\/login\/loginByPwd(?:$|\?)/i;

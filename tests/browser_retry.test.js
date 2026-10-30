@@ -9,8 +9,8 @@ const {
   launchBrowser,
   buildChromiumArgs,
   getLowMemoryChromiumArgs
-} = require('../browser');
-const { encryptSession } = require('../security');
+} = require('../libs/core/browser');
+const { encryptSession } = require('../libs/core/security');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
 test('browser.js:retry - executa função com sucesso na 1ª tentativa', async () => {
@@ -133,7 +133,7 @@ test('browser.js:resolveStorageState - normaliza objeto, path json, path enc e a
 
 test('browser.js - getChromiumEnv não propaga segredos da aplicação ao Chromium', () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const { getChromiumEnv } = require('../browser');
+  const { getChromiumEnv } = require('../libs/core/browser');
   const original = {
     ALI_PASSWORD: process.env.ALI_PASSWORD,
     SESSION_SECRET: process.env.SESSION_SECRET,
@@ -192,7 +192,7 @@ test('browser.js - flags de baixo consumo são aplicadas por padrão (opt-out vi
     isLowMemoryModeEnabled,
     getLowMemoryChromiumArgs,
     shouldDisableDevShmUsage
-  } = require('../browser');
+  } = require('../libs/core/browser');
   const original = process.env.CHROMIUM_LOW_MEMORY;
   const originalHeap = process.env.CHROMIUM_JS_HEAP_MB;
 
@@ -540,7 +540,7 @@ test('browser.js - flags de economia de CPU e bloqueio de service workers (padr�
     getChromiumArgs,
     BACKGROUND_CPU_SAVING_ARGS,
     isServiceWorkerBlockingEnabled
-  } = require('../browser');
+  } = require('../libs/core/browser');
   const originalLowMemory = process.env.CHROMIUM_LOW_MEMORY;
   const originalSw = process.env.PW_BLOCK_SERVICE_WORKERS;
 
@@ -581,7 +581,7 @@ test('browser.js - flags de economia de CPU e bloqueio de service workers (padr�
 test('browser.js - env do caller é mesclado sem remover a sanitização de segredos', async () => {
   const realFilesSnapshot = snapshotRealFiles();
   const playwright = require('playwright');
-  const { launchBrowser } = require('../browser');
+  const { launchBrowser } = require('../libs/core/browser');
   const originalLaunch = playwright.chromium.launch;
   const originalToken = process.env.TELEGRAM_BOT_TOKEN;
   let captured = null;
@@ -615,7 +615,7 @@ test('browser.js - env do caller é mesclado sem remover a sanitização de segr
 
 test('browser.js - fecha o BrowserContext se o setup falhar após newContext', async () => {
   const realFilesSnapshot = snapshotRealFiles();
-  const { newMobileContext } = require('../browser');
+  const { newMobileContext } = require('../libs/core/browser');
   let closed = false;
 
   try {
@@ -638,7 +638,7 @@ test('browser.js - fecha o BrowserContext se o setup falhar após newContext', a
 });
 
 test('browser.js - getChromiumEnv remove credenciais de proxy e chaves sensíveis extras', () => {
-  const { getChromiumEnv } = require('../browser');
+  const { getChromiumEnv } = require('../libs/core/browser');
   const orig = { ...process.env };
   const savedProxy = process.env.HTTPS_PROXY;
   const savedPw = process.env.ALI_ACC_PASS;
@@ -658,7 +658,7 @@ test('browser.js - getChromiumEnv remove credenciais de proxy e chaves sensívei
 });
 
 test('browser.js - shouldDisableDevShmUsage decide por plataforma e espaço em /dev/shm', () => {
-  const { shouldDisableDevShmUsage } = require('../browser');
+  const { shouldDisableDevShmUsage } = require('../libs/core/browser');
   const realFilesSnapshot = snapshotRealFiles();
   const MB = 1024 * 1024;
   try {
@@ -697,7 +697,7 @@ test('browser.js - shouldDisableDevShmUsage decide por plataforma e espaço em /
 });
 
 test('browser.js - setupResourceBlocking intercepta assets e trata erros de abort/continue', async () => {
-  const { setupResourceBlocking } = require('../browser');
+  const { setupResourceBlocking } = require('../libs/core/browser');
   const realFilesSnapshot = snapshotRealFiles();
   try {
     let registeredPattern = null;
@@ -765,7 +765,7 @@ test('browser.js - setupResourceBlocking intercepta assets e trata erros de abor
 });
 
 test('browser.js - setupResourceBlocking bloqueia trackers de anúncios de terceiros', async () => {
-  const { setupResourceBlocking } = require('../browser');
+  const { setupResourceBlocking } = require('../libs/core/browser');
   const realFilesSnapshot = snapshotRealFiles();
   try {
     let routeHandler = null;

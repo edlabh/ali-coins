@@ -216,7 +216,7 @@ test('observability/run-context - logger correlaciona runId e conta mascarada', 
   const { spawnSync } = require('node:child_process');
   const path = require('node:path');
   const script = `
-    const logger = require('./logger');
+    const logger = require('./libs/core/logger');
     const { setRunContext, clearRunContext } = require('./libs/observability/run-context');
     setRunContext({ runId: 'run-ctx', account: 'us***@example.com' });
     logger.info('Evento com contexto');

@@ -12,9 +12,9 @@ const {
   postToTelegramWithRetry,
   TELEGRAM_MAX_ATTEMPTS
 } = require('../libs/notify');
-const { configSchema } = require('../config');
+const { configSchema } = require('../libs/core/config');
 const { version: APP_VERSION } = require('../package.json');
-const logger = require('../logger');
+const logger = require('../libs/core/logger');
 const { snapshotRealFiles, assertRealFilesUntouched } = require('./test_helper');
 
 test('libs/notify.js - escapeHtml neutraliza caracteres perigosos para HTML do Telegram', () => {
@@ -1099,7 +1099,7 @@ test('libs/notify.js - extrato e notificações não contabilizam nada de check-
 test('libs/notify.js - fallback de sessão importada não usa o meta primário em relatório multi-conta', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const config = require('../config');
+  const config = require('../libs/core/config');
   const {
     createIsolatedTestDir,
     cleanupIsolatedTestDir,
@@ -1222,7 +1222,7 @@ test('libs/notify.js - shouldSkipAccountNotification suprime conta com chat igua
 });
 
 test('config.js - TELEGRAM_PER_ACCOUNT é boolean e desligado por padrão', () => {
-  const { configSchema } = require('../config');
+  const { configSchema } = require('../libs/core/config');
   const base = {
     ALI_USER: 'a@b.co',
     ALI_PASSWORD: 'pwd',

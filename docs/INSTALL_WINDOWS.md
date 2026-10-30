@@ -16,7 +16,7 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 ## Sumário
 
 1. [Requisitos Mínimos](#1-requisitos-m%C3%ADnimos)
-2. [Método A: Instalação Automática (setup_windows.bat ou setup_windows.ps1)](#2-m%C3%A9todo-a-instala%C3%A7%C3%A3o-autom%C3%A1tica-setup_windowsbat-ou-setup_windowsps1)
+2. [Método A: Instalação Automática](#2-método-a-instalação-automática)
 3. [Método B: Instalação Manual Passo a Passo](#3-m%C3%A9todo-b-instala%C3%A7%C3%A3o-manual-passo-a-passo)
    - [Passo 1: Instalação do Node.js 22 LTS](#passo-1-instala%C3%A7%C3%A3o-do-nodejs-22-lts)
    - [Passo 2: Baixar ou Clonar o Projeto](#passo-2-baixar-ou-clonar-o-projeto)
@@ -43,14 +43,14 @@ Este manual descreve o passo a passo completo para instalar, configurar e rodar 
 
 ---
 
-## 2. Método A: Instalação Automática (`setup_windows.bat` ou `setup_windows.ps1`)
+## 2. Método A: Instalação Automática
 
 O projeto inclui instaladores automatizados que verificam a versão do Node.js, executam o `npm install`, instalam o binário do Chromium, geram o modelo `credentials.env` e validam o funcionamento headless do navegador.
 
 ### Opção 1: Via Prompt de Comando ou Duplo-Clique (CMD)
 
 1. Abra a pasta do projeto no **Explorador de Arquivos**.
-2. Dê um duplo clique no arquivo **`setup_windows.bat`** (ou execute `setup_windows.bat` no CMD).
+2. Dê um duplo clique no arquivo **`scripts/setup_windows.bat`** (ou execute `scripts\setup_windows.bat` no CMD).
 3. Aguarde a finalização com a mensagem `INSTALACAO CONCLUIDA COM SUCESSO!`.
 
 ### Opção 2: Via PowerShell
@@ -58,7 +58,7 @@ O projeto inclui instaladores automatizados que verificam a versão do Node.js, 
 Abra o terminal PowerShell na pasta do projeto e execute:
 
 ```powershell
-.\setup_windows.ps1
+.\scripts\setup_windows.ps1
 ```
 
 > Se o PowerShell exibir erro de execução desabilitada, execute antes:
@@ -244,15 +244,15 @@ Você pode obter sua chave criptográfica por qualquer um dos seguintes métodos
   Isso gerará instantaneamente uma chave aleatória criptograficamente segura de 32 bytes em Base64 (44 caracteres) pronta para colar no `credentials.env`.
 - **Opção 2 (Via Script de 1 Clique):**
   Execute o utilitário gerador de chaves incluído na raiz do projeto:
-  - No Prompt de Comando (CMD): `generate_secret.bat`
-  - No PowerShell: `.\generate_secret.ps1`
+  - No Prompt de Comando (CMD): `scripts\generate_secret.bat`
+  - No PowerShell: `.\scripts\generate_secret.ps1`
 - **Opção 3 (Via OpenSSL - se instalado no sistema ou no Git for Windows):**
   Se você já possui o OpenSSL instalado no sistema ou o Git for Windows, execute no terminal:
   ```cmd
   openssl rand -base64 32
   ```
 - **Opção 4 (Geração Automática pelo Instalador):**
-  Se você utilizou o instalador `setup_windows.bat` ou `setup_windows.ps1` (Método A), a chave `SESSION_SECRET` de 32 caracteres já foi gerada e configurada automaticamente no seu arquivo `credentials.env`.
+  Se você utilizou o instalador `scripts/setup_windows.bat` ou `scripts/setup_windows.ps1` (Método A), a chave `SESSION_SECRET` de 32 caracteres já foi gerada e configurada automaticamente no seu arquivo `credentials.env`.
 
 ---
 
@@ -373,10 +373,10 @@ Register-ScheduledTask -TaskName "AliExpressCoinsCollector" -Action $action -Tri
   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
   ```
 
-### D. Executar `setup_windows.bat` como Administrador muda o diretório de trabalho
+### D. Executar `scripts/setup_windows.bat` como Administrador muda o diretório de trabalho
 
 - **Causa:** Por padrão, o Windows define `C:\Windows\System32` como diretório de trabalho ao escolher "Executar como Administrador".
-- **Solução:** O `setup_windows.bat` já inclui o comando de ancoragem `cd /d "%~dp0"` para garantir que as dependências sejam instaladas sempre na pasta correta do projeto.
+- **Solução:** O `scripts/setup_windows.bat` já inclui o comando de ancoragem `cd /d "%~dp0.."` para garantir que as dependências sejam instaladas sempre na pasta correta do projeto.
 
 ### E. Alerta do Windows Defender / SmartScreen
 

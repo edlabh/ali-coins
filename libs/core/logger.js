@@ -1,12 +1,15 @@
 const fs = require('fs');
 const path = require('path');
+
+// Raiz do projeto (este módulo vive em libs/core).
+const PROJECT_ROOT = path.join(__dirname, '..', '..');
 const dotenv = require('dotenv');
 const pino = require('pino');
-const { translateMessage, translateId, isEnglish } = require('./libs/i18n');
-const { getRunContext } = require('./libs/observability/run-context');
+const { translateMessage, translateId, isEnglish } = require('../i18n');
+const { getRunContext } = require('../observability/run-context');
 
 // Carregar credentials.env antes de ler LOG_LEVEL para garantir precedência
-const credentialsEnvPath = path.join(__dirname, 'credentials.env');
+const credentialsEnvPath = path.join(PROJECT_ROOT, 'credentials.env');
 if (fs.existsSync(credentialsEnvPath)) {
   dotenv.config({ path: credentialsEnvPath, quiet: true });
 }

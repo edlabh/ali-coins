@@ -1,7 +1,7 @@
 /**
  * Orquestrador fino de despacho e execução de tarefas do painel do AliExpress
  */
-const { waitWithScroll } = require('../../browser');
+const { waitWithScroll } = require('../core/browser');
 const {
   executeSurpriseItems,
   shouldReloadSurpriseFeed,
@@ -35,7 +35,7 @@ const {
   ensureMainPage,
   getDrawerTasksWithRetry
 } = require('./verifier');
-const defaultLogger = require('../../logger');
+const defaultLogger = require('../core/logger');
 
 /**
  * Executa uma ação de tarefa individual com base no título e descrição.

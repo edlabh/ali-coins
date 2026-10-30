@@ -130,9 +130,9 @@ cd ali-coins
 
 Run the installer for your operating system:
 
-- **Linux (Ubuntu / Debian):** `./setup_linux.sh` (Detailed guide: [INSTALL_LINUX.en.md](INSTALL_LINUX.en.md))
-- **Windows:** `setup_windows.bat` (CMD / double-click) or `.\setup_windows.ps1` (PowerShell) (Detailed guide: [INSTALL_WINDOWS.en.md](INSTALL_WINDOWS.en.md))
-- **macOS:** `./setup_macos.sh` (Detailed guide: [INSTALL_MACOS.en.md](INSTALL_MACOS.en.md))
+- **Linux (Ubuntu / Debian):** `./scripts/setup_linux.sh` (Detailed guide: [INSTALL_LINUX.en.md](INSTALL_LINUX.en.md))
+- **Windows:** `scripts/setup_windows.bat` (CMD / double-click) or `.\scripts\setup_windows.ps1` (PowerShell) (Detailed guide: [INSTALL_WINDOWS.en.md](INSTALL_WINDOWS.en.md))
+- **macOS:** `./scripts/setup_macos.sh` (Detailed guide: [INSTALL_MACOS.en.md](INSTALL_MACOS.en.md))
 
 _(The installer checks for Node.js >= 22, runs `npm install`, downloads Chromium, and prepares the credentials.)_
 
@@ -465,7 +465,7 @@ docker run --rm \
     -e NOTIFY_HOST_LABEL="my-server" \
     ali-coins
   ```
-- **Compose and production wrapper:** use `docker-run.example.sh` (cron wrapper with peak memory/PID measurement) or `docker-compose.yml` (declarative limits: `shm_size: 256m`, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`, 768M memory) to avoid repeating the flags manually.
+- **Compose and production wrapper:** use `scripts/docker-run.example.sh` (cron wrapper with peak memory/PID measurement) or `docker-compose.yml` (declarative limits: `shm_size: 256m`, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`, 768M memory) to avoid repeating the flags manually.
 - **At-Rest Persistence (`session.json.enc`):** With `ENCRYPT_LOCAL_SESSION=true` (default since 0.8), AliExpress saves the encrypted session in `session.json.enc` and metadata in `session_meta.json`. Mounting these files ensures the session persists between runs of the ephemeral container (`--rm`).
 - **Host Identification in Telegram (`NOTIFY_HOST_LABEL`):** In disposable containers, the default hostname is the random container ID. Pass `-e NOTIFY_HOST_LABEL="my-server"` or the `--hostname my-server` flag so notifications correctly identify your server.
 - The `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` variable ensures browsers are shared and cached.

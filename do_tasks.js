@@ -6,10 +6,19 @@ const {
   isJson,
   checkAndDisplayHelp,
   maskUser
-} = require('./config');
-const { formatDateTime, formatDate, formatDuration, pickPauseMs } = require('./time_utils');
-const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('./browser');
-const { acquireLock, LockActiveError } = require('./lockfile');
+} = require('./libs/core/config');
+const {
+  formatDateTime,
+  formatDate,
+  formatDuration,
+  pickPauseMs
+} = require('./libs/core/time_utils');
+const {
+  launchBrowser,
+  newMobileContext,
+  closeContextWithDiagnostics
+} = require('./libs/core/browser');
+const { acquireLock, LockActiveError } = require('./libs/core/lockfile');
 const { flushAndExit } = require('./libs/exit');
 const { validateAndRefresh } = require('./libs/session');
 const { SELECTORS } = require('./libs/selectors');
@@ -45,7 +54,7 @@ const {
 } = require('./libs/ui');
 const { renderTasksReport } = require('./libs/report');
 const { version: APP_VERSION } = require('./package.json');
-const logger = require('./logger');
+const logger = require('./libs/core/logger');
 
 // Confirmação de progresso tardio: quando uma tarefa esgota as tentativas da rodada atual,
 // o painel do AliExpress pode ainda estar processando os toques (progresso atrasado) —

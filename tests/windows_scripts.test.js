@@ -4,14 +4,17 @@ const fs = require('fs');
 const path = require('path');
 
 test('Windows Scripts - setup_windows.bat syntax and encoding validation', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'setup_windows.bat'), 'utf8');
+  const content = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'setup_windows.bat'),
+    'utf8'
+  );
 
   // Deve configurar UTF-8 nativo
   assert.ok(content.includes('chcp 65001 >nul'), 'setup_windows.bat deve configurar chcp 65001');
 
   // Deve ter ancoragem de diretório
   assert.ok(
-    content.includes('cd /d "%~dp0"'),
+    content.includes('cd /d "%~dp0.."'),
     'setup_windows.bat deve ancorar no diretório do script'
   );
 
@@ -61,11 +64,11 @@ test('Windows Scripts - run_*.bat execution scripts validation', () => {
 
 test('Windows Scripts - PowerShell scripts UTF-8 encoding validation', () => {
   const psScripts = [
-    'setup_windows.ps1',
+    'scripts/setup_windows.ps1',
     'run_all.ps1',
     'run.ps1',
     'run_tasks.ps1',
-    'generate_secret.ps1'
+    'scripts/generate_secret.ps1'
   ];
 
   for (const script of psScripts) {
@@ -112,8 +115,14 @@ test('Windows Scripts - run_*.ps1 arguments splatting and exit code propagation'
 });
 
 test('Windows Scripts - generate_secret scripts (OpenSSL and native Node.js fallback)', () => {
-  const batContent = fs.readFileSync(path.join(__dirname, '..', 'generate_secret.bat'), 'utf8');
-  const psContent = fs.readFileSync(path.join(__dirname, '..', 'generate_secret.ps1'), 'utf8');
+  const batContent = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'generate_secret.bat'),
+    'utf8'
+  );
+  const psContent = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'generate_secret.ps1'),
+    'utf8'
+  );
 
   // generate_secret.bat
   assert.ok(
@@ -128,7 +137,7 @@ test('Windows Scripts - generate_secret scripts (OpenSSL and native Node.js fall
     batContent.includes('crypto').toString() && batContent.includes('randomBytes(32)'),
     'generate_secret.bat deve ter fallback nativo Node.js crypto'
   );
-  assert.ok(batContent.includes('cd /d "%~dp0"'), 'generate_secret.bat deve ancorar o diretório');
+  assert.ok(batContent.includes('cd /d "%~dp0.."'), 'generate_secret.bat deve ancorar o diretório');
 
   // generate_secret.ps1
   assert.ok(psContent.includes('chcp 65001'), 'generate_secret.ps1 deve configurar chcp 65001');
@@ -157,8 +166,14 @@ test('Windows Scripts - generate_secret scripts (OpenSSL and native Node.js fall
 });
 
 test('Windows Scripts - setup installers key generation integration', () => {
-  const batSetup = fs.readFileSync(path.join(__dirname, '..', 'setup_windows.bat'), 'utf8');
-  const psSetup = fs.readFileSync(path.join(__dirname, '..', 'setup_windows.ps1'), 'utf8');
+  const batSetup = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'setup_windows.bat'),
+    'utf8'
+  );
+  const psSetup = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'setup_windows.ps1'),
+    'utf8'
+  );
 
   // setup_windows.bat
   assert.ok(

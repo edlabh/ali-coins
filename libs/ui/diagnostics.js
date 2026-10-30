@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const logger = require('../../logger');
-const { safeChmod600, safeWriteFile } = require('../../security');
+const logger = require('../core/logger');
+const { safeChmod600, safeWriteFile } = require('../core/security');
 
 // O modo de baixo consumo do Chromium é habilitado por padrão (mesma semântica de browser.js).
 // Nele o tracing fica DESLIGADO por padrão: traces gravam screenshots + snapshots de DOM

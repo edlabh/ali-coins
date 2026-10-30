@@ -7,7 +7,7 @@ const {
   maskChatId,
   isNoDelay,
   shouldApplyStartDelay
-} = require('../config');
+} = require('../libs/core/config');
 const { createIsolatedTestDir, cleanupIsolatedTestDir } = require('./test_helper');
 
 test('config.js - defaults schema Zod', () => {
@@ -138,7 +138,7 @@ test('config.js - loadConfig lança ConfigValidationError com env inválido', ()
 });
 
 test('config.js - isNotify e parseCliOptions com Commander 15', () => {
-  const { isNotify, parseCliOptions, createCliProgram } = require('../config');
+  const { isNotify, parseCliOptions, createCliProgram } = require('../libs/core/config');
 
   // Commander 15 options
   const program = createCliProgram();
@@ -160,7 +160,7 @@ test('config.js - isNotify e parseCliOptions com Commander 15', () => {
 });
 
 test('config.js - MANUAL_LOGIN: defaults, validação e overrides da CLI', () => {
-  const { isManualLogin } = require('../config');
+  const { isManualLogin } = require('../libs/core/config');
 
   assert.strictEqual(isManualLogin(['node', 'all.js']), null);
   assert.strictEqual(isManualLogin(['node', 'all.js', '--manual-login']), true);
@@ -263,7 +263,7 @@ test('config.js - mensagens PT-BR de validação são preservadas no Zod 4 (opç
 test('config.js - lockFilePath fica no diretório privado do projeto (não em /tmp)', () => {
   const os = require('os');
   const path = require('path');
-  const { lockFilePath } = require('../config');
+  const { lockFilePath } = require('../libs/core/config');
 
   assert.strictEqual(
     path.dirname(lockFilePath),
@@ -290,7 +290,7 @@ test('config.js - lockFilePath fica no diretório privado do projeto (não em /t
 test('config.js - locks de contas secundárias também ficam no diretório do projeto', () => {
   const os = require('os');
   const path = require('path');
-  const { loadAccounts } = require('../config');
+  const { loadAccounts } = require('../libs/core/config');
   const original = {
     ALI_USER: process.env.ALI_USER,
     ALI_PASSWORD: process.env.ALI_PASSWORD,
@@ -398,7 +398,7 @@ test('config.js - positiveInt rejeita valores não numéricos e aceita strings n
 test('config.js - passwordEnv não resolve propriedades herdadas de Object.prototype', () => {
   const fs = require('fs');
   const path = require('path');
-  const { loadAccounts } = require('../config');
+  const { loadAccounts } = require('../libs/core/config');
   const tmpDir = createIsolatedTestDir('ali-pwenv-proto-');
   const originalUser = process.env.ALI_USER;
   const originalPass = process.env.ALI_PASSWORD;
@@ -424,7 +424,7 @@ test('config.js - passwordEnv não resolve propriedades herdadas de Object.proto
 test('config.js - passwordFile não permite path traversal fora do diretório do accounts.json', () => {
   const fs = require('fs');
   const path = require('path');
-  const { loadAccounts } = require('../config');
+  const { loadAccounts } = require('../libs/core/config');
   const tmpDir = createIsolatedTestDir('ali-pwfile-trav-');
   const originalUser = process.env.ALI_USER;
   const originalPass = process.env.ALI_PASSWORD;

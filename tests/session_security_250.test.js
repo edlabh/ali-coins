@@ -11,7 +11,7 @@ const path = require('path');
 const { importSession, importAllSessions } = require('../import_session');
 const { exportSession } = require('../export_session');
 const { saveSession } = require('../libs/session');
-const { validateSession } = require('../security');
+const { validateSession } = require('../libs/core/security');
 const { checkSessionReadOnly } = require('../libs/session-check');
 const { createCoinCenterPage, createBrowserForPage } = require('./helpers/playwright-harness');
 const {

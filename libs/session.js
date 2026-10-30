@@ -6,7 +6,7 @@ const {
   sessionMetaPath: defaultSessionMetaPath,
   scratchDir: defaultScratchDir,
   maskUser
-} = require('../config');
+} = require('./core/config');
 const {
   validateSession,
   validateSessionPayload,
@@ -15,9 +15,9 @@ const {
   safeChmod600,
   encryptSessionAsync,
   decryptSessionAsync
-} = require('../security');
+} = require('./core/security');
 const { filterStorageState, shouldFilterStorage } = require('./storage_filter');
-const logger = require('../logger');
+const logger = require('./core/logger');
 
 // Versão do contrato de session_meta.json. Campos novos podem ser adicionados de forma
 // compatível; consumidores devem usar este número para decidir como interpretar o arquivo.
@@ -491,7 +491,7 @@ async function validateAndRefresh(userEmail, existingSessionData = null, options
       String(metaData.user).trim().toLowerCase() !== String(userEmail).trim().toLowerCase()
     ) {
       try {
-        const { loadAccounts } = require('../config');
+        const { loadAccounts } = require('./core/config');
         const baseDir = options.baseDir || path.dirname(resolveSessionPaths(options).sPath);
         const configuredAccounts = loadAccounts(process.env, baseDir);
         const isKnownUser =

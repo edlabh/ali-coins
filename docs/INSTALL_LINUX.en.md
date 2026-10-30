@@ -48,8 +48,8 @@ If you have already cloned the repository, simply run the automated script inclu
 
 ```bash
 cd ali-coins
-chmod +x setup_linux.sh
-./setup_linux.sh
+chmod +x scripts/setup_linux.sh
+./scripts/setup_linux.sh
 ```
 
 The automatic installer performs the following on its own:

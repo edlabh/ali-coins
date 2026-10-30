@@ -8,7 +8,7 @@ const {
   applyDiagnosticOptions,
   startContextTracing,
   closeContextWithDiagnostics
-} = require('./libs/ui/diagnostics');
+} = require('../ui/diagnostics');
 
 /**
  * Verifica se a sandbox deve ser desativada (--no-sandbox).
@@ -256,7 +256,16 @@ function getChromiumEnv() {
     if (SENSITIVE_ENV_KEY_REGEX.test(key) || SENSITIVE_ENV_KEY_PREFIX_REGEX.test(key)) continue;
     envVars[key] = PROXY_ENV_KEYS.includes(key) ? stripUrlCredentials(value) : value;
   }
-  const localLibPath = path.join(__dirname, 'libs', 'extracted', 'usr', 'lib', 'x86_64-linux-gnu');
+  const localLibPath = path.join(
+    __dirname,
+    '..',
+    '..',
+    'libs',
+    'extracted',
+    'usr',
+    'lib',
+    'x86_64-linux-gnu'
+  );
   if (process.platform === 'linux' && fs.existsSync(localLibPath)) {
     envVars.LD_LIBRARY_PATH = `${localLibPath}:${envVars.LD_LIBRARY_PATH || ''}`;
   }
@@ -426,7 +435,7 @@ async function resolveStorageState(storageState) {
   if (typeof storageState === 'string') {
     if (storageState.endsWith('.enc') && fs.existsSync(storageState)) {
       try {
-        const { loadSessionFiles } = require('./libs/session');
+        const { loadSessionFiles } = require('../session');
         const loaded = await loadSessionFiles({ sessionPath: storageState });
         return loaded.sessionData || null;
       } catch (err) {
@@ -443,7 +452,7 @@ async function resolveStorageState(storageState) {
     const encCandidate = storageState.endsWith('.enc') ? storageState : `${storageState}.enc`;
     if (fs.existsSync(encCandidate)) {
       try {
-        const { loadSessionFiles } = require('./libs/session');
+        const { loadSessionFiles } = require('../session');
         const loaded = await loadSessionFiles({ sessionPath: storageState });
         return loaded.sessionData || null;
       } catch (err) {
