@@ -1,6 +1,6 @@
 # AliExpress Coin Collector & Task Runner
 
-> 🌐 **Languages:** [Português](README.md) | [English](README.en.md)
+> 🌐 **Languages:** [Português](../README.md) | [English](README.en.md)
 
 > ℹ️ English translation of the canonical Portuguese documentation. If there is any divergence, the Portuguese version prevails.
 

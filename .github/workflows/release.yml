@@ -118,7 +118,7 @@ jobs:
             const fs = require("fs");
             const version = process.env.VERSION;
             const marker = "## [" + version + "]";
-            const lines = fs.readFileSync("CHANGELOG.md", "utf-8").split("\n");
+            const lines = fs.readFileSync("docs/CHANGELOG.md", "utf-8").split("\n");
             const start = lines.findIndex((l) => l.startsWith(marker));
             if (start === -1) process.exit(0);
             let end = lines.length;

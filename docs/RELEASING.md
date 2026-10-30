@@ -45,7 +45,7 @@ GitHub Releases e o fluxo do ciclo atual **2.x**.
    # git push origin main
    # git push origin X.Y.Z vX.Y.Z
    ```
-6. **Automação**: o workflow [`Release`](.github/workflows/release.yml) dispara em tags
+6. **Automação**: o workflow [`Release`](../.github/workflows/release.yml) dispara em tags
    `X.Y.Z`/`vX.Y.Z`, valida que a tag corresponde ao `package.json`, roda lint + testes
    e publica (ou atualiza de forma idempotente) a GitHub Release:
    - Título: `Release X.Y.Z`

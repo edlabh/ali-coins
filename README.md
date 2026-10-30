@@ -1,6 +1,6 @@
 # AliExpress Coin Collector & Task Runner
 
-> 🌐 **Idiomas:** [Português](README.md) | [English](README.en.md)
+> 🌐 **Idiomas:** [Português](README.md) | [English](docs/README.en.md)
 
 Automação completa para **check-in diário de moedas** e **execução de tarefas ("Ganhe mais moedas")** do AliExpress com emulação mobile (Google Pixel 7 / Android) via Playwright.
 
@@ -24,12 +24,12 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 
 - **Observabilidade:** evento estruturado `run_metrics` por execução, com `runId`, conta
   mascarada, durações, resultado do check-in/tarefas, streak e moedas. SLIs, SLOs e
-  playbooks em [OBSERVABILITY.md](OBSERVABILITY.md) ([EN](OBSERVABILITY.en.md)).
+  playbooks em [OBSERVABILITY.md](docs/OBSERVABILITY.md) ([EN](docs/OBSERVABILITY.en.md)).
 - **i18n por IDs estáveis:** mensagens com `id → { pt, en }`, compatibilidade com chaves
   legadas e telemetria de migração.
 - **Boot mais leve:** `--help`, `--dry-run` e `--check-session` não carregam o Playwright;
-  ~48% menos tempo/RSS nesses caminhos. Medições em [PERFORMANCE.md](PERFORMANCE.md)
-  ([EN](PERFORMANCE.en.md)).
+  ~48% menos tempo/RSS nesses caminhos. Medições em [PERFORMANCE.md](docs/PERFORMANCE.md)
+  ([EN](docs/PERFORMANCE.en.md)).
 - **Sessão:** `expiresAt` é aviso; a validade real continua sendo a dos cookies. O
   `--check-session` mostra `warnings` quando a estimativa venceu.
 - **CI:** ShellCheck, actionlint, validação PowerShell no Windows, CodeQL, Gitleaks,
@@ -128,9 +128,9 @@ cd ali-coins
 
 Execute o instalador correspondente ao seu sistema operacional:
 
-- **Linux (Ubuntu / Debian):** `./setup_linux.sh` (Guia detalhado: [INSTALL_LINUX.md](INSTALL_LINUX.md))
-- **Windows:** `setup_windows.bat` (CMD / duplo clique) ou `.\setup_windows.ps1` (PowerShell) (Guia detalhado: [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md))
-- **macOS:** `./setup_macos.sh` (Guia detalhado: [INSTALL_MACOS.md](INSTALL_MACOS.md))
+- **Linux (Ubuntu / Debian):** `./setup_linux.sh` (Guia detalhado: [INSTALL_LINUX.md](docs/INSTALL_LINUX.md))
+- **Windows:** `setup_windows.bat` (CMD / duplo clique) ou `.\setup_windows.ps1` (PowerShell) (Guia detalhado: [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md))
+- **macOS:** `./setup_macos.sh` (Guia detalhado: [INSTALL_MACOS.md](docs/INSTALL_MACOS.md))
 
 _(O instalador verifica o Node.js >= 22, roda `npm install`, baixa o Chromium e prepara as credenciais)._
 
@@ -356,7 +356,7 @@ npm run notify:test
 npm start -- --dry-run --notify
 ```
 
-Consulte o manual detalhado com imagens e solução de problemas em: [**`TELEGRAM.md`**](TELEGRAM.md) ([EN](TELEGRAM.en.md)).
+Consulte o manual detalhado com imagens e solução de problemas em: [**`TELEGRAM.md`**](docs/TELEGRAM.md) ([EN](docs/TELEGRAM.en.md)).
 
 ---
 
@@ -420,7 +420,7 @@ Se a sua VPS cair, faltar energia no datacenter ou o `cron` travar, **nenhum log
    ```
 3. O script enviará automaticamente `/start` ao iniciar, `/` no sucesso com o relatório estruturado e `/fail` em caso de erro, sem nunca alterar o código de saída original.
 4. No CLI: use `--heartbeat` para forçar ou `--no-heartbeat` para desativar pontualmente.
-5. Mais detalhes e resolução de problemas em: [**`CLOUD_SESSIONS.md`**](CLOUD_SESSIONS.md#10-monitorar-se-o-cron-morreu-dead-mans-switch--heartbeat).
+5. Mais detalhes e resolução de problemas em: [**`CLOUD_SESSIONS.md`**](docs/CLOUD_SESSIONS.md#10-monitorar-se-o-cron-morreu-dead-mans-switch--heartbeat).
 
 ---
 
@@ -447,7 +447,7 @@ docker run --rm \
   ali-coins
 ```
 
-- **Hosts com 1 GB de RAM (Oracle Free Tier, t2/t3.micro, DO):** recomende 1–2 GB de swap no host (`fallocate -l 2G /swapfile`) e limite o container: `--init --pids-limit=256 --shm-size=256m --memory=768m --memory-swap=1536m`. As flags de baixo consumo do Chromium já são aplicadas por padrão tanto no Docker quanto fora dele (`CHROMIUM_LOW_MEMORY=true`), `NODE_OPTIONS="--max-old-space-size=256"` previne picos de heap, `NODE_COMPILE_CACHE` acelera o arranque (cache de bytecode V8 em `/tmp`) e `SCRYPT_N=32768` reduz o pico do scrypt de ~134 MB para ~33 MB. Detalhes em [`CLOUD_SESSIONS.md`](CLOUD_SESSIONS.md#7-otimizações-para-vps-com-pouca-memória-512-mb---1-gb-ram) e nos manuais específicos por SO ([`INSTALL_LINUX.md`](INSTALL_LINUX.md#d-servidores-com-pouca-memória-ram-vps-de-512-mb-ou-1-gb---execução-nativa-ou-docker), [`INSTALL_WINDOWS.md`](INSTALL_WINDOWS.md#h-otimização-para-ambientes-com-pouca-memória-ram-1-gb-a-2-gb-ou-vms-windows), [`INSTALL_MACOS.md`](INSTALL_MACOS.md#d-otimização-de-recursos-e-baixo-consumo-de-memória-macs-com-pouca-ram-ou-vms)).
+- **Hosts com 1 GB de RAM (Oracle Free Tier, t2/t3.micro, DO):** recomende 1–2 GB de swap no host (`fallocate -l 2G /swapfile`) e limite o container: `--init --pids-limit=256 --shm-size=256m --memory=768m --memory-swap=1536m`. As flags de baixo consumo do Chromium já são aplicadas por padrão tanto no Docker quanto fora dele (`CHROMIUM_LOW_MEMORY=true`), `NODE_OPTIONS="--max-old-space-size=256"` previne picos de heap, `NODE_COMPILE_CACHE` acelera o arranque (cache de bytecode V8 em `/tmp`) e `SCRYPT_N=32768` reduz o pico do scrypt de ~134 MB para ~33 MB. Detalhes em [`CLOUD_SESSIONS.md`](docs/CLOUD_SESSIONS.md#7-otimizações-para-vps-com-pouca-memória-512-mb---1-gb-ram) e nos manuais específicos por SO ([`INSTALL_LINUX.md`](docs/INSTALL_LINUX.md#d-servidores-com-pouca-memória-ram-vps-de-512-mb-ou-1-gb---execução-nativa-ou-docker), [`INSTALL_WINDOWS.md`](docs/INSTALL_WINDOWS.md#h-otimização-para-ambientes-com-pouca-memória-ram-1-gb-a-2-gb-ou-vms-windows), [`INSTALL_MACOS.md`](docs/INSTALL_MACOS.md#d-otimização-de-recursos-e-baixo-consumo-de-memória-macs-com-pouca-ram-ou-vms)).
 - **Heap do Node/OOM no fluxo unificado (fora do Docker):** os `run*.sh` detectam a RAM do host: 256 MB em máquinas pequenas, 384 MB (3–6 GB) ou 512 MB (acima de 6 GB). Isso evita o `JavaScript heap out of memory` do check-in + tarefas em um único processo. Para forçar um teto, use `ALI_HEAP_MB=512 ./run_all.sh`; um `NODE_OPTIONS` exportado tem precedência. Dentro do container o teto segue 256 MB por causa do limite de `memory: 768M`; se for rodar o fluxo unificado em container com mais tarefas, aumente `NODE_OPTIONS` e o limite de memória juntos.
 - **Usuário não-root:** O container executa por padrão como usuário de sistema dedicado `appuser` (UID/GID 10001).
 - **Execução com `--user <uid>:<gid>` do host:** Se você especificar o usuário do host para manter as permissões dos arquivos montados, monte `/etc/passwd` e `/etc/group` em modo somente-leitura para que a resolução de usuário do Node (`os.userInfo()` via libuv `uv_os_get_passwd`) não gere erro `ENOENT`:

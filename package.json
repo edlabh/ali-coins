@@ -16,8 +16,8 @@
     "Dockerfile",
     ".dockerignore",
     "credentials.env.example",
-    "CHANGELOG.md",
-    "RELEASING.md"
+    "docs/CHANGELOG.md",
+    "docs/RELEASING.md"
   ],
   "scripts": {
     "start": "node all.js",

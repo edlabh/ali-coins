@@ -47,6 +47,7 @@ run*.sh
 docker-run*.sh
 
 # Documentação extensa (mantida no repositório, dispensável na imagem)
+docs/
 INSTALL_*.md
 TELEGRAM*.md
 README.md

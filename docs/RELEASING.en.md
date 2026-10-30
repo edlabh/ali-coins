@@ -45,7 +45,7 @@ diverge, [RELEASING.md](RELEASING.md) prevails.
    # git push origin main
    # git push origin X.Y.Z vX.Y.Z
    ```
-6. **Automation**: the [`Release`](.github/workflows/release.yml) workflow triggers on
+6. **Automation**: the [`Release`](../.github/workflows/release.yml) workflow triggers on
    `X.Y.Z`/`vX.Y.Z` tags, validates that the tag matches `package.json`, runs lint + tests
    and publishes (or idempotently updates) the GitHub Release:
    - Title: `Release X.Y.Z`
