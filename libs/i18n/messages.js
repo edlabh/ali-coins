@@ -22,6 +22,10 @@ const catalog = require('./log-catalog');
  * A chave é o ID estável; o valor é a mensagem PT canônica já usada no código.
  */
 const SEMANTIC_MESSAGES = {
+  // observabilidade
+  'observability.metrics.summary':
+    'Métricas run={{0}} modo={{1}} duração={{2}} contas={{3}} check-in={{4}} tarefas={{5}} streak-quebrado={{6}} moedas={{7}} saída={{8}}',
+
   // session-check
   'session.check.not_found': 'Conta não encontrada para --check-session.',
   'session.check.valid': 'Sessão válida (somente leitura).',

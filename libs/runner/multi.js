@@ -49,6 +49,14 @@ const { getCaptchaCooldown, clearCaptchaChallenge } = require('../session');
 const { closeCachedDesktopContext } = require('../ui');
 const { sendHeartbeat } = require('../heartbeat');
 const { startAccountTimer } = require('../timing');
+const {
+  createRunMetrics,
+  recordCheckin,
+  recordTasks,
+  markStreakBroken,
+  logRunMetrics
+} = require('../observability/metrics');
+const { setRunContext, clearRunContext } = require('../observability/run-context');
 const { setupGlobalCrashHandler } = require('../crash');
 const { flushAndExit, signalExitCode } = require('../exit');
 const logger = require('../../logger');
@@ -285,6 +293,13 @@ async function main() {
   }
 
   const mainStartTime = new Date();
+  const runMetrics = createRunMetrics({
+    mode: isMulti ? 'multi' : 'single',
+    accounts,
+    now: mainStartTime
+  });
+  setRunContext({ runId: runMetrics.runId });
+  let metricsLogged = false;
   logger.info('===============================================================');
   logger.info(
     isMulti
@@ -311,6 +326,11 @@ async function main() {
   };
 
   const gracefulExit = async (code) => {
+    if (!metricsLogged) {
+      metricsLogged = true;
+      logRunMetrics(runMetrics, logger, { exitCode: code });
+      clearRunContext();
+    }
     if (browser) {
       const currentBrowser = browser;
       browser = null;
@@ -337,6 +357,7 @@ async function main() {
       // ----------------- FLUXO CONTA ÚNICA -----------------
       const account = accounts[0] || null;
       currentAccount = account;
+      setRunContext({ runId: runMetrics.runId, account: account?.maskedUser || null });
 
       // Cooldown pós-captcha expirado? Avisa (uma vez) e limpa o marcador.
       await notifyCaptchaCooldownReleased({ account, config });
@@ -362,6 +383,12 @@ async function main() {
       } catch (err) {
         const step1EndTime = new Date();
         const step1Duration = formatDuration(step1EndTime - step1StartTime);
+        recordCheckin(runMetrics, {
+          index: account?.index,
+          account,
+          error: err,
+          durationMs: step1EndTime.getTime() - step1StartTime.getTime()
+        });
         if (err.name === 'TwoFactorRequiredNonInteractive' || err.is2FARequired) {
           logger.error(
             '[2FA Não-Interativo] O AliExpress exigiu verificação de código 2FA durante execução sem terminal interativo (cron/CI). ' +
@@ -439,6 +466,12 @@ async function main() {
         await gracefulExit(1);
       }
 
+      recordCheckin(runMetrics, {
+        index: account?.index,
+        account,
+        result: checkinResult,
+        durationMs: step1EndTime.getTime() - step1StartTime.getTime()
+      });
       logger.info(
         `>>> [ETAPA 1/2] Concluída em ${formatDateTime(step1EndTime)} | Duração: ${step1Duration}`
       );
@@ -472,6 +505,13 @@ async function main() {
 
       const step2EndTime = new Date();
       const step2Duration = formatDuration(step2EndTime - step2StartTime);
+      recordTasks(runMetrics, {
+        index: account?.index,
+        account,
+        result: tasksResult,
+        error: tasksError ? { message: tasksError } : null,
+        durationMs: step2EndTime.getTime() - step2StartTime.getTime()
+      });
       logger.info(
         `>>> [ETAPA 2/2] Concluída em ${formatDateTime(step2EndTime)} | Duração: ${step2Duration}`
       );
@@ -530,6 +570,7 @@ async function main() {
       );
 
       if (streakBroken) {
+        markStreakBroken(runMetrics, { index: account?.index, account });
         logger.error(
           {
             previousStreak,
@@ -612,6 +653,7 @@ async function main() {
       for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
         currentAccount = account;
+        setRunContext({ runId: runMetrics.runId, account: account.maskedUser || null });
         logger.info(
           `\n>>> [CONTA ${i + 1}/${accounts.length}] Iniciando execução para: ${account.maskedUser} (versão v${APP_VERSION})`
         );
@@ -619,6 +661,8 @@ async function main() {
         const accTimer = startAccountTimer();
         let accStep1Duration = '0s';
         let accStep2Duration = '0s';
+        let accStep1Ms = null;
+        let accStep2Ms = null;
         // Handle da página mobile preservada pelo check-in (keepPage) para a etapa de tarefas.
         let accKeptMobile = null;
 
@@ -723,6 +767,7 @@ async function main() {
           });
           const step1Timing = step1Timer.end('step1');
           accStep1Duration = step1Timing.duration;
+          accStep1Ms = step1Timing.endTime.getTime() - step1Timing.startTime.getTime();
           logger.info(
             `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 1/2] Concluída em ${formatDateTime(step1Timing.endTime)} | Duração: ${accStep1Duration}`
           );
@@ -780,6 +825,7 @@ async function main() {
           }
           const step2Timing = step2Timer.end('step2');
           accStep2Duration = step2Timing.duration;
+          accStep2Ms = step2Timing.endTime.getTime() - step2Timing.startTime.getTime();
           logger.info(
             `>>> [CONTA ${i + 1}/${accounts.length}] [ETAPA 2/2] Concluída em ${formatDateTime(step2Timing.endTime)} | Duração: ${accStep2Duration}`
           );
@@ -870,6 +916,33 @@ async function main() {
           // Fecha o contexto desktop reaproveitado ao terminar a conta (evita reter
           // RAM/cookies entre contas e não vaza a sessão de uma conta para a próxima).
           await closeCachedDesktopContext().catch(() => {});
+        }
+
+        recordCheckin(runMetrics, {
+          index: account.index ?? i + 1,
+          account,
+          result: accCheckin,
+          error: accCheckin
+            ? null
+            : {
+                name: 'AccountCheckinError',
+                isCaptchaChallenge: accIsCaptchaRequired,
+                isManualLoginRequired: accIsManualLoginRequired,
+                is2FARequired: accIs2FARequired,
+                isRiskControl: accIsRiskControl,
+                isImportedSessionExpired: accImportedExpired
+              },
+          durationMs: accStep1Ms
+        });
+        recordTasks(runMetrics, {
+          index: account.index ?? i + 1,
+          account,
+          result: accTasks,
+          error: accTasksError ? { message: accTasksError } : null,
+          durationMs: accStep2Ms
+        });
+        if (accStreakBroken) {
+          markStreakBroken(runMetrics, { index: account.index ?? i + 1, account });
         }
 
         const failureBackoffMs = pendingBackoffMs;
@@ -1049,6 +1122,8 @@ async function main() {
         { json: isJson() }
       );
 
+      // Consolidação não pertence a uma conta específica: mantém apenas o runId.
+      setRunContext({ runId: runMetrics.runId });
       // Só considera "todas bloqueadas" quando houve lock ativo em alguma conta, nenhuma
       // conta obteve sucesso e não houve falha genérica (ex: erro de I/O no lockfile).
       const allAccountsLocked =

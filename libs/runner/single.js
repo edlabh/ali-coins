@@ -715,8 +715,10 @@ async function runCheckin(options = {}) {
       // continua válida (saldo/streak não mudaram) — reutilizá-la evita reabrir o contexto
       // desktop (~18s na baseline). Após uma coleta nova, a leitura é obrigatória (crédito/streak).
       let desktopResult;
+      let reusedEarlyDesktop = false;
       if (shouldReuseEarlyDesktop({ justCollected, earlyDesktop: earlyDesktopCheck })) {
         desktopResult = earlyDesktopCheck;
+        reusedEarlyDesktop = true;
         logger.info(
           { msgId: 'checkin.streak.reused_early_desktop' },
           'Saldo/streak reutilizados da checagem inicial do desktop (sem nova leitura).'
@@ -1050,7 +1052,9 @@ async function runCheckin(options = {}) {
         startTime: checkinStartTime,
         endTime: checkinEndTime,
         duration: checkinDuration,
-        sessionData
+        sessionData,
+        loginAttempted: attemptedLogin,
+        reusedEarlyDesktop
       });
 
       if (!options.skipReport) {

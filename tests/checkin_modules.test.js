@@ -140,7 +140,9 @@ test('libs/checkin/result.js - contrato do checkinResult e guarda de sessão', (
     startTime,
     endTime,
     duration: '2s',
-    sessionData
+    sessionData,
+    loginAttempted: true,
+    reusedEarlyDesktop: true
   });
 
   assert.deepStrictEqual(result, {
@@ -157,7 +159,9 @@ test('libs/checkin/result.js - contrato do checkinResult e guarda de sessão', (
     startTime,
     endTime,
     duration: '2s',
-    sessionData
+    sessionData,
+    loginAttempted: true,
+    reusedEarlyDesktop: true
   });
 });
 

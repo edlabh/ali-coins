@@ -5,6 +5,8 @@
  */
 module.exports = {
   exact: {
+    'Métricas run={{0}} modo={{1}} duração={{2}} contas={{3}} check-in={{4}} tarefas={{5}} streak-quebrado={{6}} moedas={{7}} saída={{8}}':
+      'Metrics run={{0}} mode={{1}} duration={{2}} accounts={{3}} check-in={{4}} tasks={{5}} streak-broken={{6}} coins={{7}} exit={{8}}',
     '\n--- COMO IMPORTAR NO SEU SERVIDOR REMOTO ---':
       '\n--- HOW TO IMPORT ON YOUR REMOTE SERVER ---',
     '[Sessão Inválida] A checagem somente leitura falhou.':

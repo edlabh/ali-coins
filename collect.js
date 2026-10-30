@@ -3,7 +3,8 @@ const {
   handleDryRun,
   isCheckSession,
   isForce,
-  checkAndDisplayHelp
+  checkAndDisplayHelp,
+  maskUser
 } = require('./config');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const { flushAndExit } = require('./libs/exit');
@@ -15,6 +16,8 @@ const {
   shouldReuseEarlyDesktop
 } = require('./libs/checkin/streak');
 const { isSessionDataMissing } = require('./libs/checkin/result');
+const { createRunMetrics, recordCheckin, logRunMetrics } = require('./libs/observability/metrics');
+const { setRunContext, clearRunContext } = require('./libs/observability/run-context');
 const logger = require('./logger');
 
 if (require.main === module) {
@@ -68,6 +71,22 @@ if (require.main === module) {
       // Ignorar se falhar antes do lock
     }
 
+    const runMetrics = createRunMetrics({
+      mode: 'single',
+      accounts: cfg?.ALI_USER ? [{ user: cfg.ALI_USER }] : []
+    });
+    setRunContext({
+      runId: runMetrics.runId,
+      account: cfg?.ALI_USER ? maskUser(cfg.ALI_USER) : null
+    });
+    let metricsFinalized = false;
+    const finalizeMetrics = (exitCode) => {
+      if (metricsFinalized) return;
+      metricsFinalized = true;
+      logRunMetrics(runMetrics, logger, { exitCode });
+      clearRunContext();
+    };
+
     gracefulExitRef = async (exitCode = 1) => {
       gracefulExitRef = null;
       if (activeBrowser) {
@@ -93,10 +112,12 @@ if (require.main === module) {
       gracefulExitRef = null;
       if (err instanceof LockActiveError) {
         await sendTelegram({ config: cfg, event: 'lock_active', error: err }).catch(() => {});
+        finalizeMetrics(3);
         await flushAndExit(3);
       }
       logger.error({ err: err.message }, 'Falha ao obter lock.');
       await sendTelegram({ config: cfg, event: 'failure', error: err }).catch(() => {});
+      finalizeMetrics(1);
       await flushAndExit(1);
     }
 
@@ -109,6 +130,10 @@ if (require.main === module) {
       activeBrowser = null;
       gracefulExitRef = null;
       if (releaseLock) await releaseLock();
+      recordCheckin(runMetrics, {
+        account: cfg?.ALI_USER ? { user: cfg.ALI_USER } : null,
+        result
+      });
       const report = { type: 'checkin', ...result };
       // Mesma regra do fluxo unificado: crédito confirmado no extrato de hoje conta como
       // nova ação mesmo com alreadyCollected=true (o bot pode não ter clicado).
@@ -118,19 +143,26 @@ if (require.main === module) {
       const event = hadNewCheckin ? 'success' : 'already_collected';
       await sendTelegram({ config: cfg, report, event }).catch(() => {});
       if (!hadNewCheckin) {
+        finalizeMetrics(2);
         await flushAndExit(2);
       }
+      finalizeMetrics(0);
       await flushAndExit(0);
     } catch (err) {
       activeBrowser = null;
       gracefulExitRef = null;
       if (releaseLock) await releaseLock();
+      recordCheckin(runMetrics, {
+        account: cfg?.ALI_USER ? { user: cfg.ALI_USER } : null,
+        error: err
+      });
       if (err.name === 'TwoFactorRequiredNonInteractive' || err.is2FARequired) {
         logger.error(
           '[2FA Não-Interativo] O AliExpress exigiu verificação de código 2FA durante execução sem terminal interativo (cron/CI). ' +
             'Solução: execute localmente com "./run_all.sh", resolva o 2FA e use "node export_session.js" / "node import_session.js".'
         );
         await sendTelegram({ config: cfg, event: '2fa_required', error: err }).catch(() => {});
+        finalizeMetrics(5);
         await flushAndExit(5);
       }
       if (err.isImportedSessionExpired) {
@@ -148,7 +180,9 @@ if (require.main === module) {
             : 'failure',
         error: err
       }).catch(() => {});
-      await flushAndExit(err.isManualLoginRequired ? 7 : 1);
+      const exitCode = err.isManualLoginRequired ? 7 : 1;
+      finalizeMetrics(exitCode);
+      await flushAndExit(exitCode);
     }
   })().catch(async (err) => {
     // Erros fora do try principal (ex: loadConfig inválido em --dry-run) não devem

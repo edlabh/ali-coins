@@ -3,6 +3,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 const pino = require('pino');
 const { translateMessage, translateId, isEnglish } = require('./libs/i18n');
+const { getRunContext } = require('./libs/observability/run-context');
 
 // Carregar credentials.env antes de ler LOG_LEVEL para garantir precedência
 const credentialsEnvPath = path.join(__dirname, 'credentials.env');
@@ -231,6 +232,19 @@ const logger = pino(
         for (let i = 0; i < inputArgs.length; i++) {
           if (typeof inputArgs[i] === 'string') {
             inputArgs[i] = sanitizeSensitiveQueryParams(inputArgs[i]);
+          }
+        }
+        // Correlação: injeta runId/conta mascarada em todas as linhas da execução.
+        const runContext = getRunContext();
+        if (runContext) {
+          if (
+            inputArgs[0] &&
+            typeof inputArgs[0] === 'object' &&
+            !(inputArgs[0] instanceof Error)
+          ) {
+            inputArgs[0] = { ...runContext, ...inputArgs[0] };
+          } else if (inputArgs.length > 0 && !(inputArgs[0] instanceof Error)) {
+            inputArgs.unshift({ ...runContext });
           }
         }
         // `logger.error(err)` usa err.message como msg. Clona o Error para não

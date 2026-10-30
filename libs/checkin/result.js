@@ -40,6 +40,8 @@ function isSessionDataMissing(checkinData = {}) {
  * @param {Date} fields.endTime
  * @param {string} fields.duration
  * @param {object|null} fields.sessionData
+ * @param {boolean} [fields.loginAttempted=false] Houve tentativa de autenticação nesta execução
+ * @param {boolean} [fields.reusedEarlyDesktop=false] Reutilizou a leitura desktop inicial
  * @returns {object}
  */
 function buildCheckinResult({
@@ -56,7 +58,9 @@ function buildCheckinResult({
   startTime,
   endTime,
   duration,
-  sessionData
+  sessionData,
+  loginAttempted = false,
+  reusedEarlyDesktop = false
 }) {
   return {
     userEmail,
@@ -72,7 +76,9 @@ function buildCheckinResult({
     startTime,
     endTime,
     duration,
-    sessionData
+    sessionData,
+    loginAttempted,
+    reusedEarlyDesktop
   };
 }
 
