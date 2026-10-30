@@ -226,7 +226,8 @@ function scanLoggerCalls() {
       }
       if (!texts.length && !msgId) return;
       calls.push({
-        file: path.relative(ROOT, file),
+        // Normaliza separadores para as asserções serem iguais em Windows/Linux/macOS.
+        file: path.relative(ROOT, file).split(path.sep).join('/'),
         line: node.loc.start.line,
         level: callee.property.name,
         msgId,
