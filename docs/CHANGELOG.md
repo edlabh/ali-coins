@@ -13,13 +13,6 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
-### Alterado
-
-- **Organização da raiz:** manuais movidos para `docs/`, módulos internos para
-  `libs/core/` e scripts auxiliares para `scripts/`. A raiz mantém apenas entradas CLI,
-  wrappers de execução, configuração, Docker e estado local. CLI, exit codes, formato de
-  sessão e caminhos padrão de execução permanecem inalterados.
-
 ## [2.5.0-rc.1] - 2026-10-30
 
 Release candidate da 2.5.0. Release de endurecimento estrutural, observabilidade e
@@ -62,6 +55,10 @@ relatórios); mudanças de relatório são aditivas.
 - **Relatórios e logs correlacionados:** mensagens migradas usam IDs; logs de execução
   carregam `runId` e conta mascarada.
 - **Release workflow:** a verificação de tag repete lint, Prettier, cobertura e audit.
+- **Organização da raiz:** manuais movidos para `docs/`, módulos internos para
+  `libs/core/` e scripts auxiliares para `scripts/`. A raiz mantém apenas entradas CLI,
+  wrappers de execução, configuração, Docker e estado local. CLI, exit codes, formato de
+  sessão e caminhos padrão de execução permanecem inalterados.
 
 ### Corrigido
 
