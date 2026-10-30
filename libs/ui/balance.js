@@ -2,6 +2,20 @@ const { newDesktopContext } = require('../../browser');
 const { SELECTORS } = require('../selectors');
 const { gotoWithRetry } = require('./navigation');
 const { saveFailureScreenshot } = require('./diagnostics');
+const { getStreakFromCheckinCoins, getCheckinCoinsFromStreak } = require('../checkin/coins');
+const {
+  isLoginPromptText,
+  isLoginGateText,
+  isLoginGateVisible
+} = require('../checkin/login-signals');
+const {
+  shouldReuseDesktopContext,
+  getCachedDesktopContext,
+  getCachedDesktopPage,
+  setCachedDesktopContext,
+  setCachedDesktopPage,
+  closeCachedDesktopContext
+} = require('./desktop-cache');
 const logger = require('../../logger');
 
 /**
@@ -20,71 +34,6 @@ const STREAK_PATTERNS = [
 ];
 
 /**
- * Indica se o texto da página é um prompt de login/reautenticação do AliExpress —
- * inclusive o fluxo in-page que reconhece a conta e pede APENAS a senha sem mudar a URL,
- * e a tela "Register/Sign in" que o mycoin.html desktop passou a exibir (out/2026) com
- * sessão expirada.
- * @param {string} text
- * @returns {boolean}
- */
-function isLoginPromptText(text) {
-  if (!text || typeof text !== 'string') return false;
-  const t = text.toLowerCase();
-  return (
-    t.includes('sign in with email code') ||
-    t.includes('switch account') ||
-    t.includes('trocar de conta') ||
-    t.includes('register/sign in') ||
-    t.includes('trouble signing in') ||
-    t.includes('email or phone number') ||
-    ((t.includes('forgot password') || t.includes('esqueci minha senha')) &&
-      (t.includes('password') || t.includes('senha')))
-  );
-}
-
-/**
- * Indica se o coin-index mobile virou a "portaria" de login (out/2026): com a sessão
- * expirada no servidor, a MESMA URL mostra só o título "COINS" e um botão "Log in", sem
- * campo de usuário/senha. Exige a linha isolada do botão E nenhum dígito na página — o
- * coin-index autenticado sempre exibe saldo/sequência, então não há falso positivo nele.
- * @param {string} text
- * @returns {boolean}
- */
-function isLoginGateText(text) {
-  if (!text || typeof text !== 'string') return false;
-  return /^\s*(?:log in|sign in|entrar)\s*$/im.test(text) && !/[0-9]/.test(text);
-}
-
-/**
- * Detecta a portaria de login priorizando o DOM (botão visível) em vez de heurística de
- * texto. Só considera páginas da central de moedas e exige ausência do saldo: um link
- * "Log in" no rodapé de uma página autenticada não pode disparar re-login.
- * @param {import('playwright').Page} page
- * @returns {Promise<boolean>}
- */
-async function isLoginGateVisible(page) {
-  if (!page || typeof page.$ !== 'function') return false;
-  let url = '';
-  try {
-    url = typeof page.url === 'function' ? page.url() : '';
-  } catch {
-    return false;
-  }
-  if (!/coin-index|mycoin/i.test(String(url))) return false;
-
-  try {
-    const loginButton = await page.$(
-      'a:has-text("Log in"), button:has-text("Log in"), a:has-text("Entrar"), button:has-text("Entrar"), button:has-text("Sign in"), a:has-text("Sign in")'
-    );
-    if (!loginButton) return false;
-    const balance = await page.$('text=/My coins|Minhas moedas/i');
-    return balance === null;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Extrai número de dias de sequência a partir de uma string de texto qualquer
  * @param {string} text
  * @returns {number|null}
@@ -99,79 +48,6 @@ function extractStreakFromText(text) {
     }
   }
   return null;
-}
-
-/**
- * Mapeia a quantidade de moedas ganhas no check-in para o dia correspondente da sequência.
- * Ciclo oficial do AliExpress Coin Check-in:
- * Dia 1: +10 moedas
- * Dia 2: +15 moedas
- * Dia 3: +20 moedas
- * Dia 4: +25 moedas
- * Dia 5: +30 moedas
- * Dia 6: +35 moedas
- * Dia 7+: +40 moedas
- * @param {string|number|null} coins
- * @returns {number|null}
- */
-function getStreakFromCheckinCoins(coins) {
-  if (coins === null || coins === undefined) return null;
-  const num =
-    typeof coins === 'number' ? coins : parseInt(String(coins).replace(/[^0-9]/g, ''), 10);
-  if (isNaN(num)) return null;
-
-  switch (num) {
-    case 10:
-      return 1;
-    case 15:
-      return 2;
-    case 20:
-      return 3;
-    case 25:
-      return 4;
-    case 30:
-      return 5;
-    case 35:
-      return 6;
-    case 40:
-      return 7;
-    default:
-      return null;
-  }
-}
-
-/**
- * Mapeia o dia da sequência (streak) para a quantidade esperada de moedas ganhas no check-in.
- * Ciclo oficial do AliExpress Coin Check-in:
- * Dia 1: +10 moedas
- * Dia 2: +15 moedas
- * Dia 3: +20 moedas
- * Dia 4: +25 moedas
- * Dia 5: +30 moedas
- * Dia 6: +35 moedas
- * Dia 7+: +40 moedas
- * @param {string|number|null} streak
- * @returns {number}
- */
-function getCheckinCoinsFromStreak(streak) {
-  if (streak === null || streak === undefined || streak === 'N/D') return 10;
-  const num =
-    typeof streak === 'number' ? streak : parseInt(String(streak).replace(/[^0-9]/g, ''), 10);
-  if (isNaN(num) || num <= 1) return 10;
-  switch (num) {
-    case 2:
-      return 15;
-    case 3:
-      return 20;
-    case 4:
-      return 25;
-    case 5:
-      return 30;
-    case 6:
-      return 35;
-    default:
-      return 40;
-  }
 }
 
 // Rótulos de CHECK-IN no extrato desktop (mycoin), bilíngues:
@@ -532,39 +408,8 @@ async function getCheckinCalendarFromCoinPage(page) {
  * @param {object} [options={}]
  * @returns {Promise<{ totalBalance: string, todayCheckinCoins: string|null, hasAppCheckinToday: boolean, desktopStreak: number|null, rawText: string }>}
  */
-// Cache opcional de contexto/página desktop (opt-in via options.reuseContext) para
-// evitar recriar contexto a cada leitura de saldo. Fica desligado por padrão para não
-// manter um contexto vivo (e elevar o pico de RAM) enquanto o fluxo mobile executa.
-let cachedDesktopContext = null;
-let cachedDesktopPage = null;
-
-/**
- * Decide se o contexto desktop deve ser reutilizado entre leituras de saldo do mesmo run.
- *
- * Padrão: DESLIGADO. Medições na VM mostraram que manter o contexto desktop vivo durante
- * o fluxo mobile eleva o pico de RAM/PIDs (contextos mobile e desktop concorrentes), o que
- * é pior em host restrito. Reutilizar só compensa em cenários sem mobilização concorrente;
- * habilite com DESKTOP_REUSE_CONTEXT=true se o host tiver folga e quiser priorizar tempo.
- * @returns {boolean}
- */
-function shouldReuseDesktopContext() {
-  const value = process.env.DESKTOP_REUSE_CONTEXT;
-  if (value === undefined || value === null || value === '') return false;
-  return /^(1|true|on|yes)$/i.test(String(value).trim());
-}
-
-/**
- * Fecha o contexto desktop eventualmente cacheado (chamar ao fim da conta/processo).
- * @returns {Promise<void>}
- */
-async function closeCachedDesktopContext() {
-  cachedDesktopPage = null;
-  if (cachedDesktopContext) {
-    const ctx = cachedDesktopContext;
-    cachedDesktopContext = null;
-    await ctx.close().catch(() => {});
-  }
-}
+// O cache (opt-in) vive em ./desktop-cache para que o runner possa fechá-lo sem carregar
+// toda a UI/Playwright apenas para limpar contexto no fim da conta.
 
 async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
   const timeout = options.timeout || 20000;
@@ -575,33 +420,32 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
   let desktopCtx = providedContext;
   let cachedForReuse = false;
   let desktopPage = null;
+  const cachedCtx = getCachedDesktopContext();
+  const cachedPage = getCachedDesktopPage();
 
-  if (!desktopCtx && reuseRequested && cachedDesktopContext) {
-    const ctxClosed =
-      typeof cachedDesktopContext.isClosed === 'function' && cachedDesktopContext.isClosed();
+  if (!desktopCtx && reuseRequested && cachedCtx) {
+    const ctxClosed = typeof cachedCtx.isClosed === 'function' && cachedCtx.isClosed();
     if (!ctxClosed) {
-      desktopCtx = cachedDesktopContext;
+      desktopCtx = cachedCtx;
       // Valida também a PÁGINA: se ela caiu (crash/fechada) enquanto o contexto segue
       // aberto, reutilizá-la fazia todas as leituras retornarem 'N/D' silenciosamente.
       const pageClosed =
-        cachedDesktopPage &&
-        typeof cachedDesktopPage.isClosed === 'function' &&
-        cachedDesktopPage.isClosed();
-      if (cachedDesktopPage && !pageClosed) {
-        desktopPage = cachedDesktopPage;
+        cachedPage && typeof cachedPage.isClosed === 'function' && cachedPage.isClosed();
+      if (cachedPage && !pageClosed) {
+        desktopPage = cachedPage;
       } else {
-        cachedDesktopPage = null;
+        setCachedDesktopPage(null);
       }
       cachedForReuse = true;
     } else {
-      cachedDesktopContext = null;
-      cachedDesktopPage = null;
+      setCachedDesktopContext(null);
+      setCachedDesktopPage(null);
     }
   }
   if (!desktopCtx) {
     desktopCtx = await newDesktopContext(browser, sessionPathOrData, { allowMedia });
     if (reuseRequested) {
-      cachedDesktopContext = desktopCtx;
+      setCachedDesktopContext(desktopCtx);
       cachedForReuse = true;
     }
   }
@@ -609,7 +453,7 @@ async function getBalanceDesktop(browser, sessionPathOrData, options = {}) {
   try {
     if (!desktopPage) {
       desktopPage = await desktopCtx.newPage();
-      if (cachedForReuse) cachedDesktopPage = desktopPage;
+      if (cachedForReuse) setCachedDesktopPage(desktopPage);
     }
     await gotoWithRetry(desktopPage, SELECTORS.desktop.mycoinUrl, {
       waitUntil: 'domcontentloaded',

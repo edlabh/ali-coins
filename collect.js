@@ -8,7 +8,7 @@ const {
 } = require('./config');
 const { acquireLock, LockActiveError } = require('./lockfile');
 const { flushAndExit } = require('./libs/exit');
-const { runCheckin, checkCaptchaCooldownForLogin } = require('./libs/runner/single');
+const { checkCaptchaCooldownForLogin } = require('./libs/checkin/captcha');
 const { shouldAttemptLogin } = require('./libs/checkin/login-gate');
 const {
   shouldConfirmCheckinByLedger,
@@ -122,6 +122,9 @@ if (require.main === module) {
     }
 
     try {
+      // Carrega o runner (e o Playwright) só quando o check-in realmente vai executar;
+      // --help/--dry-run/--check-session não pagam esse custo de boot/RAM.
+      const { runCheckin } = require('./libs/runner/single');
       const result = await runCheckin({
         onBrowserLaunch: (b) => {
           activeBrowser = b;
@@ -193,7 +196,11 @@ if (require.main === module) {
 }
 
 module.exports = {
-  runCheckin,
+  // Getter preserva `collect.runCheckin === require('./libs/runner/single').runCheckin`
+  // sem carregar Playwright ao importar collect.js para helpers/testes.
+  get runCheckin() {
+    return require('./libs/runner/single').runCheckin;
+  },
   isSessionDataMissing,
   shouldConfirmCheckinByLedger,
   shouldConfirmStreakByStatement,

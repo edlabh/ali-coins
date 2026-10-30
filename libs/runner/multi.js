@@ -46,7 +46,7 @@ const {
   shouldSendConsolidatedCaptcha
 } = require('../notify');
 const { getCaptchaCooldown, clearCaptchaChallenge } = require('../session');
-const { closeCachedDesktopContext } = require('../ui');
+const { closeCachedDesktopContext } = require('../ui/desktop-cache');
 const { sendHeartbeat } = require('../heartbeat');
 const { startAccountTimer } = require('../timing');
 const {

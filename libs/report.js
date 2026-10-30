@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const { formatDate, formatTime, formatDuration, getReportTimeZoneLabel } = require('../time_utils');
 const { maskUser } = require('../config');
-const { getCheckinCoinsFromStreak } = require('./ui/balance');
+const { getCheckinCoinsFromStreak } = require('./checkin/coins');
 const { validateExternalUrl, safeFetch } = require('./url_guard');
 const logger = require('../logger');
 const { t, isEnglish, translateValue } = require('./i18n');

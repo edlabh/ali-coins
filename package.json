@@ -30,6 +30,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "bench": "node scripts/benchmark.js",
     "notify:test": "node -e \"require('./libs/notify').test()\"",
     "prepare": "husky"
   },

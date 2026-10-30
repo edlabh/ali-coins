@@ -13,7 +13,6 @@ const {
   validateAndRefresh,
   saveSession,
   updateSessionStreak,
-  getCaptchaCooldown,
   recordCaptchaChallenge
 } = require('../session');
 const { SELECTORS } = require('../selectors');
@@ -43,28 +42,9 @@ const {
   shouldReuseEarlyDesktop
 } = require('../checkin/streak');
 const { isSessionDataMissing, buildCheckinResult } = require('../checkin/result');
+const { checkCaptchaCooldownForLogin } = require('../checkin/captcha');
 const { version: APP_VERSION } = require('../../package.json');
 const logger = require('../../logger');
-
-/**
- * Verifica se o login deve ser bloqueado pelo cooldown pós-captcha (lê o meta da conta).
- * Wrapper assíncrono testável: garante o `await` do lock de sessão usado por
- * `getCaptchaCooldown` — sem isso o `active` vinha `undefined` e a pausa não bloqueava.
- * `force: true` (flag `--force`) ignora a pausa e permite a tentativa de login.
- * @param {object} sessionOpts Opções da conta (sessionPath/sessionMetaPath/account)
- * @param {number} hours Janela de cooldown em horas
- * @param {{force?: boolean}} [options]
- * @returns {Promise<{blocked: boolean, forced: boolean, cooldown: object}>}
- */
-async function checkCaptchaCooldownForLogin(sessionOpts, hours, { force = false } = {}) {
-  const cooldown = await getCaptchaCooldown(sessionOpts, hours);
-  return {
-    blocked: !force && cooldown.active === true,
-    forced: Boolean(force),
-    cooldown,
-    manualRequired: cooldown.requireManualLogin === true
-  };
-}
 
 /**
  * Verifica se um seletor está visível na página (nunca lança).

@@ -1,6 +1,6 @@
 'use strict';
 
-const { isLoginGateText, isLoginGateVisible, isLoginPromptText } = require('../ui/balance');
+const { isLoginGateText, isLoginGateVisible, isLoginPromptText } = require('./login-signals');
 
 /**
  * Decide se o fluxo deve tentar autenticar nesta execução.

@@ -54,10 +54,13 @@ README.txt
 CLOUD_SESSIONS.md
 RELEASING.md
 CHANGELOG.md
+OBSERVABILITY.md
+PERFORMANCE.md
 
 # Ferramentas de desenvolvimento e CI
 .github/
 .husky/
+scripts/
 eslint.config.js
 .prettierrc
 .prettierignore
