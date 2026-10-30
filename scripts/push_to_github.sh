@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$SCRIPT_DIR/libs/i18n/scripts.sh"
+cd "$SCRIPT_DIR"
 ENV_FILE="$SCRIPT_DIR/github_token.env"
 
 if [ ! -f "$ENV_FILE" ]; then

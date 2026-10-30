@@ -4,7 +4,7 @@
 # Pensado para hosts pequenos (ex: VPS de 1 GB de RAM) rodando via cron.
 #
 # Uso:
-#   ./docker-run.example.sh [--dry-run] [--json]   # args repassados ao all.js
+#   ./scripts/docker-run.example.sh [--dry-run] [--json]   # args repassados ao all.js
 #
 # Dica — atraso aleatório portátil: use START_DELAY_MIN_MS/START_DELAY_MAX_MS no
 # credentials.env (ex.: 0 e 5400000 = até 90 min). Rode execuções manuais com --no-delay

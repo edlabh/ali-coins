@@ -1,6 +1,6 @@
 # Docker Compose de referência para produção.
 #
-# Equivalente declarativo ao docker-run.example.sh:
+# Equivalente declarativo ao wrapper `scripts/docker-run.example.sh`:
 #   - /dev/shm e /tmp em memória (o Chromium não grava buffers na camada overlay2)
 #   - limites de memória/pids, cap_drop ALL e no-new-privileges
 #   - bind mounts somente-leitura para credenciais/contas

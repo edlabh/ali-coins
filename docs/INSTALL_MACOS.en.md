@@ -331,7 +331,7 @@ If the message `Chromium OK on macOS!` is displayed, the browser is 100% functio
 If you run the automation on macOS virtual machines or Macs whose memory resources are shared with other heavy apps:
 
 1. **Native Chromium Low-Consumption Flags:**
-   `browser.js` already enables memory-saving flags by default (`--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760`, and `ALLOW_MEDIA=false`). They work automatically via `./run_all.sh` or `npm start`.
+   `libs/core/browser.js` already enables memory-saving flags by default (`--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760`, and `ALLOW_MEDIA=false`). They work automatically via `./run_all.sh` or `npm start`.
 
 2. **Node.js Heap Limit (`NODE_OPTIONS`):**
    To force Node.js's Garbage Collector to keep the heap compact:

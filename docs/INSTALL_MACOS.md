@@ -329,7 +329,7 @@ O `launchd` é o subsistema nativo do macOS para agendamento de tarefas em segun
 Se você executa a automação em máquinas virtuais macOS ou Macs com recursos de memória concorrentes com outros apps pesados:
 
 1. **Flags de Baixo Consumo do Chromium Nativas:**
-   O `browser.js` já ativa por padrão flags de conservação de memória (`--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false`). Funcionam automaticamente via `./run_all.sh` ou `npm start`.
+   O `libs/core/browser.js` já ativa por padrão flags de conservação de memória (`--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false`). Funcionam automaticamente via `./run_all.sh` ou `npm start`.
 
 2. **Limite de Heap do Node.js (`NODE_OPTIONS`):**
    Para forçar o Garbage Collector do Node.js a manter a heap compacta:

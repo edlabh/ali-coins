@@ -58,19 +58,41 @@ diverge, [RELEASING.md](RELEASING.md) prevails.
 
 ### Pre-release (RC)
 
-To publish a pre-release, use a SemVer suffix and **never move an already published tag**:
+To publish a pre-release, use a SemVer suffix and **never move an already published tag**
+(the authorized exception is below):
 
 ```bash
 npm version X.Y.Z-rc.1 --no-git-tag-version
 # Set the CHANGELOG heading to ## [X.Y.Z-rc.1] - YYYY-MM-DD
-git add package.json package-lock.json CHANGELOG.md CHANGELOG.en.md
+git add package.json package-lock.json docs/CHANGELOG.md docs/CHANGELOG.en.md
 git commit -m "chore(release): X.Y.Z-rc.1"
 git tag -a X.Y.Z-rc.1 -m "vX.Y.Z-rc.1 - release candidate"
 git tag -a vX.Y.Z-rc.1 -m "vX.Y.Z-rc.1 - release candidate"
 ```
 
 The `Release` workflow creates the GitHub Release with `--prerelease`. After validation,
-repeat the flow with the stable `X.Y.Z` version; do not reuse/move the RC tag.
+repeat the flow with the stable `X.Y.Z` version; do not reuse/move the RC tag outside the
+exception below.
+
+### Authorized RC re-release
+
+Exceptionally, the maintainer may authorize re-releasing an RC to include fixes already
+validated on `main`, without creating a new version. In that case, preserve ancestry,
+recreate both tags at the current commit and use `--force-with-lease`:
+
+```bash
+git merge-base --is-ancestor <old-commit> HEAD
+
+git tag -f -a X.Y.Z-rc.N -m "vX.Y.Z-rc.N - <summary>" HEAD
+git tag -f -a vX.Y.Z-rc.N -m "vX.Y.Z-rc.N - <summary>" HEAD
+git push origin \
+  --force-with-lease=refs/tags/X.Y.Z-rc.N:<old-object> \
+  --force-with-lease=refs/tags/vX.Y.Z-rc.N:<old-object> \
+  X.Y.Z-rc.N vX.Y.Z-rc.N
+```
+
+The `Release` workflow updates the existing release idempotently. Never use this
+exception for stable tags.
 
 ## Manual release (fallback)
 
@@ -95,4 +117,5 @@ curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
       `credentials.env.example` in sync in **PT-BR/EN** (no Spanish documentation).
 - [ ] Script interface text supports only **PT-BR/EN** (`APP_LANGUAGE`/`--lang`).
 - [ ] Tags `X.Y.Z`/`vX.Y.Z` (or `X.Y.Z-rc.N`/`vX.Y.Z-rc.N`) pointing to the release
-      commit; push only with authorization and never move published tags.
+      commit; push only with authorization. Published tags are not moved, except for the
+      authorized RC re-release above.

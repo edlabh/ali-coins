@@ -57,19 +57,40 @@ GitHub Releases e o fluxo do ciclo atual **2.x**.
 
 ### Pre-release (RC)
 
-Para publicar uma pré-release, use SemVer com sufixo e **não mova tags já publicadas**:
+Para publicar uma pré-release, use SemVer com sufixo e **não mova tags já publicadas**
+(a exceção autorizada está abaixo):
 
 ```bash
 npm version X.Y.Z-rc.1 --no-git-tag-version
 # Ajuste o cabeçalho do CHANGELOG para ## [X.Y.Z-rc.1] - AAAA-MM-DD
-git add package.json package-lock.json CHANGELOG.md CHANGELOG.en.md
+git add package.json package-lock.json docs/CHANGELOG.md docs/CHANGELOG.en.md
 git commit -m "chore(release): X.Y.Z-rc.1"
 git tag -a X.Y.Z-rc.1 -m "vX.Y.Z-rc.1 - release candidate"
 git tag -a vX.Y.Z-rc.1 -m "vX.Y.Z-rc.1 - release candidate"
 ```
 
 O workflow `Release` cria a GitHub Release com `--prerelease`. Depois de validar, repita o
-fluxo com a versão estável `X.Y.Z`; não reutilize/mova a tag RC.
+fluxo com a versão estável `X.Y.Z`; não reutilize/mova a tag RC fora da exceção abaixo.
+
+### Reemissão autorizada de RC
+
+Excepcionalmente, o mantenedor pode autorizar a reemissão de uma RC para incorporar
+correções já validadas em `main`, sem criar uma nova versão. Nesse caso, preserve a
+ancestralidade, recrie as duas tags no commit atual e use `--force-with-lease`:
+
+```bash
+git merge-base --is-ancestor <commit-antigo> HEAD
+
+git tag -f -a X.Y.Z-rc.N -m "vX.Y.Z-rc.N - <resumo>" HEAD
+git tag -f -a vX.Y.Z-rc.N -m "vX.Y.Z-rc.N - <resumo>" HEAD
+git push origin \
+  --force-with-lease=refs/tags/X.Y.Z-rc.N:<objeto-antigo> \
+  --force-with-lease=refs/tags/vX.Y.Z-rc.N:<objeto-antigo> \
+  X.Y.Z-rc.N vX.Y.Z-rc.N
+```
+
+O workflow `Release` atualiza a release existente de forma idempotente. Nunca use essa
+exceção para tags estáveis.
 
 ## Release manual (fallback)
 
@@ -94,4 +115,5 @@ curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
       `credentials.env.example` sincronizados em **PT-BR/EN** (sem documentação em espanhol).
 - [ ] Scripts de interface suportam apenas **PT-BR/EN** (`APP_LANGUAGE`/`--lang`).
 - [ ] Tags `X.Y.Z`/`vX.Y.Z` (ou `X.Y.Z-rc.N`/`vX.Y.Z-rc.N`) apontando para o commit de
-      release; push só com autorização e tags publicadas nunca são movidas.
+      release; push só com autorização. Tags publicadas não são movidas, salvo a reemissão
+      de RC autorizada acima.

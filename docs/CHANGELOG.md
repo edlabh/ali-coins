@@ -97,6 +97,9 @@ relatórios); mudanças de relatório são aditivas.
 - `CHANGELOG.en.md`, `RELEASING.en.md` e `TELEGRAM.en.md` adicionados com navegação PT/EN;
   o changelog EN espelha o histórico completo (2.5.0 até 0.7.0), mantendo o PT como
   fonte canônica.
+- **Manuais e scripts revisados para a nova estrutura:** comandos de instalação e
+  geração de chaves em `scripts/`, referências a `libs/core/` e âncoras alinhadas em
+  PT-BR/EN para Linux, macOS e Windows.
 
 ### Removido
 

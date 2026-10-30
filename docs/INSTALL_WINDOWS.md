@@ -243,7 +243,7 @@ Você pode obter sua chave criptográfica por qualquer um dos seguintes métodos
   ```
   Isso gerará instantaneamente uma chave aleatória criptograficamente segura de 32 bytes em Base64 (44 caracteres) pronta para colar no `credentials.env`.
 - **Opção 2 (Via Script de 1 Clique):**
-  Execute o utilitário gerador de chaves incluído na raiz do projeto:
+  Execute o utilitário gerador de chaves incluído em `scripts/`:
   - No Prompt de Comando (CMD): `scripts\generate_secret.bat`
   - No PowerShell: `.\scripts\generate_secret.ps1`
 - **Opção 3 (Via OpenSSL - se instalado no sistema ou no Git for Windows):**
@@ -415,7 +415,7 @@ Se você executa a automação em máquinas virtuais Windows compactas ou comput
    - Verifique em: **Configurações > Sistema > Sobre > Configurações avançadas do sistema > Avançado > Desempenho (Configurações) > Avançado > Memória virtual**.
 
 2. **Flags de Baixo Consumo do Chromium Nativas:**
-   - O `browser.js` já aplica por padrão os argumentos `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false` em execuções via `run_all.bat` e `run_all.ps1`.
+   - O `libs/core/browser.js` já aplica por padrão os argumentos `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` e `ALLOW_MEDIA=false` em execuções via `run_all.bat` e `run_all.ps1`.
 
 3. **Limite de Heap do Node.js (`NODE_OPTIONS`):**
    - Para forçar o Garbage Collector do Node.js a manter o consumo compacto (256 MB):

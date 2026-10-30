@@ -8,6 +8,7 @@ tarefas ("Ganhe mais moedas") do AliExpress com emulação mobile via Playwright
 Requer: Node.js >= 22 (.nvmrc: 22)
 Documentação completa disponível em: README.md e TELEGRAM.md
 Traduções: README.en.md (English)
+Instaladores: scripts/setup_linux.sh | scripts/setup_macos.sh | scripts/setup_windows.bat (ou .ps1)
 Guias de instalação: INSTALL_LINUX/INSTALL_WINDOWS/INSTALL_MACOS (.md/.en.md)
 Sessões em nuvem: CLOUD_SESSIONS (.md/.en.md)
 

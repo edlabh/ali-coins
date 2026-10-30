@@ -98,6 +98,9 @@ changes are additive.
 - `CHANGELOG.en.md`, `RELEASING.en.md` and `TELEGRAM.en.md` added with PT/EN navigation;
   the EN changelog mirrors the full history (2.5.0 through 0.7.0), keeping PT as the
   canonical source.
+- **Manuals and scripts reviewed for the new layout:** installation and key-generation
+  commands under `scripts/`, `libs/core/` references and anchors aligned in PT-BR/EN for
+  Linux, macOS and Windows.
 
 ### Removed
 

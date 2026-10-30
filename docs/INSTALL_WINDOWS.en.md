@@ -245,7 +245,7 @@ You can obtain your cryptographic key using any of the following methods:
   ```
   This instantly generates a cryptographically secure random 32-byte key in Base64 (44 characters) ready to paste into `credentials.env`.
 - **Option 2 (Via the 1-Click Script):**
-  Run the key generator utility included in the project root:
+  Run the key generator utility included in `scripts/`:
   - In Command Prompt (CMD): `scripts\generate_secret.bat`
   - In PowerShell: `.\scripts\generate_secret.ps1`
 - **Option 3 (Via OpenSSL - if installed on the system or in Git for Windows):**
@@ -417,7 +417,7 @@ If you run the automation on compact Windows virtual machines or computers with 
    - Check in: **Settings > System > About > Advanced system settings > Advanced > Performance (Settings) > Advanced > Virtual memory**.
 
 2. **Native Chromium Low-Consumption Flags:**
-   - `browser.js` already applies the `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` arguments and `ALLOW_MEDIA=false` by default in runs via `run_all.bat` and `run_all.ps1`.
+   - `libs/core/browser.js` already applies the `--disable-gpu`, `--disable-software-rasterizer`, `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disk-cache-size=10485760` arguments and `ALLOW_MEDIA=false` by default in runs via `run_all.bat` and `run_all.ps1`.
 
 3. **Node.js Heap Limit (`NODE_OPTIONS`):**
    - To force Node.js's Garbage Collector to keep consumption compact (256 MB):

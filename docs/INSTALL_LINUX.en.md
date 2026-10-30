@@ -44,7 +44,7 @@ This manual was created to guide you step by step through the complete installat
 
 ## 2. Method A: Automatic Installation (Recommended - 1 Command)
 
-If you have already cloned the repository, simply run the automated script included in the project root:
+If you have already cloned the repository, simply run the automated script included in `scripts/`:
 
 ```bash
 cd ali-coins
@@ -377,7 +377,7 @@ The project includes low-consumption optimizations that work **both natively on 
    Validate with `free -h` that the `Swap:` line shows ~2.0Gi.
 
 2. **Chromium Low-Consumption Flags (Enabled by Default):**
-   `browser.js` already automatically applies footprint-reduction arguments in any execution (`./run_all.sh`, `npm start`, or Docker):
+   `libs/core/browser.js` already automatically applies footprint-reduction arguments in any execution (`./run_all.sh`, `npm start`, or Docker):
    - `--disable-gpu` and `--disable-software-rasterizer` (avoids the software rasterization pipeline);
    - `--renderer-process-limit=1` (restricts to 1 renderer process);
    - `--js-flags=--max-old-space-size=128` (limits Chromium's internal V8 heap to 128 MB);

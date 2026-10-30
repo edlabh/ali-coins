@@ -42,7 +42,7 @@ Este manual foi criado para guiar passo a passo a instalação completa do **Ali
 
 ## 2. Método A: Instalação Automática (Recomendado - 1 Comando)
 
-Se você já clonou o repositório, basta executar o script automatizado incluído na raiz do projeto:
+Se você já clonou o repositório, basta executar o script automatizado incluído em `scripts/`:
 
 ```bash
 cd ali-coins
@@ -375,7 +375,7 @@ O projeto inclui otimizações de baixo consumo que funcionam **tanto nativament
    Valide com `free -h` se a linha `Swap:` exibe ~2.0Gi.
 
 2. **Flags de Baixo Consumo do Chromium (Ativadas por Padrão):**
-   O `browser.js` já aplica automaticamente argumentos de redução de footprint em qualquer execução (`./run_all.sh`, `npm start` ou Docker):
+   O `libs/core/browser.js` já aplica automaticamente argumentos de redução de footprint em qualquer execução (`./run_all.sh`, `npm start` ou Docker):
    - `--disable-gpu` e `--disable-software-rasterizer` (evita o pipeline de rasterização em software);
    - `--renderer-process-limit=1` (restringe a 1 processo de renderização);
    - `--js-flags=--max-old-space-size=128` (limita a heap V8 interna do Chromium a 128 MB);

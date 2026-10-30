@@ -1,5 +1,10 @@
 # Prompt de continuidade — endurecimento do ali-coins (2.4.0 → 2.5.0)
 
+> **Nota histórica:** este documento registra o ciclo 2.4.0 → 2.5.0. Os caminhos
+> citados refletem a estrutura daquela época; na 2.5.0 os módulos centrais estão em
+> `libs/core/` e os scripts auxiliares em `scripts/`. Consulte o README para a
+> estrutura atual.
+
 > **Como usar este documento:** entregue o bloco “Prompt” abaixo a um agente de código
 > (OpenCode, Codex, Claude Code ou equivalente) com acesso ao repositório
 > `ali-coins` e à internet. Ele foi escrito para ser autossuficiente: contém o estado
@@ -25,7 +30,7 @@ sem quebrar o contrato público existente.
 
 **A 2.4.0 ainda não foi enviada ao remoto.** Não faça `git push`, não crie GitHub
 Release e não publique tag remota. Tags locais são permitidas apenas quando o
-mantenedor pedir. O push futuro acontece exclusivamente via `./push_to_github.sh`.
+mantenedor pedir. O push futuro acontece exclusivamente via `scripts/push_to_github.sh`.
 
 ### 2. Estado atual (ponto de partida)
 
