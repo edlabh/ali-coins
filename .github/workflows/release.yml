@@ -86,8 +86,14 @@ jobs:
       - name: Run linter
         run: npm run lint
 
-      - name: Run test suite
-        run: npm test
+      - name: Run code formatting check
+        run: npm run format:check
+
+      - name: Run native test suite with coverage threshold (>= 80%)
+        run: npm run test:coverage
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
 
   release:
     name: Publish GitHub Release

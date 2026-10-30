@@ -53,6 +53,38 @@ jobs:
       - name: Run linter
         run: npm run lint
 
+      - name: ShellCheck (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          find . -path ./node_modules -prune -o -path ./.git -prune -o -path ./.husky/_ -prune -o -name '*.sh' -print0 \
+            | xargs -0 -r shellcheck -x -f gcc
+
+      - name: Validate PowerShell syntax (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path . -Filter *.ps1 -File -Recurse |
+            Where-Object { $_.FullName -notmatch '\\node_modules\\' } |
+            ForEach-Object {
+              $tokens = $null
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                $_.FullName,
+                [ref]$tokens,
+                [ref]$errors
+              ) | Out-Null
+              foreach ($err in $errors) {
+                Write-Error "$($_.FullName):$($err.Extent.StartLineNumber): $($err.Message)"
+                $failed = $true
+              }
+            }
+          if ($failed) { exit 1 }
+
       - name: Run code formatting check
         run: npm run format:check
 
@@ -63,17 +95,41 @@ jobs:
         run: npm audit --omit=dev
 
       - name: Generate Software Bill of Materials (SBOM)
-        run: |
-          npm sbom --sbom-format=cyclonedx > sbom.json 2>/dev/null || true
-        continue-on-error: true
+        run: npm sbom --sbom-format=cyclonedx > sbom.json
 
       - name: Upload SBOM Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-cyclonedx
           path: sbom.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: diagnostics-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: |
+            scratch/
+            *.log
+            test-results/
           if-no-files-found: ignore
-        continue-on-error: true
+          retention-days: 3
+
+  workflow-lint:
+    name: Workflow Lint (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        # actionlint 1.7.12 — imagem multi-arch pinada por digest (supply chain)
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
   gitleaks:
     name: Gitleaks Secret Scan

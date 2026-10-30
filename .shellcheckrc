@@ -1,0 +1,7 @@
+# ShellCheck do projeto ali-coins.
+# Os scripts são Bash (shebang #!/usr/bin/env bash) e fazem source de helpers locais.
+shell=bash
+external-sources=true
+# SC1091: source dinâmico/relativo não é resolvido de forma confiável em todos os jobs.
+# O arquivo é validado separadamente pelos próprios testes e pelo ShellCheck quando existe.
+disable=SC1091

@@ -64,6 +64,7 @@ scripts/
 eslint.config.js
 .prettierrc
 .prettierignore
+.shellcheckrc
 
 # Git e metadados do repositório
 .git
