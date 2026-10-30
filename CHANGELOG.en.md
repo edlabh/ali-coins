@@ -15,9 +15,9 @@ prevails.
 > Changes for upcoming versions should be recorded here and moved to
 > `## [X.Y.Z] - YYYY-MM-DD` at release time. See [RELEASING.en.md](RELEASING.en.md).
 
-## [2.5.0] - 2026-10-30
+## [2.5.0-rc.1] - 2026-10-30
 
-Structural hardening, observability and reliability release. It preserves the 2.4.0 public
+Release candidate for 2.5.0. Structural hardening, observability and reliability release. It preserves the 2.4.0 public
 contract (CLI, exit codes `0–7`, session/token format and existing report fields); report
 changes are additive.
 

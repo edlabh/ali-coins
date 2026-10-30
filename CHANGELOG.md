@@ -13,9 +13,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
-## [2.5.0] - 2026-10-30
+## [2.5.0-rc.1] - 2026-10-30
 
-Release de endurecimento estrutural, observabilidade e confiabilidade. Mantém o contrato
+Release candidate da 2.5.0. Release de endurecimento estrutural, observabilidade e
+confiabilidade. Mantém o contrato
 público da 2.4.0 (CLI, exit codes `0–7`, formato de sessão/token e campos existentes dos
 relatórios); mudanças de relatório são aditivas.
 
