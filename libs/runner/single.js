@@ -1,0 +1,1072 @@
+/**
+ * Runner de check-in de conta única.
+ *
+ * Extraído mecanicamente de `collect.js` para deixar o arquivo raiz como adaptador fino
+ * de CLI. O tamanho reflete a orquestração existente (login, mobile, desktop, relatório e
+ * limpeza); dividir por fases é uma evolução possível, mas exigiria mudanças de
+ * comportamento e fica fora deste movimento puro.
+ */
+const { loadConfig, sessionPath, isJson, isForce, maskUser } = require('../../config');
+const { formatDateTime, formatDuration } = require('../../time_utils');
+const { launchBrowser, newMobileContext, closeContextWithDiagnostics } = require('../../browser');
+const {
+  validateAndRefresh,
+  saveSession,
+  updateSessionStreak,
+  getCaptchaCooldown,
+  recordCaptchaChallenge
+} = require('../session');
+const { SELECTORS } = require('../selectors');
+const {
+  gotoWithRetry,
+  closeModals,
+  performMobileLogin,
+  getStreakFromCoinPage,
+  getCheckinCalendarFromCoinPage,
+  isRealStreakReading,
+  getBalanceDesktop,
+  getCheckinCoinsFromStreak,
+  shouldReuseDesktopContext,
+  closeCachedDesktopContext,
+  isManualLoginAvailable,
+  shouldOfferManualLogin,
+  manualLoginReason,
+  askLoginChoice,
+  performManualLogin,
+  CHOICE_MANUAL
+} = require('../ui');
+const { renderCheckinReport, resolveStreakDays } = require('../report');
+const { shouldAttemptLogin, isLoginGateVisible } = require('../checkin/login-gate');
+const {
+  shouldConfirmCheckinByLedger,
+  shouldConfirmStreakByStatement,
+  shouldReuseEarlyDesktop
+} = require('../checkin/streak');
+const { isSessionDataMissing, buildCheckinResult } = require('../checkin/result');
+const { version: APP_VERSION } = require('../../package.json');
+const logger = require('../../logger');
+
+/**
+ * Verifica se o login deve ser bloqueado pelo cooldown pós-captcha (lê o meta da conta).
+ * Wrapper assíncrono testável: garante o `await` do lock de sessão usado por
+ * `getCaptchaCooldown` — sem isso o `active` vinha `undefined` e a pausa não bloqueava.
+ * `force: true` (flag `--force`) ignora a pausa e permite a tentativa de login.
+ * @param {object} sessionOpts Opções da conta (sessionPath/sessionMetaPath/account)
+ * @param {number} hours Janela de cooldown em horas
+ * @param {{force?: boolean}} [options]
+ * @returns {Promise<{blocked: boolean, forced: boolean, cooldown: object}>}
+ */
+async function checkCaptchaCooldownForLogin(sessionOpts, hours, { force = false } = {}) {
+  const cooldown = await getCaptchaCooldown(sessionOpts, hours);
+  return {
+    blocked: !force && cooldown.active === true,
+    forced: Boolean(force),
+    cooldown,
+    manualRequired: cooldown.requireManualLogin === true
+  };
+}
+
+/**
+ * Verifica se um seletor está visível na página (nunca lança).
+ * @param {import('playwright').Page} page
+ * @param {string} selector
+ * @param {number} [timeout=1500]
+ * @returns {Promise<boolean>}
+ */
+async function isSelectorVisible(page, selector, timeout = 1500) {
+  try {
+    const el = await page.waitForSelector(selector, { state: 'visible', timeout });
+    return el !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Executa o fluxo completo de check-in diário de moedas do AliExpress
+ * @param {object} [options={}]
+ * @param {import('playwright').Browser} [options.browser] Instância compartilhada de navegador
+ * @param {object} [options.sessionData] Dados de sessão em cache
+ * @returns {Promise<object>}
+ */
+async function runCheckin(options = {}) {
+  const checkinStartTime = new Date();
+  const config = options.config || loadConfig(true);
+  const account = options.account || null;
+  const userEmail = (account && account.user) || options.userEmail || config.ALI_USER;
+  const currentSessionPath = (account && account.sessionPath) || options.sessionPath || sessionPath;
+  const currentSessionMetaPath =
+    (account && account.sessionMetaPath) || options.sessionMetaPath || null;
+  const sessionOpts = {
+    sessionPath: currentSessionPath,
+    sessionMetaPath: currentSessionMetaPath,
+    account
+  };
+
+  logger.info('================ CHECK-IN DIÁRIO ================');
+  logger.info(`[Dia e Hora]: ${formatDateTime(checkinStartTime)}`);
+  logger.info(`[Versão] ali-coins v${APP_VERSION}`);
+  logger.info(`[Login] Usuário: ${maskUser(userEmail)}`);
+
+  let browser = options.browser;
+  const isInternalBrowser = !browser;
+
+  if (isInternalBrowser) {
+    browser = await launchBrowser({ headless: config.HEADLESS });
+    if (typeof options.onBrowserLaunch === 'function') {
+      try {
+        options.onBrowserLaunch(browser);
+      } catch {}
+    }
+  }
+
+  let wasAlreadyCollectedToday = false;
+  let sessionData = options.sessionData || null;
+  // Reúso coordenado com a etapa de tarefas: quando keepPage=true, a página/contexto mobile
+  // é repassada (onMobilePageKept) em vez de fechada — evita recarregar o SPA nas tarefas.
+  const keepPage = options.keepPage === true;
+
+  try {
+    // 1. Carregar e validar sessão existente
+    const sessionStatus = await validateAndRefresh(userEmail, sessionData, sessionOpts);
+    const hasValidSession = sessionStatus.valid;
+    const isImportedSession = Boolean(sessionStatus.isImported);
+    sessionData = sessionStatus.sessionData;
+    const previousStreakDays =
+      sessionStatus.metaData?.lastStreakDays ??
+      (sessionStatus.previousMeta?.user === userEmail
+        ? sessionStatus.previousMeta?.lastStreakDays
+        : null) ??
+      null;
+    // Maior sequência já registrada para ESTA conta (meta local). Não herda de outro usuário.
+    const previousLongestStreakDays =
+      typeof sessionStatus.metaData?.longestStreakDays === 'number'
+        ? sessionStatus.metaData.longestStreakDays
+        : null;
+
+    // 2. Checagem prévia rápida no desktop se já foi coletado hoje
+    let earlyDesktopStreak = null;
+    let earlyTotalBalance = null;
+    let earlyDesktopCheck = null;
+    if (hasValidSession) {
+      try {
+        const desktopCheck = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
+          allowMedia: config.ALLOW_MEDIA,
+          timeout: config.NAV_TIMEOUT_SHORT,
+          reuseContext: shouldReuseDesktopContext()
+        });
+        earlyDesktopCheck = desktopCheck;
+        if (desktopCheck.hasAppCheckinToday) {
+          wasAlreadyCollectedToday = true;
+        }
+        if (desktopCheck.desktopStreak !== null && desktopCheck.desktopStreak !== undefined) {
+          earlyDesktopStreak = desktopCheck.desktopStreak;
+        }
+        if (desktopCheck.totalBalance && desktopCheck.totalBalance !== 'N/D') {
+          earlyTotalBalance = desktopCheck.totalBalance;
+        }
+      } catch (checkErr) {
+        logger.debug({ err: checkErr.message }, 'Checagem prévia de desktop ignorada.');
+      }
+    }
+
+    // 3. Inicializar contexto mobile. `newPage` fica DENTRO do try que fecha o contexto:
+    // se falhar (contexto morto), o finally fecha o contexto em vez de deixá-lo órfão.
+    let context = await newMobileContext(
+      browser,
+      hasValidSession ? sessionData || currentSessionPath : null,
+      {
+        allowMedia: config.ALLOW_MEDIA
+      }
+    );
+    let page = null;
+    let attemptedLogin = false;
+    let manualLoginDone = false;
+    let postFailureManualPrompted = false;
+    const manualLoginMode = ['auto', 'never', 'always'].includes(config.MANUAL_LOGIN)
+      ? config.MANUAL_LOGIN
+      : 'auto';
+    // Checado uma vez por conta: em cron/VM/CI (sem TTY/GUI) permanece false e o fluxo
+    // segue 100% headless, sem menus nem janelas.
+    const manualLoginAvailable = isManualLoginAvailable({ mode: manualLoginMode });
+    if (manualLoginMode === 'always' && !manualLoginAvailable) {
+      logger.warn(
+        'MANUAL_LOGIN=always, mas não há TTY/interface gráfica disponível; mantendo o login automático headless.'
+      );
+    }
+    const mobileCoinUrl = 'https://m.aliexpress.com/p/coin-index/index.html';
+
+    // Após um login manual bem-sucedido, o contexto headless original ainda tem a sessão
+    // velha. Fecha e recria com o storageState novo para o restante do fluxo usar os
+    // cookies recém-salvos. Em HEADLESS=false a própria janela já é a context principal.
+    const resumeAfterManualLogin = async () => {
+      if (!config.HEADLESS) {
+        if (page && !page.url().includes('coin-index')) {
+          await gotoWithRetry(page, mobileCoinUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: config.NAV_TIMEOUT
+          }).catch(() => {});
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          await page.waitForTimeout(1000).catch(() => {});
+        }
+        await closeCachedDesktopContext().catch(() => {});
+        return;
+      }
+
+      await closeContextWithDiagnostics(context, {
+        failed: false,
+        name: 'checkin-mobile-manual-login'
+      }).catch(() => {});
+      context = await newMobileContext(browser, sessionData, {
+        allowMedia: config.ALLOW_MEDIA
+      });
+      page = await context.newPage();
+      await gotoWithRetry(page, mobileCoinUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: config.NAV_TIMEOUT
+      });
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
+      await page.waitForTimeout(1000).catch(() => {});
+      if (!page.url().includes('coin-index')) {
+        await gotoWithRetry(page, mobileCoinUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: config.NAV_TIMEOUT_SHORT
+        }).catch(() => {});
+        await page.waitForTimeout(1000).catch(() => {});
+      }
+      await closeCachedDesktopContext().catch(() => {});
+    };
+
+    try {
+      page = await context.newPage();
+      // Navega DIRETO para a URL mobile: o contexto já herda os cookies do storageState e
+      // a visita prévia ao mycoin desktop era descartada na linha seguinte — desperdiçava
+      // 3-6s de rede/CPU e ~25-40 MB de heap por conta processando o DOM desktop em
+      // viewport mobile.
+      await gotoWithRetry(page, mobileCoinUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: config.NAV_TIMEOUT
+      });
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
+
+      if (!hasValidSession) {
+        // Se não possui sessão prévia válida, aguarda pelo formulário de login
+        await page
+          .waitForSelector(SELECTORS.login.usernameInput, { timeout: config.SELECTOR_TIMEOUT })
+          .catch(() => {});
+      } else {
+        await page
+          .waitForSelector(
+            'input.cosmos-input, input[type="text"], input[type="email"], #signButton, [class*="today-checked"], [class*="dayNumber"], button:has-text("Collect"), button:has-text("Coletar")',
+            { timeout: config.SELECTOR_TIMEOUT }
+          )
+          .catch(() => {});
+      }
+
+      if (page.url().includes('coin-pc-index')) {
+        await page.setViewportSize({ width: 412, height: 915 });
+        await gotoWithRetry(page, mobileCoinUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: config.NAV_TIMEOUT_SHORT
+        });
+      }
+
+      // Verificar se precisa autenticar.
+      // Com sessão válida, indícios textuais ("Sign in"/"Entrar" em rodapé/menu) E a
+      // presença do campo de usuário só contam quando a URL confirma login/passport —
+      // evita re-login desnecessário (e risco de ban) por inputs da própria página.
+      // EXCEÇÃO (v1.6.1): campo de SENHA visível é sinal forte de prompt de
+      // reautenticação in-page — o AliExpress pede só a senha na MESMA URL do
+      // coin-index (SPA) e antes isso passava batido (login nunca era tentado).
+      const loginInput = await page.$(SELECTORS.login.usernameInput).catch(() => null);
+      const passwordVisible = await isSelectorVisible(page, SELECTORS.login.passwordInput);
+      const bodyText = await page.innerText('body').catch(() => '');
+      const loginUrl = /login|sign-?in|passport/i.test(page.url());
+      const gateVisible = await isLoginGateVisible(page);
+      const needsLogin = shouldAttemptLogin({
+        hasValidSession,
+        passwordVisible,
+        loginUrl,
+        usernameVisible: loginInput !== null,
+        bodyText,
+        gateVisible
+      });
+
+      if (needsLogin) {
+        logger.info(
+          {
+            hasValidSession,
+            loginUrl,
+            passwordVisible,
+            usernameVisible: loginInput !== null
+          },
+          'Login necessário: acionando autenticação.'
+        );
+        attemptedLogin = true;
+
+        // Cooldown pós-captcha: um desafio anti-bot recente pausa novas tentativas de
+        // login — insistir escala o desafio e o risco de bloqueio da conta/IP.
+        // A flag `--force` ignora a pausa (execução forçada a pedido do operador).
+        const {
+          blocked: captchaBlocked,
+          forced: captchaForced,
+          cooldown: captchaCooldown,
+          manualRequired
+        } = await checkCaptchaCooldownForLogin(sessionOpts, config.CAPTCHA_COOLDOWN_HOURS, {
+          force: isForce()
+        });
+        if (captchaForced && captchaCooldown.active) {
+          logger.warn(
+            { until: captchaCooldown.until },
+            '--force: cooldown pós-captcha ignorado; tentando autenticar mesmo assim.'
+          );
+        }
+
+        // Login manual opcional (2.0.0): antes de bloquear/autenticar, oferece ao
+        // operador a opção de abrir uma janela visível para resolver login/captcha.
+        // Sem TTY/GUI (cron/VM/CI) nada é perguntado; o fluxo abaixo segue igual.
+        if (
+          manualLoginAvailable &&
+          shouldOfferManualLogin({
+            hasValidLogin: hasValidSession,
+            needsLogin,
+            passwordVisible,
+            cooldown: captchaCooldown,
+            mode: manualLoginMode
+          })
+        ) {
+          const reason = manualLoginReason({
+            hasValidLogin: hasValidSession,
+            passwordVisible,
+            cooldown: captchaCooldown
+          });
+          let choice = CHOICE_MANUAL;
+          if (manualLoginMode !== 'always') {
+            logger.info({ reason }, 'Login manual disponível: exibindo menu de escolha.');
+            const answer = await askLoginChoice({
+              account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+              reason,
+              timeoutMs: config.MANUAL_LOGIN_PROMPT_TIMEOUT_MS
+            });
+            choice = answer.choice;
+            if (answer.nonInteractive) {
+              logger.info('Login manual indisponível neste ambiente; seguindo headless.');
+            } else if (answer.timedOut) {
+              logger.info('Menu de login manual expirou sem resposta; seguindo headless.');
+            } else if (answer.aborted) {
+              logger.info('Menu de login manual cancelado; seguindo headless.');
+            }
+          }
+
+          if (choice === CHOICE_MANUAL) {
+            try {
+              const manual = await performManualLogin({
+                config,
+                sessionOpts,
+                account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+                storageState: hasValidSession ? sessionData || currentSessionPath : null,
+                existingPage: config.HEADLESS ? null : page,
+                existingContext: config.HEADLESS ? null : context
+              });
+              sessionData = manual.sessionData;
+              manualLoginDone = true;
+              logger.info(
+                { user: maskUser(userEmail) },
+                'Login manual concluído; sessão renovada e fluxo headless retomado.'
+              );
+            } catch (manualErr) {
+              manualErr.manualAttempted = true;
+              manualErr.isManualLoginRequired = true;
+              throw manualErr;
+            }
+          }
+        }
+
+        if (!manualLoginDone && manualRequired && !captchaForced) {
+          logger.warn(
+            { until: captchaCooldown.until, hours: captchaCooldown.hours },
+            'Login remoto suspenso: sessão precisa ser renovada manualmente (pós-bloqueio RGV587).'
+          );
+          const gateErr = new Error(
+            'Login remoto suspenso após bloqueio anti-bot (RGV587): faça o login na máquina local, resolva o captcha e importe a sessão (node import_session.js).'
+          );
+          gateErr.isManualLoginRequired = true;
+          gateErr.isRiskControl = captchaCooldown.riskControl === true;
+          gateErr.cooldownHours = captchaCooldown.hours;
+          gateErr.cooldownUntil = captchaCooldown.until;
+          throw gateErr;
+        }
+        if (!manualLoginDone && captchaBlocked) {
+          logger.warn(
+            { lastCaptchaAt: captchaCooldown.lastCaptchaAt, until: captchaCooldown.until },
+            'Login pausado pelo cooldown pós-captcha; nenhuma tentativa será feita nesta execução.'
+          );
+          const cooldownErr = new Error(
+            `Login pausado pelo cooldown pós-captcha (desafio em ${captchaCooldown.lastCaptchaAt}; libera em ${captchaCooldown.until}).`
+          );
+          cooldownErr.isCaptchaChallenge = true;
+          cooldownErr.isCaptchaCooldown = true;
+          cooldownErr.isRiskControl = captchaCooldown.riskControl === true;
+          if (cooldownErr.isRiskControl) {
+            cooldownErr.cooldownHours = captchaCooldown.hours;
+            cooldownErr.cooldownUntil = captchaCooldown.until;
+          }
+          throw cooldownErr;
+        }
+
+        if (!manualLoginDone) {
+          if (isImportedSession) {
+            logger.warn(
+              '[Sessão Remota] Autenticação necessária com sessão importada. Em servidores remotos (VPS/nuvem), desafios de segurança anti-bot podem impedir o login automático.'
+            );
+          }
+          try {
+            sessionData = await performMobileLogin(page, context, config, sessionOpts);
+          } catch (loginErr) {
+            // Desafio anti-bot (captcha): registra o instante para o cooldown das próximas
+            // execuções (não re-registra quando a falha É o próprio cooldown).
+            // RGV587 usa cooldown customizado de 48h gravado no meta da conta.
+            if (loginErr.isCaptchaChallenge && !loginErr.isCaptchaCooldown) {
+              await recordCaptchaChallenge(sessionOpts, new Date(), {
+                cooldownHours: loginErr.captchaCooldownHours || null,
+                requireManualLogin: loginErr.isRiskControl === true
+              }).catch(() => {});
+              if (loginErr.isRiskControl) {
+                const hours = loginErr.captchaCooldownHours || config.CAPTCHA_COOLDOWN_HOURS;
+                loginErr.cooldownHours = hours;
+                loginErr.cooldownUntil = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+              }
+            }
+            if (isImportedSession) {
+              logger.error(
+                '[Sessão Remota Expirada] Falha ao autenticar no AliExpress. A sessão importada de outro host expirou ou foi invalidada. ' +
+                  'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+              );
+              loginErr.isImportedSessionExpired = true;
+            }
+
+            // Segunda chance manual: o login automático acabou de detectar captcha/RGV587.
+            // O cooldown já foi registrado acima; se o operador resolver na janela, o
+            // `freshLogin` limpa o gate e o fluxo retoma headless.
+            if (
+              !postFailureManualPrompted &&
+              manualLoginAvailable &&
+              (loginErr.isCaptchaChallenge || loginErr.isRiskControl)
+            ) {
+              postFailureManualPrompted = true;
+              const reason = loginErr.isRiskControl
+                ? 'bloqueio anti-bot (RGV587) detectado no login automático'
+                : 'captcha/desafio não superado no login automático';
+              let choice = CHOICE_MANUAL;
+              if (manualLoginMode !== 'always') {
+                logger.info(
+                  { reason },
+                  'Login automático bloqueado: exibindo menu de login manual.'
+                );
+                const answer = await askLoginChoice({
+                  account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+                  reason,
+                  timeoutMs: config.MANUAL_LOGIN_PROMPT_TIMEOUT_MS
+                });
+                choice = answer.choice;
+                if (answer.nonInteractive) {
+                  logger.info('Login manual indisponível neste ambiente; mantendo a falha.');
+                } else if (answer.timedOut) {
+                  logger.info('Menu de login manual expirou sem resposta; mantendo a falha.');
+                } else if (answer.aborted) {
+                  logger.info('Menu de login manual cancelado; mantendo a falha.');
+                }
+              }
+
+              if (choice === CHOICE_MANUAL) {
+                try {
+                  const manual = await performManualLogin({
+                    config,
+                    sessionOpts,
+                    account: account || { user: userEmail, maskedUser: maskUser(userEmail) },
+                    storageState: hasValidSession ? sessionData || currentSessionPath : null,
+                    existingPage: config.HEADLESS ? null : page,
+                    existingContext: config.HEADLESS ? null : context
+                  });
+                  sessionData = manual.sessionData;
+                  manualLoginDone = true;
+                  logger.info(
+                    { user: maskUser(userEmail) },
+                    'Login manual concluído após bloqueio; sessão renovada e fluxo headless retomado.'
+                  );
+                } catch (manualErr) {
+                  manualErr.manualAttempted = true;
+                  manualErr.isManualLoginRequired = true;
+                  if (loginErr.isRiskControl) {
+                    manualErr.isRiskControl = true;
+                    manualErr.cooldownHours = loginErr.cooldownHours;
+                    manualErr.cooldownUntil = loginErr.cooldownUntil;
+                  }
+                  throw manualErr;
+                }
+              }
+            }
+
+            if (!manualLoginDone) {
+              // RGV587 exige sessão renovada manualmente (o cooldown de 48h já foi
+              // registrado). Marca como intervenção manual para sair com 7 e evitar o
+              // retry automático do run_all.sh, que só reencontraria o gate.
+              if (loginErr.isRiskControl) {
+                loginErr.isManualLoginRequired = true;
+              }
+              throw loginErr;
+            }
+          }
+        }
+
+        if (manualLoginDone) {
+          await resumeAfterManualLogin();
+        } else {
+          // Aguardar o redirecionamento pós-login concluir e assegurar navegação para o coin-index.
+          // 'networkidle' foi removido: no msite ele pode esperar até 30s por requisições de
+          // telemetria e carrega bookkeeping pesado no Playwright; a estabilização do SPA é
+          // garantida pelos waits explícitos de seletor/login-pending logo abaixo.
+          await page
+            .waitForURL(/coin-index/, { timeout: config.NAV_TIMEOUT_SHORT })
+            .catch(() => {});
+          await page.waitForLoadState('domcontentloaded').catch(() => {});
+          await page.waitForTimeout(1000).catch(() => {});
+
+          if (!page.url().includes('coin-index')) {
+            await gotoWithRetry(page, mobileCoinUrl, {
+              waitUntil: 'domcontentloaded',
+              timeout: config.NAV_TIMEOUT
+            }).catch(() => {});
+            await page.waitForTimeout(1000).catch(() => {});
+          }
+
+          // Sessão NOVA: o contexto desktop cacheado ainda tem os cookies antigos
+          // (a leitura prévia pode tê-lo cacheado antes do login). Invalida para que as
+          // leituras seguintes usem o storageState atualizado.
+          await closeCachedDesktopContext().catch(() => {});
+        }
+      }
+
+      await page
+        .waitForFunction(() => !document.querySelector('.login-pending-container'), {
+          timeout: config.NAV_TIMEOUT_SHORT
+        })
+        .catch(() => {});
+
+      // 4. Checagem e coleta do check-in
+      const isCheckedInitial = await page
+        .evaluate(() => {
+          const text = (document.body && document.body.innerText) || '';
+          return (
+            Boolean(
+              document.querySelector('[class*="today-checked"], [class*="aecoin-today-checked"]')
+            ) || /Today[\s\S]{0,15}✓/i.test(text)
+          );
+        })
+        .catch(() => false);
+
+      let alreadyCollected = isCheckedInitial || wasAlreadyCollectedToday;
+      let justCollected = false;
+      let mobileStreak = null;
+      let checkinCalendar = null;
+
+      if (!alreadyCollected) {
+        for (const sel of SELECTORS.checkin.collectButtonList) {
+          try {
+            const el = await page.$(sel);
+            if (el) {
+              logger.info('Realizando check-in diário...');
+              await page.evaluate((target) => target.click(), el);
+              // Confirma o EFEITO do clique: sem isto, um clique que não registrou
+              // (overlay/anti-bot/botão errado) era contado como check-in feito —
+              // incrementava streak, creditava moedas e mascarava quebra de sequência.
+              // `.e2e_normal_task_right_btn` NÃO entra: é botão genérico sempre presente.
+              // 3s de margem: a UI atual pode demorar >2s para pintar o marcador de "hoje"
+              // (com 2s o bot seguia para o próximo seletor e clicava de novo, sem dano,
+              // mas com warns desnecessários).
+              const confirmed = await page
+                .waitForSelector('[class*="today-checked"], [class*="aecoin-today-checked"]', {
+                  timeout: 3000
+                })
+                .then(() => true)
+                .catch(() => false);
+              await page.waitForTimeout(800);
+              justCollected = confirmed;
+              if (!confirmed) {
+                logger.warn(
+                  'Clique de check-in não confirmado pela UI (marcador de "hoje" ausente). ' +
+                    'Não contabilizando como coletado nesta execução.'
+                );
+              }
+              // Só encerra a lista quando o clique foi CONFIRMADO: os demais seletores são
+              // fallback em cascata e precisam ser tentados se este não teve efeito.
+              if (confirmed) {
+                break;
+              }
+            }
+          } catch {
+            // Próximo seletor
+          }
+        }
+      }
+
+      let mobileCheckinCoins = null;
+      if (justCollected) {
+        try {
+          mobileCheckinCoins = await page.evaluate(() => {
+            // Filtra elementos VISÍVEIS: o scan anterior varria qualquer [class*="aecoin-"]
+            // (inclusive o calendário da semana) e pegava o primeiro "+N" em ordem de
+            // documento como se fosse o crédito do check-in.
+            const isVisible = (el) => {
+              const rect = el.getBoundingClientRect();
+              return (
+                rect.width > 0 &&
+                rect.height > 0 &&
+                window.getComputedStyle(el).visibility !== 'hidden'
+              );
+            };
+            const modalEls = Array.from(
+              document.querySelectorAll(
+                '[class*="modal"], [class*="dialog"], [class*="popup"], [class*="toast"], [role="dialog"], [class*="aecoin-"]'
+              )
+            ).filter(isVisible);
+            for (const el of modalEls) {
+              const text = el.innerText || '';
+              const m = text.match(/\+([0-9]+)\s*(?:moedas?|coins?)?/i);
+              if (m) {
+                const val = parseInt(m[1], 10);
+                if (!isNaN(val) && val > 0) return val;
+              }
+            }
+            return null;
+          });
+        } catch {
+          // Ignorar
+        }
+      }
+
+      // Tentar capturar o streak imediatamente (modal de sucesso ainda visível se houve clique)
+      mobileStreak = await getStreakFromCoinPage(page);
+
+      await closeModals(page);
+
+      // Se ainda não capturou, tenta novamente após fechar os modais
+      if (mobileStreak === null) {
+        mobileStreak = await getStreakFromCoinPage(page);
+      }
+
+      // Coletar água da Fazenda Mágica se visível
+      try {
+        const waterBtn = await page.$(SELECTORS.checkin.waterBtn);
+        if (waterBtn) {
+          logger.info('Coletando água da Fazenda Mágica...');
+          await page.evaluate((el) => el.click(), waterBtn);
+          await page.waitForTimeout(1000);
+        }
+      } catch {
+        // Ignorar
+      }
+
+      // Se ainda não capturou, faz tentativa final antes de fechar o contexto mobile
+      if (mobileStreak === null) {
+        mobileStreak = await getStreakFromCoinPage(page);
+      }
+
+      // Calendário "Daily coins": distingue a sequência REAL do AliExpress (rótulos acima de
+      // "Day 7") de um ciclo semanal, para a leitura da tela poder prevalecer sobre o histórico.
+      checkinCalendar = await getCheckinCalendarFromCoinPage(page);
+
+      try {
+        const updatedStorage = await context.storageState();
+        sessionData = updatedStorage;
+        await saveSession(updatedStorage, userEmail, sessionOpts);
+      } catch (err) {
+        // Falha ao persistir a sessão não invalida o check-in, mas precisa ficar visível:
+        // sem log, o run seguinte refaz login e o operador não sabe o motivo.
+        logger.warn(
+          { err: err.message },
+          'Falha ao atualizar/persistir a sessão após o check-in (cookies não gravados).'
+        );
+      }
+
+      // Hand-off opcional para a etapa de tarefas (keepPage): entrega página/contexto já
+      // posicionados na central de moedas para evitar recarregar o SPA (~54s). Sem callback
+      // (ou em caso de falha ao repassar), fecha o contexto como sempre.
+      let mobileHandedOff = false;
+      if (keepPage && page && context && typeof options.onMobilePageKept === 'function') {
+        try {
+          options.onMobilePageKept({ page, context });
+          mobileHandedOff = true;
+          logger.info('Página mobile preservada para a etapa de tarefas (sem recarregar o SPA).');
+        } catch (handoffErr) {
+          logger.warn(
+            { err: handoffErr.message },
+            'Falha ao repassar a página mobile para as tarefas; fechando o contexto.'
+          );
+        }
+      }
+      if (!mobileHandedOff) {
+        await closeContextWithDiagnostics(context, { failed: false, name: 'checkin-mobile' });
+      }
+
+      // 5. Confirmar resultado e saldo no desktop
+      // Atalho de performance: quando nada foi coletado nesta execução, a checagem inicial
+      // continua válida (saldo/streak não mudaram) — reutilizá-la evita reabrir o contexto
+      // desktop (~18s na baseline). Após uma coleta nova, a leitura é obrigatória (crédito/streak).
+      let desktopResult;
+      if (shouldReuseEarlyDesktop({ justCollected, earlyDesktop: earlyDesktopCheck })) {
+        desktopResult = earlyDesktopCheck;
+        logger.info('Saldo/streak reutilizados da checagem inicial do desktop (sem nova leitura).');
+      } else {
+        desktopResult = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
+          allowMedia: config.ALLOW_MEDIA,
+          timeout: config.NAV_TIMEOUT_SHORT,
+          reuseContext: shouldReuseDesktopContext()
+        });
+      }
+
+      if (desktopResult.hasAppCheckinToday) {
+        wasAlreadyCollectedToday = true;
+      }
+
+      let detectedStreak =
+        mobileStreak !== null && mobileStreak !== 'N/D'
+          ? mobileStreak
+          : desktopResult.desktopStreak !== null && desktopResult.desktopStreak !== 'N/D'
+            ? desktopResult.desktopStreak
+            : earlyDesktopStreak !== null && earlyDesktopStreak !== 'N/D'
+              ? earlyDesktopStreak
+              : null;
+
+      // Validação da quebra pelo extrato ("se necessário"): quando a tela lê 1 com histórico
+      // anterior > 1, confirma com a sequência do extrato desktop antes de tratar como
+      // quebra — a UI pode mostrar 1 transitoriamente na virada do dia (falso positivo).
+      let statementStreakDays =
+        typeof desktopResult.desktopStreak === 'number' ? desktopResult.desktopStreak : null;
+      if (
+        shouldConfirmStreakByStatement({
+          detectedStreak,
+          previousStreakDays,
+          statementStreak: statementStreakDays,
+          alreadyCollected: alreadyCollected || wasAlreadyCollectedToday
+        })
+      ) {
+        logger.warn(
+          {
+            account: maskUser(userEmail),
+            detectedStreak,
+            previousStreakDays
+          },
+          'Leitura de streak = 1 com histórico anterior > 1; confirmando a quebra pelo extrato desktop...'
+        );
+        try {
+          const confirmRead = await getBalanceDesktop(browser, sessionData || currentSessionPath, {
+            allowMedia: config.ALLOW_MEDIA,
+            timeout: config.NAV_TIMEOUT_SHORT,
+            reuseContext: shouldReuseDesktopContext()
+          });
+          if (typeof confirmRead.desktopStreak === 'number') {
+            statementStreakDays = confirmRead.desktopStreak;
+          }
+          if (statementStreakDays !== null && statementStreakDays > 1) {
+            logger.info(
+              { account: maskUser(userEmail), statementStreak: statementStreakDays },
+              'Extrato desmente a quebra (sequência do extrato > 1); preservando o streak real.'
+            );
+          } else {
+            logger.warn(
+              { account: maskUser(userEmail), statementStreak: statementStreakDays },
+              'Extrato não desmente a quebra (sequência do extrato <= 1 ou indisponível).'
+            );
+          }
+        } catch (confirmErr) {
+          logger.warn(
+            { err: confirmErr.message },
+            'Falha ao confirmar a quebra de streak pelo extrato; mantendo a leitura da tela.'
+          );
+        }
+      }
+
+      // Segunda verificação (fallback): a UI pode não confirmar o clique, mas o extrato
+      // desktop de HOJE com a linha "Bônus diário" creditada prova que o check-in
+      // funcionou. Nesse caso a sequência pode ser incrementada — a leitura dinâmica da
+      // página continua tendo prioridade quando confiável.
+      const bonusFromLedgerToday =
+        desktopResult.todayBonusCoins !== null && desktopResult.todayBonusCoins !== undefined
+          ? parseInt(String(desktopResult.todayBonusCoins).replace(/[^0-9]/g, ''), 10)
+          : NaN;
+      const hasBonusFromLedger = !isNaN(bonusFromLedgerToday) && bonusFromLedgerToday > 0;
+      const confirmedByLedger = shouldConfirmCheckinByLedger({
+        justCollected,
+        alreadyCollected,
+        hasBonusFromLedger
+      });
+
+      // Resolve o streak final (incremento determinístico, preservação em re-execução,
+      // proteção contra ciclo semanal espúrio, confirmação pelo extrato e fallback para
+      // a leitura do desktop).
+      // A leitura da tela é a sequência REAL quando o calendário não é um ciclo semanal e
+      // atribui a HOJE o mesmo número. Leitura 1 continua passando pela confirmação do extrato
+      // (a UI pode mostrar 1 transitoriamente na virada do dia).
+      const trustDetectedStreak =
+        mobileStreak !== null &&
+        mobileStreak !== 'N/D' &&
+        isRealStreakReading(mobileStreak, checkinCalendar) &&
+        (Number(mobileStreak) !== 1 || !(statementStreakDays > 1));
+      if (trustDetectedStreak && typeof previousStreakDays === 'number') {
+        const detectedNum = Number(mobileStreak);
+        if (detectedNum < previousStreakDays) {
+          logger.warn(
+            { account: maskUser(userEmail), detectedStreak: detectedNum, previousStreakDays },
+            'A sequência lida no calendário é menor que o histórico local; adotando a sequência real do AliExpress.'
+          );
+        }
+      }
+
+      const { streakDays } = resolveStreakDays({
+        trustDetected: trustDetectedStreak,
+        detectedStreak,
+        previousStreakDays,
+        earlyDesktopStreak:
+          typeof earlyDesktopStreak === 'number'
+            ? earlyDesktopStreak
+            : parseInt(String(earlyDesktopStreak).replace(/[^0-9]/g, ''), 10) || null,
+        justCollected,
+        alreadyCollected: alreadyCollected || wasAlreadyCollectedToday,
+        confirmedByLedger,
+        statementStreak: statementStreakDays
+      });
+
+      const isCollected =
+        alreadyCollected || wasAlreadyCollectedToday || justCollected || confirmedByLedger;
+      const isAlreadyCollected = (isCheckedInitial || wasAlreadyCollectedToday) && !justCollected;
+
+      // Determinação das moedas recebidas no check-in.
+      // PRIORIDADE 1: valor REAL creditado no extrato desktop ("Bônus diário"), que pode
+      // ser diferente do tier sugerido na tela (ex.: tier 40 mas creditado 1).
+      // PRIORIDADE 2: valor lido no modal mobile. PRIORIDADE 3: estimativa pelo streak.
+      let checkinCoinsNum = null;
+      let checkinCoinsSource = null;
+      const desktopBonusNum =
+        desktopResult.todayBonusCoins !== null && desktopResult.todayBonusCoins !== undefined
+          ? parseInt(String(desktopResult.todayBonusCoins).replace(/[^0-9]/g, ''), 10)
+          : NaN;
+      if (!isNaN(desktopBonusNum) && desktopBonusNum > 0) {
+        checkinCoinsNum = desktopBonusNum;
+        checkinCoinsSource = 'desktop-bonus';
+      } else if (desktopResult.todayCheckinCoins) {
+        const p = parseInt(String(desktopResult.todayCheckinCoins).replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(p) && p > 0) {
+          checkinCoinsNum = p;
+          checkinCoinsSource = 'desktop-checkin';
+        }
+      }
+      if (checkinCoinsNum === null && mobileCheckinCoins) {
+        checkinCoinsNum = mobileCheckinCoins;
+        checkinCoinsSource = 'mobile-modal';
+      }
+      if (checkinCoinsNum === null && isCollected) {
+        checkinCoinsNum = getCheckinCoinsFromStreak(streakDays);
+        checkinCoinsSource = 'streak-estimate';
+      }
+
+      // Quando o extrato traz o valor real, loga a divergência em relação ao tier sugerido
+      // pela UI — é o caso em que o site promete 40 e credita 1.
+      const tierSuggested = getCheckinCoinsFromStreak(streakDays);
+      if (
+        checkinCoinsSource === 'desktop-bonus' &&
+        typeof tierSuggested === 'number' &&
+        checkinCoinsNum !== tierSuggested
+      ) {
+        logger.warn(
+          {
+            tierSuggested,
+            credited: checkinCoinsNum,
+            streakDays,
+            source: checkinCoinsSource
+          },
+          'Valor do check-in creditado difere do tier sugerido pela UI; usando o valor real do extrato.'
+        );
+      }
+
+      // Valor do check-in reportado no extrato do dia.
+      // O extrato desktop é a fonte de verdade: se HOJE há crédito de check-in (mesmo que
+      // o clique tenha sido feito pelo usuário no app), o valor é contabilizado. O flag
+      // `alreadyCollected` continua servindo apenas para NÃO clicar de novo no check-in.
+      // (`bonusFromLedgerToday`/`hasBonusFromLedger` vêm da segunda verificação acima.)
+      const coinsGainedToday = hasBonusFromLedger
+        ? String(bonusFromLedgerToday)
+        : isAlreadyCollected
+          ? '0'
+          : checkinCoinsNum !== null
+            ? String(checkinCoinsNum)
+            : isCollected
+              ? String(getCheckinCoinsFromStreak(streakDays))
+              : '0';
+
+      // Saldo base das tarefas.
+      // Quando o check-in acabou de ser feito e o saldo lido do desktop ainda NÃO reflete
+      // o crédito (ledger defasado), sincronizamos somando as moedas do check-in. Caso
+      // contrário, o ganho do check-in vazaria para o extrato das tarefas (all.js usa este
+      // valor como `initialBalance` e do_tasks mede final - inicial).
+      // O valor do check-in continua reportado à parte em `coinsGainedToday`.
+      let totalBalance = desktopResult.totalBalance;
+      if (justCollected && checkinCoinsNum && totalBalance !== 'N/D') {
+        const currentBalNum = parseInt(String(totalBalance).replace(/[^0-9]/g, ''), 10);
+        const earlyBalNum =
+          earlyTotalBalance !== null && earlyTotalBalance !== 'N/D'
+            ? parseInt(String(earlyTotalBalance).replace(/[^0-9]/g, ''), 10)
+            : NaN;
+
+        const balanceAlreadyCredited =
+          !isNaN(earlyBalNum) && currentBalNum >= earlyBalNum + checkinCoinsNum;
+
+        if (!balanceAlreadyCredited && !isNaN(currentBalNum)) {
+          const base = !isNaN(earlyBalNum) ? earlyBalNum : currentBalNum;
+          totalBalance = String(base + checkinCoinsNum);
+          logger.info(
+            {
+              baseBalance: base,
+              checkinCoins: checkinCoinsNum,
+              updatedBalance: totalBalance
+            },
+            'Saldo pós-checkin sincronizado com as moedas recebidas no check-in (ledger defasado).'
+          );
+        }
+      }
+
+      // Guarda-chuva de sessão inválida: o saldo é sempre lido fresco nesta execução,
+      // então "N/D" indica sessão quebrada mesmo que `streakDays` tenha herdado
+      // `previousStreakDays` de um dia bom (resolveStreakDays) e mascarado a falha.
+      // A sessão NÃO é apagada aqui (pode ser apenas parsing do DOM); a limpeza fica em
+      // validateAndRefresh, somente com evidência de cookie de autenticação expirado.
+      if (isSessionDataMissing({ totalBalance })) {
+        if (isImportedSession) {
+          logger.error(
+            '[Sessão Remota Expirada] Não foi possível obter streak e saldo. A sessão importada de outro host expirou ou foi invalidada pelo AliExpress. ' +
+              'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+          );
+        }
+        logger.error(
+          {
+            user: maskUser(userEmail),
+            streakDays,
+            totalBalance,
+            coinsGainedToday,
+            attemptedLogin,
+            loginPromptDetected: Boolean(desktopResult?.loginPromptDetected)
+          },
+          'Erro ao efetuar o login: não foi possível obter streak e saldo.'
+        );
+        if (desktopResult?.loginPromptDetected) {
+          logger.error(
+            'A página desktop exibiu um prompt de login/reautenticação (sessão inválida) — não é apenas mudança de layout.'
+          );
+        }
+        // Sessão preservada intencionalmente: a falha pode ser apenas de parsing do DOM
+        // (mudança de layout), não de autenticação. A limpeza ocorre em validateAndRefresh
+        // somente quando há evidência de cookie de autenticação expirado.
+        const loginErr = new Error(
+          `Erro ao efetuar o login: não foi possível obter streak e saldo para a conta "${maskUser(userEmail)}".`
+        );
+        if (isImportedSession) {
+          loginErr.isImportedSessionExpired = true;
+        }
+        throw loginErr;
+      }
+
+      let longestStreakDays = previousLongestStreakDays;
+      if (streakDays !== 'N/D' && streakDays !== null) {
+        const numStreak =
+          typeof streakDays === 'number'
+            ? streakDays
+            : parseInt(String(streakDays).replace(/[^0-9]/g, ''), 10);
+        if (
+          trustDetectedStreak ||
+          typeof previousStreakDays !== 'number' ||
+          previousStreakDays <= 7 ||
+          numStreak > 7 ||
+          numStreak === 1
+        ) {
+          const updatedMeta = await updateSessionStreak(streakDays, {
+            ...sessionOpts,
+            trusted: trustDetectedStreak
+          });
+          if (typeof updatedMeta?.longestStreakDays === 'number') {
+            longestStreakDays = updatedMeta.longestStreakDays;
+          } else if (!isNaN(numStreak)) {
+            longestStreakDays = Math.max(longestStreakDays ?? 0, numStreak);
+          }
+        } else if (!isNaN(numStreak)) {
+          // Sem persistência (leitura não confiável/legada): mantém o recorde conhecido.
+          longestStreakDays = Math.max(longestStreakDays ?? 0, numStreak);
+        }
+      }
+
+      const checkinEndTime = new Date();
+      const checkinDuration = formatDuration(checkinEndTime - checkinStartTime);
+
+      const result = buildCheckinResult({
+        userEmail,
+        alreadyCollected: isAlreadyCollected,
+        coinsGainedToday,
+        // Verdadeiro quando o valor do check-in veio do extrato de HOJE (fonte de verdade).
+        // Nesse caso o relatório contabiliza o valor mesmo com `alreadyCollected=true`,
+        // pois o crédito ocorreu no dia (possivelmente via app/usuário).
+        checkinCoinsFromLedger: hasBonusFromLedger,
+        // Sequência lida no extrato desktop (quando disponível) — usada para confirmar/desmentir
+        // a quebra quando a tela lê 1 na virada do dia.
+        statementStreakDays,
+        totalBalance,
+        streakDays,
+        previousStreakDays,
+        longestStreakDays,
+        // Sinaliza que a leitura veio do calendário real (sem ciclo semanal). O chamador
+        // usa isso para distinguir uma queda real (ex.: 27 -> 6) do ciclo semanal.
+        trustDetected: trustDetectedStreak,
+        startTime: checkinStartTime,
+        endTime: checkinEndTime,
+        duration: checkinDuration,
+        sessionData
+      });
+
+      if (!options.skipReport) {
+        renderCheckinReport(result, { json: isJson() });
+      }
+      return result;
+    } catch (flowErr) {
+      if (isImportedSession && !flowErr.isImportedSessionExpired) {
+        const msg = flowErr && flowErr.message ? flowErr.message : '';
+        if (/login|autentic|sess[aã]o|streak|saldo|desafio|challenge|cookie|navigat/i.test(msg)) {
+          flowErr.isImportedSessionExpired = true;
+          logger.error(
+            '[Sessão Remota Expirada] A execução falhou e a sessão ativa foi importada de outro host. ' +
+              'Gere uma nova sessão executando "node export_session.js" no servidor de origem e importe-a com "node import_session.js".'
+          );
+        }
+      }
+      await closeContextWithDiagnostics(context, { failed: true, name: 'checkin-failed' });
+      throw flowErr;
+    }
+  } finally {
+    // No fluxo integrado (all.js) o contexto desktop cacheado é mantido vivo para o
+    // runTasks seguinte reaproveitá-lo; o fechamento ocorre no fim da conta em all.js.
+    // No modo standalone (collect.js sozinho) fechamos aqui para não reter RAM.
+    if (isInternalBrowser) {
+      await closeCachedDesktopContext().catch(() => {});
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+    }
+  }
+}
+
+module.exports = {
+  runCheckin,
+  isSessionDataMissing,
+  shouldConfirmCheckinByLedger,
+  shouldConfirmStreakByStatement,
+  shouldReuseEarlyDesktop,
+  shouldAttemptLogin,
+  checkCaptchaCooldownForLogin
+};
