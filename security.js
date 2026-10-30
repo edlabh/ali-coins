@@ -775,11 +775,18 @@ function isCookieExpired(cookie) {
 }
 
 /**
- * Validação rigorosa de sessão: correspondência exata de conta e validade dos cookies
+ * Validação rigorosa de sessão: correspondência exata de conta e validade dos cookies.
+ *
+ * Decisão da Frente 5: `meta.expiresAt` é uma ESTIMATIVA de exportação e não invalida a
+ * sessão sozinho — a validade real é a dos cookies de autenticação. Quando a estimativa
+ * já passou, retornamos um warning para o `--check-session` exibir, mas mantemos a sessão
+ * válida se os cookies ainda não expiraram. Caso contrário, uma estimativa conservadora
+ * forçaria reimportações desnecessárias e poderia ser mais restritiva que o próprio site.
+ *
  * @param {object} sessionData
  * @param {object} metaData
  * @param {string} expectedUser
- * @returns {{ valid: boolean, reason?: string }}
+ * @returns {{ valid: boolean, reason?: string, warnings?: Array<{code: string, expiresAt?: string}> }}
  */
 function validateSession(sessionData, metaData, expectedUser) {
   if (!sessionData || !Array.isArray(sessionData.cookies)) {
@@ -825,6 +832,8 @@ function validateSession(sessionData, metaData, expectedUser) {
     };
   }
 
+  const warnings = [];
+
   // 4. Verificação de idade da sessão exportada
   if (metaData && metaData.exportedAt) {
     const exportedTime = new Date(metaData.exportedAt).getTime();
@@ -842,6 +851,7 @@ function validateSession(sessionData, metaData, expectedUser) {
   if (metaData && metaData.expiresAt) {
     const expiryTime = new Date(metaData.expiresAt).getTime();
     if (!isNaN(expiryTime) && Date.now() > expiryTime) {
+      warnings.push({ code: 'estimated_expiry_passed', expiresAt: metaData.expiresAt });
       logger.warn(
         { expiresAt: metaData.expiresAt },
         'A sessão ultrapassou a data estimada de expiração.'
@@ -849,7 +859,7 @@ function validateSession(sessionData, metaData, expectedUser) {
     }
   }
 
-  return { valid: true };
+  return warnings.length > 0 ? { valid: true, warnings } : { valid: true };
 }
 
 /**

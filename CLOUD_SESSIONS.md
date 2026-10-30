@@ -225,6 +225,15 @@ rsync -a --delete \
 > 2. Importe o token atualizado no servidor remoto com `node import_session.js < session_token.txt`.
 
 > [!NOTE]
+> **Expiração estimada versus cookies reais (2.5.0):** o `expiresAt` gravado no
+> `session_meta.json` é apenas uma estimativa de exportação. O `--check-session` usa a
+> validade real dos cookies `xman_us_t`/`login_aliyunid_ticket` como fonte de verdade e
+> não invalida a sessão só porque a estimativa passou. Quando isso ocorre, o resultado
+> inclui `warnings: [{ code: "estimated_expiry_passed" }]` e o resumo mostra
+> `avisos=estimated_expiry_passed`; renove a sessão de forma preventiva se os cookies
+> também estiverem próximos do fim.
+
+> [!NOTE]
 > **Prompt de reautenticação in-page (a partir da 1.6.1):** se o AliExpress pedir **apenas
 > a senha** na mesma página (sem redirecionar para uma URL de login), a automação detecta
 > o prompt pelo campo de senha visível e tenta a autenticação automaticamente — inclusive

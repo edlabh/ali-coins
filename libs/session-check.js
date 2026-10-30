@@ -66,7 +66,7 @@ function classifySessionCheck({ sessionValid = true, sessionReason = '', desktop
  * Executa uma checagem somente leitura de uma conta: valida os arquivos locais e abre a
  * central de moedas no desktop sem clicar em check-in nem executar tarefas.
  * @param {{browser: import('playwright').Browser, account: object, config: object}} params
- * @returns {Promise<{user: string, ok: boolean, reason: string|null, balance: string|null, streak: number|null}>}
+ * @returns {Promise<{user: string, ok: boolean, reason: string|null, balance: string|null, streak: number|null, warnings?: Array<{code: string, expiresAt?: string}>}>}
  */
 async function checkSessionReadOnly({ browser, account, config }) {
   const user = account?.user || '';
@@ -92,6 +92,7 @@ async function checkSessionReadOnly({ browser, account, config }) {
       ...classifySessionCheck({ sessionValid: false, sessionReason: validation.reason })
     };
   }
+  const warnings = validation.warnings || [];
 
   let desktop = null;
   try {
@@ -102,13 +103,15 @@ async function checkSessionReadOnly({ browser, account, config }) {
   } catch {
     return {
       user: displayUser,
-      ...classifySessionCheck({ sessionValid: true, desktop: null })
+      ...classifySessionCheck({ sessionValid: true, desktop: null }),
+      ...(warnings.length > 0 ? { warnings } : {})
     };
   }
 
   return {
     user: displayUser,
-    ...classifySessionCheck({ sessionValid: true, desktop })
+    ...classifySessionCheck({ sessionValid: true, desktop }),
+    ...(warnings.length > 0 ? { warnings } : {})
   };
 }
 
@@ -185,9 +188,14 @@ async function runSessionCheckCli({ allAccounts = false } = {}) {
     );
   } else {
     for (const r of results) {
-      const detail = r.ok
+      const details = r.ok
         ? `saldo=${r.balance}; streak=${r.streak ?? 'N/D'}`
         : `motivo=${r.reason}`;
+      const warningText =
+        Array.isArray(r.warnings) && r.warnings.length > 0
+          ? `; avisos=${r.warnings.map((warning) => warning.code).join(',')}`
+          : '';
+      const detail = `${details}${warningText}`;
       logger.info(
         {
           msgId: 'session.check.summary',
