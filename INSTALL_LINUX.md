@@ -4,6 +4,13 @@
 
 Este manual foi criado para guiar passo a passo a instalação completa do **AliExpress Coin Collector & Task Runner** em qualquer ambiente Linux, cobrindo desde desktops até servidores em nuvem headless (como Oracle Cloud, AWS EC2, DigitalOcean, Google Cloud, etc.).
 
+> [!NOTE]
+> **Novidades 2.5.0:** a instalação continua igual (Node.js 22 + Playwright). A versão
+> adiciona `run_metrics` com `runId`, i18n por IDs, boot ~48% mais leve em
+> `--help`/dry-run, `--check-session` com avisos de `expiresAt`, gates de CI e o
+> benchmark `npm run bench`. Consulte [README.md](README.md),
+> [OBSERVABILITY.md](OBSERVABILITY.md) e [PERFORMANCE.md](PERFORMANCE.md).
+
 ---
 
 ## Sumário

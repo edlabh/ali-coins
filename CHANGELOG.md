@@ -96,8 +96,8 @@ relatórios); mudanças de relatório são aditivas.
 
 ### Removido
 
-- **Documentação em espanhol:** arquivos `*.es.md` removidos. A documentação passa a ter
-  somente **PT-BR (padrão)** e **EN**, alinhada ao suporte de idioma da aplicação.
+- **Documentação em espanhol:** arquivos `*.es.md` removidos. A documentação e as
+  mensagens de interface dos scripts passam a ter somente **PT-BR (padrão)** e **EN**.
 
 ### Testes
 

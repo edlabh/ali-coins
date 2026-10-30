@@ -11,6 +11,13 @@ Este guia explica detalhadamente o funcionamento dos mecanismos de segurança do
 > sessão automaticamente e retoma em headless. Em VPS/cron sem GUI o menu não aparece;
 > nesse caso use o fluxo de exportação/importação descrito abaixo.
 
+> [!NOTE]
+> **Observabilidade 2.5.0:** cada execução emite `run_metrics` com `runId`, conta
+> mascarada, duração e resultado do check-in/tarefas. Use o `runId` para correlacionar
+> logs e mensagens. SLIs/SLOs, alertas e playbooks estão em
+> [OBSERVABILITY.md](OBSERVABILITY.md); boot, scrypt e orçamento de memória em
+> [PERFORMANCE.md](PERFORMANCE.md).
+
 ---
 
 ## Sumário

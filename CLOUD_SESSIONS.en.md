@@ -13,6 +13,12 @@ This guide explains in detail how AliExpress security mechanisms work in cloud e
 > session automatically, and resumes headless. On a VPS/cron without a GUI the menu does not appear;
 > in that case use the export/import flow described below.
 
+> [!NOTE]
+> **Observability 2.5.0:** every run emits `run_metrics` with `runId`, masked account,
+> duration and check-in/tasks outcome. Use `runId` to correlate logs and messages.
+> SLIs/SLOs, alerts and playbooks are in [OBSERVABILITY.en.md](OBSERVABILITY.en.md);
+> boot, scrypt and memory budget in [PERFORMANCE.en.md](PERFORMANCE.en.md).
+
 ---
 
 ## Table of Contents

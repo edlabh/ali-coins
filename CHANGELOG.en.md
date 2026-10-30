@@ -97,8 +97,8 @@ changes are additive.
 
 ### Removed
 
-- **Spanish documentation:** `*.es.md` files removed. Documentation now has only
-  **PT-BR (default)** and **EN**, aligned with the application's language support.
+- **Spanish documentation:** `*.es.md` files removed. Documentation and script interface
+  messages now have only **PT-BR (default)** and **EN**.
 
 ### Tests
 

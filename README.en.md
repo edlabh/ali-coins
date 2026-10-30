@@ -36,6 +36,8 @@ Requires **Node.js >= 22** (`.nvmrc: 22`).
   `--check-session` exposes `warnings` when the estimate has passed.
 - **CI:** ShellCheck, actionlint, Windows PowerShell validation, CodeQL, Gitleaks, Docker
   smoke, coverage ≥80% and audit as blocking gates.
+- **Languages:** documentation and script interface messages support **PT-BR (default)**
+  and **EN** only; Spanish support was removed.
 
 ---
 

@@ -3,7 +3,7 @@
 > 🌐 **Languages:** [Português](RELEASING.md) | English
 
 This document describes the `ali-coins` release process, including GitHub Releases
-automation and the version **1.x** flow. The Portuguese version is canonical; if they
+automation and the current **2.x** cycle. The Portuguese version is canonical; if they
 diverge, [RELEASING.md](RELEASING.md) prevails.
 
 ## Versioning
@@ -14,7 +14,7 @@ diverge, [RELEASING.md](RELEASING.md) prevails.
   `v3:N:r:p:...` token, environment variables and `--json` reports) has been stable since
   **1.0.0**.
 
-## Release flow (from 1.0.0)
+## Release flow (from 1.0.0; current 2.x cycle)
 
 1. **Accumulate changes** on `main`, recording each item in the `## [Unreleased]` section
    of `CHANGELOG.md` (categories `Added`, `Fixed`, `Changed`, `Removed`, `Security`).
@@ -24,10 +24,16 @@ diverge, [RELEASING.md](RELEASING.md) prevails.
    ```
 3. **Close the CHANGELOG**: move the `[Unreleased]` content to
    `## [X.Y.Z] - YYYY-MM-DD` (keeping the `[Unreleased]` header empty for the next cycle).
-4. **Validate locally**:
+4. **Validate locally** (including coverage and benchmark):
    ```bash
-   npm ci && npm run lint && npm run format:check && npm test && npm audit --omit=dev
+   npm ci
+   npm run lint && npm run format:check
+   npm run test:coverage
+   npm audit --omit=dev
+   npm run bench
+   shellcheck -x $(find . -path ./node_modules -prune -o -name '*.sh' -print)
    ```
+   In CI, ShellCheck, actionlint, PowerShell, CodeQL, Gitleaks and Docker are also gates.
 5. **Local commit and tags** (the project keeps both tag forms pointing to the same
    commit). **Do not push** until the maintainer explicitly authorizes it:
    ```bash
@@ -50,6 +56,22 @@ diverge, [RELEASING.md](RELEASING.md) prevails.
 > If the workflow fails because the tag diverges from `package.json`, fix the version,
 > recreate the tag and push again (`git push --force origin X.Y.Z vX.Y.Z`).
 
+### Pre-release (RC)
+
+To publish a pre-release, use a SemVer suffix and **never move an already published tag**:
+
+```bash
+npm version X.Y.Z-rc.1 --no-git-tag-version
+# Set the CHANGELOG heading to ## [X.Y.Z-rc.1] - YYYY-MM-DD
+git add package.json package-lock.json CHANGELOG.md CHANGELOG.en.md
+git commit -m "chore(release): X.Y.Z-rc.1"
+git tag -a X.Y.Z-rc.1 -m "vX.Y.Z-rc.1 - release candidate"
+git tag -a vX.Y.Z-rc.1 -m "vX.Y.Z-rc.1 - release candidate"
+```
+
+The `Release` workflow creates the GitHub Release with `--prerelease`. After validation,
+repeat the flow with the stable `X.Y.Z` version; do not reuse/move the RC tag.
+
 ## Manual release (fallback)
 
 ```bash
@@ -59,16 +81,18 @@ curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
   -d '{"tag_name":"X.Y.Z","name":"Release X.Y.Z","body":"<notes>","make_latest":"true"}'
 ```
 
-## Checklist for major releases
+## Release checklist (2.x)
 
 - [ ] `[Unreleased]` migrated to `## [X.Y.Z] - <date>` with a **migration guide** for any
       contract breaks.
 - [ ] CLI and exit codes `0–7` documented and covered by tests.
 - [ ] Token (`v1`/`v2`/`v3`) and `session*.json(.enc)` compatibility validated.
 - [ ] No open high/medium severity findings in the latest audit.
-- [ ] CI green on all 3 systems (Ubuntu, Windows, macOS) + CodeQL + Gitleaks.
-- [ ] Coverage ≥ 80% (`npm run test:coverage`).
+- [ ] CI green on all 3 systems (Ubuntu, Windows, macOS) + CodeQL + Gitleaks + Docker.
+- [ ] Coverage ≥ 80% (`npm run test:coverage`) and benchmark (`npm run bench`) recorded.
 - [ ] `npm audit --omit=dev` without vulnerabilities.
-- [ ] `RELEASING.md`, `README.md`, `CHANGELOG.md` and `credentials.env.example` in sync.
-- [ ] Tags `X.Y.Z` and `vX.Y.Z` pointing to the release commit (push only with
-      authorization).
+- [ ] `RELEASING`, `README`, `CHANGELOG`, `OBSERVABILITY`, `PERFORMANCE` and
+      `credentials.env.example` in sync in **PT-BR/EN** (no Spanish documentation).
+- [ ] Script interface text supports only **PT-BR/EN** (`APP_LANGUAGE`/`--lang`).
+- [ ] Tags `X.Y.Z`/`vX.Y.Z` (or `X.Y.Z-rc.N`/`vX.Y.Z-rc.N`) pointing to the release
+      commit; push only with authorization and never move published tags.

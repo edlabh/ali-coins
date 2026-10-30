@@ -320,6 +320,20 @@ O bot do Telegram reporta os principais eventos associados aos códigos de saíd
 
 ---
 
+## 📈 Observabilidade e Correlação (2.5.0)
+
+Cada execução também emite o evento estruturado `run_metrics` com `runId`, conta
+mascarada, duração, resultado do check-in/tarefas, streak e moedas. Use o `runId` para
+correlacionar os logs do container com a mensagem recebida. SLIs/SLOs, alertas e
+playbooks estão em [OBSERVABILITY.md](OBSERVABILITY.md); medições de boot/memória em
+[PERFORMANCE.md](PERFORMANCE.md).
+
+> [!NOTE]
+> Os textos de interface dos scripts e da aplicação suportam **PT-BR (padrão)** e
+> **EN** apenas. Use `APP_LANGUAGE=pt-BR|en` ou `--lang pt|en`.
+
+---
+
 ## 🛑 Como Desativar
 
 Para desativar as notificações permanentemente, basta definir no seu `credentials.env`:

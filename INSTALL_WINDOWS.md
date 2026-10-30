@@ -4,6 +4,13 @@
 
 Este manual descreve o passo a passo completo para instalar, configurar e rodar o **AliExpress Coin Collector & Task Runner** em sistemas **Windows 10** e **Windows 11** (64-bit), via Prompt de Comando (CMD) ou PowerShell.
 
+> [!NOTE]
+> **Novidades 2.5.0:** a instalação continua igual (Node.js 22 + Playwright). A versão
+> adiciona `run_metrics` com `runId`, i18n por IDs, boot ~48% mais leve em
+> `--help`/dry-run, `--check-session` com avisos de `expiresAt`, validação PowerShell no
+> CI e o benchmark `npm run bench`. Consulte [README.md](README.md),
+> [OBSERVABILITY.md](OBSERVABILITY.md) e [PERFORMANCE.md](PERFORMANCE.md).
+
 ---
 
 ## Sumário

@@ -4,6 +4,13 @@
 
 Este manual descreve o passo a passo completo para instalar, configurar e rodar o **AliExpress Coin Collector & Task Runner** no **macOS** (macOS 12 Monterey, 13 Ventura, 14 Sonoma e 15 Sequoia), compatível nativamente com processadores **Apple Silicon (M1, M2, M3 e M4)** e Macs com processador **Intel**.
 
+> [!NOTE]
+> **Novidades 2.5.0:** a instalação continua igual (Node.js 22 + Playwright). A versão
+> adiciona `run_metrics` com `runId`, i18n por IDs, boot ~48% mais leve em
+> `--help`/dry-run, `--check-session` com avisos de `expiresAt`, gates de CI e o
+> benchmark `npm run bench`. Consulte [README.md](README.md),
+> [OBSERVABILITY.md](OBSERVABILITY.md) e [PERFORMANCE.md](PERFORMANCE.md).
+
 ---
 
 ## Sumário

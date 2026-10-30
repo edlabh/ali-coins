@@ -370,6 +370,20 @@ The Telegram bot reports the main events associated with the system's exit codes
 
 ---
 
+## 📈 Observability and Correlation (2.5.0)
+
+Every run also emits the structured `run_metrics` event with `runId`, masked account,
+duration, check-in/tasks outcome, streak and coins. Use `runId` to correlate container
+logs with the received message. SLIs/SLOs, alerts and playbooks are in
+[OBSERVABILITY.en.md](OBSERVABILITY.en.md); boot/memory measurements in
+[PERFORMANCE.en.md](PERFORMANCE.en.md).
+
+> [!NOTE]
+> Application and script interface text supports **PT-BR (default)** and **EN** only.
+> Use `APP_LANGUAGE=pt-BR|en` or `--lang pt|en`.
+
+---
+
 ## 🛑 How to Disable
 
 To permanently disable notifications, set this in your `credentials.env`:
