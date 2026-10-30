@@ -1,6 +1,6 @@
 # AliExpress Coin Collector & Task Runner
 
-> 🌐 **Idiomas:** [Português](README.md) | [English](README.en.md) | [Español](README.es.md)
+> 🌐 **Idiomas:** [Português](README.md) | [English](README.en.md)
 
 Automação completa para **check-in diário de moedas** e **execução de tarefas ("Ganhe mais moedas")** do AliExpress com emulação mobile (Google Pixel 7 / Android) via Playwright.
 
@@ -19,6 +19,21 @@ Requer **Node.js >= 22** (`.nvmrc: 22`).
 - **Criptografia v3 de Alta Segurança:** Exportação segura de sessão usando derivação via `scrypt` com salt criptográfico dinâmico de 16 bytes, parâmetros explícitos e cifra `AES-256-GCM` (formato `v3:N:r:p:salt:iv:tag:ct:base64`). Mantém compatibilidade retroativa com tokens legados `v1` e `v2`.
 - **Lockfile com Prevenção de Concorrência & Stale Timeout:** Evita execuções sobrepostas no Cron com checagem de hostname + PID e timeout de inatividade (padrão: 30min).
 - **Diagnósticos Playwright:** Captura automática de trace (configurável via `PW_TRACE`; `retain-on-failure` no perfil padrão, `off` no modo low-memory), screenshots (`only-on-failure`) e vídeo opcional em `scratch/`.
+
+### Novidades 2.5.0
+
+- **Observabilidade:** evento estruturado `run_metrics` por execução, com `runId`, conta
+  mascarada, durações, resultado do check-in/tarefas, streak e moedas. SLIs, SLOs e
+  playbooks em [OBSERVABILITY.md](OBSERVABILITY.md) ([EN](OBSERVABILITY.en.md)).
+- **i18n por IDs estáveis:** mensagens com `id → { pt, en }`, compatibilidade com chaves
+  legadas e telemetria de migração.
+- **Boot mais leve:** `--help`, `--dry-run` e `--check-session` não carregam o Playwright;
+  ~48% menos tempo/RSS nesses caminhos. Medições em [PERFORMANCE.md](PERFORMANCE.md)
+  ([EN](PERFORMANCE.en.md)).
+- **Sessão:** `expiresAt` é aviso; a validade real continua sendo a dos cookies. O
+  `--check-session` mostra `warnings` quando a estimativa venceu.
+- **CI:** ShellCheck, actionlint, validação PowerShell no Windows, CodeQL, Gitleaks,
+  Docker smoke, cobertura ≥80% e audit como gates bloqueantes.
 
 ---
 
@@ -339,7 +354,7 @@ npm run notify:test
 npm start -- --dry-run --notify
 ```
 
-Consulte o manual detalhado com imagens e solução de problemas em: [**`TELEGRAM.md`**](TELEGRAM.md).
+Consulte o manual detalhado com imagens e solução de problemas em: [**`TELEGRAM.md`**](TELEGRAM.md) ([EN](TELEGRAM.en.md)).
 
 ---
 

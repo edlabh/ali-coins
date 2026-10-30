@@ -1,5 +1,7 @@
 # Changelog
 
+> 🌐 **Idiomas:** Português | [English](CHANGELOG.en.md)
+
 Todas as alterações notáveis deste projeto serão documentadas neste arquivo.
 
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/)
@@ -10,6 +12,99 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > Alterações destinadas às próximas versões devem ser registradas aqui e migradas para
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
+
+## [2.5.0] - 2026-10-30
+
+Release de endurecimento estrutural, observabilidade e confiabilidade. Mantém o contrato
+público da 2.4.0 (CLI, exit codes `0–7`, formato de sessão/token e campos existentes dos
+relatórios); mudanças de relatório são aditivas.
+
+### Adicionado
+
+- **Harness de integração Playwright determinístico:** páginas/contextos/browsers falsos,
+  fixtures de gate/calendário/busca, relógio controlável e coleta de chamadas. Cobre
+  sessão válida → check-in → relatório, sessão expirada → gate DOM, `--check-session`,
+  popup de busca permitido/fechado e rejeição de popup externo/HTTP, sem Chromium real.
+- **i18n por IDs estáveis:** catálogo `id → { pt, en }`, IDs legados determinísticos,
+  `logger` com `msgId`/`msgParams` e telemetria de uso legado. Migração inicial de
+  session-check, login, streak e importação.
+- **Observabilidade por execução:** evento `run_metrics` com `runId`, conta mascarada,
+  duração, resultado do check-in/tarefas, streak antes/depois, recorde, moedas, tentativa
+  de login, captcha e reúso de contexto. `runId`/conta também são injetados nas linhas de
+  log. Inclui `OBSERVABILITY.md` com SLIs/SLOs, alertas e playbooks.
+- **Benchmark de performance:** `npm run bench` mede boot, memória e scrypt em processos
+  separados; `PERFORMANCE.md` documenta baseline, orçamento de 256 MB/768 MB e decisões
+  de reúso de contexto/chaves.
+- **Gates de CI:** ShellCheck, actionlint (imagem pinada por digest), validação de sintaxe
+  PowerShell no Windows, SBOM bloqueante e artefatos de falha com retenção curta.
+- **`--check-session` com avisos:** expõe `warnings` quando a estimativa `expiresAt`
+  venceu, sem invalidar cookies ainda válidos.
+- **Sinais de check-in para métricas:** `loginAttempted` e `reusedEarlyDesktop` no
+  resultado do check-in.
+
+### Alterado
+
+- **Modularização de `collect.js`/`all.js`:** decisões de login/streak/resultado foram
+  para `libs/checkin/`; os fluxos de conta única e multi-conta para `libs/runner/`.
+  `collect.js` e `all.js` permanecem adaptadores finos, com os mesmos exports, exit codes
+  e comportamento de CLI.
+- **Boot sem Playwright em caminhos de CLI:** `all.js --help`, `collect.js --help`,
+  `--dry-run` e `--check-session` não carregam o navegador. Medição local: ~260 ms/149 MB
+  → ~135 ms/80 MB (~48% menos tempo e RSS).
+- **Relatórios e logs correlacionados:** mensagens migradas usam IDs; logs de execução
+  carregam `runId` e conta mascarada.
+- **Release workflow:** a verificação de tag repete lint, Prettier, cobertura e audit.
+
+### Corrigido
+
+- **Expiração estimada confundida com sessão inválida:** `expiresAt` agora é apenas um
+  aviso; a validade real continua sendo a dos cookies de autenticação.
+- **Cobertura de regressão da higiene de tokens:** sucesso via `--from-file` remove o
+  token, falha preserva, `--keep-tokens` preserva, STDIN nunca remove arquivo e lote
+  parcial mantém apenas o token que falhou.
+- **Permissões de sessão em texto plano:** `session.json` e `session_meta.json` também
+  são verificados como `0o600` quando a criptografia está desligada explicitamente.
+
+### Segurança
+
+- Matriz de token/sessão coberta por testes; nenhum segredo em fixtures, snapshots ou
+  artefatos de CI.
+- `npm audit --omit=dev` sem vulnerabilidades; Gitleaks, CodeQL, Docker smoke e auditoria
+  de dependências continuam gates do CI.
+- Redaction de cookies/tokens/query strings, rotação de chave e migração legada mantidas
+  e cobertas pelas suítes existentes.
+
+### Performance
+
+- Boot de `all.js`/`collect.js` sem Playwright: ~117 ms/78 MB no `require` cold start
+  (antes ~173 ms/146 MB).
+- scrypt: `N=131072` ~174 ms encrypt / ~169 ms decrypt (~197 MB de pico); em host
+  ≤1.5 GB/cgroup o ajuste automático usa `N=32768` (~45 ms / ~42 ms, ~100 MB de pico).
+- Reúso de contexto desktop continua opt-in (`DESKTOP_REUSE_CONTEXT=true`); o handoff
+  mobile → tarefas evita recarregar o SPA.
+
+### Documentação
+
+- `README` e `CLOUD_SESSIONS` mantidos em PT-BR e EN com as novidades 2.5.0 e a decisão
+  `expiresAt` versus cookies reais.
+- `OBSERVABILITY`, `PERFORMANCE` e `RELEASE_REVIEW_2.5.0` disponíveis em PT-BR/EN; a
+  versão PT-BR permanece canônica em caso de divergência.
+- `CHANGELOG.en.md`, `RELEASING.en.md` e `TELEGRAM.en.md` adicionados com navegação PT/EN;
+  o changelog EN espelha o histórico completo (2.5.0 até 0.7.0), mantendo o PT como
+  fonte canônica.
+
+### Removido
+
+- **Documentação em espanhol:** arquivos `*.es.md` removidos. A documentação passa a ter
+  somente **PT-BR (padrão)** e **EN**, alinhada ao suporte de idioma da aplicação.
+
+### Testes
+
+- 561 testes na suíte completa; cobertura de linhas 88% (limite 80%).
+- Novas suítes: harness/integração, módulos de check-in/runner, i18n por IDs,
+  observabilidade/métricas, segurança de sessão/tokens, orçamento de performance e gates
+  de CI.
+- ShellCheck em todos os `*.sh`, actionlint 1.7.12, Prettier, ESLint e audit verdes.
 
 ## [2.4.0] - 2026-10-29
 
@@ -62,8 +157,8 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Documentação
 
-- `README.md`, `README.en.md` e `README.es.md` documentam `--check-session`,
-  `--allow-expired`, a saída JSON e a higiene/validade dos tokens.
+- `README.md`, `README.en.md` e `README.es.md` (removido depois na 2.5.0) documentam
+  `--check-session`, `--allow-expired`, a saída JSON e a higiene/validade dos tokens.
 
 ### Testes
 
@@ -134,9 +229,9 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 
 ### Documentação
 
-- **Documentação completa em inglês e espanhol:** `README.en.md`/`README.es.md`,
-  `INSTALL_LINUX/INSTALL_WINDOWS/INSTALL_MACOS.en.md/.es.md` e
-  `CLOUD_SESSIONS.en.md/.es.md`, com seletor de idiomas no topo de cada documento e
+- **Documentação completa em inglês e espanhol (o espanhol foi removido na 2.5.0):**
+  `README.en.md`/`README.es.md`, `INSTALL_LINUX/INSTALL_WINDOWS/INSTALL_MACOS.en.md/.es.md`
+  e `CLOUD_SESSIONS.en.md/.es.md`, com seletor de idiomas no topo de cada documento e
   links internos/âncoras preservados. O português continua sendo a fonte canônica.
 - `README.md`, `README.en.md`, `README.es.md` e `credentials.env.example` documentam
   `APP_LANGUAGE` e `--lang`.

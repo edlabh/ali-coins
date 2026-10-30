@@ -1,5 +1,7 @@
 # Guia de Configuração: Notificações via Bot do Telegram
 
+> 🌐 **Idiomas:** Português | [English](TELEGRAM.en.md)
+
 Este guia detalha como configurar notificações automáticas no seu Telegram para o **AliExpress Coin Collector & Task Runner**.
 
 O recurso é **100% opcional** (desativado por padrão) e utiliza o cliente HTTP nativo do Node.js 22 (`fetch` nativo), sem instalar nenhuma biblioteca externa adicional.

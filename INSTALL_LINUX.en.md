@@ -1,6 +1,6 @@
 # Detailed Linux Installation Guide (Ubuntu 22.04 LTS / 24.04 LTS and Debian)
 
-> 🌐 **Languages:** [Português](INSTALL_LINUX.md) | [English](INSTALL_LINUX.en.md) | [Español](INSTALL_LINUX.es.md)
+> 🌐 **Languages:** [Português](INSTALL_LINUX.md) | [English](INSTALL_LINUX.en.md)
 
 > ℹ️ English translation of the canonical Portuguese documentation. If there is any divergence, the Portuguese version prevails.
 

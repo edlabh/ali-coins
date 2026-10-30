@@ -7,9 +7,9 @@ tarefas ("Ganhe mais moedas") do AliExpress com emulação mobile via Playwright
 
 Requer: Node.js >= 22 (.nvmrc: 22)
 Documentação completa disponível em: README.md e TELEGRAM.md
-Traduções: README.en.md (English) | README.es.md (Español)
-Guias de instalação: INSTALL_LINUX/INSTALL_WINDOWS/INSTALL_MACOS (.md/.en.md/.es.md)
-Sessões em nuvem: CLOUD_SESSIONS (.md/.en.md/.es.md)
+Traduções: README.en.md (English)
+Guias de instalação: INSTALL_LINUX/INSTALL_WINDOWS/INSTALL_MACOS (.md/.en.md)
+Sessões em nuvem: CLOUD_SESSIONS (.md/.en.md)
 
 --------------------------------------------------------------------------------
 1. COMANDOS PRINCIPAIS
@@ -19,11 +19,14 @@ Sessões em nuvem: CLOUD_SESSIONS (.md/.en.md/.es.md)
 - Relatório em formato JSON:           npm start -- --json
 - Notificar Telegram pontualmente:     npm start -- --notify
 - Login manual em janela (opcional):   npm start -- --manual-login
+- Checar sessão sem coletar:           npm start -- --check-session [--json]
 - Testar Bot Telegram:                 npm run notify:test
 - Apenas Check-in Diário:              npm run collect
 - Apenas Tarefas:                      npm run tasks
 - Suíte de Testes (node:test):         npm test
+- Cobertura (limite 80%):              npm run test:coverage
 - Verificação de Lint e Formatação:    npm run lint && npm run format:check
+- Benchmark de boot/memória/scrypt:    npm run bench
 
 --------------------------------------------------------------------------------
 2. CÓDIGOS DE SAÍDA (EXIT CODES)
@@ -39,4 +42,7 @@ Sessões em nuvem: CLOUD_SESSIONS (.md/.en.md/.es.md)
 
 Consulte README.md, TELEGRAM.md, INSTALL_LINUX.md, INSTALL_WINDOWS.md,
 INSTALL_MACOS.md e CLOUD_SESSIONS.md para detalhes adicionais de configuração.
+Observabilidade/SLOs: OBSERVABILITY.md | Performance: PERFORMANCE.md
+Novidades 2.5.0: métricas run_metrics, i18n por IDs, boot ~48% mais leve,
+`--check-session` com avisos de expiresAt e gates de CI.
 ================================================================================

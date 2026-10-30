@@ -1,6 +1,6 @@
 # Detailed Installation Guide for macOS (Apple Silicon & Intel)
 
-> 🌐 **Languages:** [Português](INSTALL_MACOS.md) | [English](INSTALL_MACOS.en.md) | [Español](INSTALL_MACOS.es.md)
+> 🌐 **Languages:** [Português](INSTALL_MACOS.md) | [English](INSTALL_MACOS.en.md)
 
 > ℹ️ English translation of the canonical Portuguese documentation. If there is any divergence, the Portuguese version prevails.
 

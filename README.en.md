@@ -1,6 +1,6 @@
 # AliExpress Coin Collector & Task Runner
 
-> 🌐 **Languages:** [Português](README.md) | [English](README.en.md) | [Español](README.es.md)
+> 🌐 **Languages:** [Português](README.md) | [English](README.en.md)
 
 > ℹ️ English translation of the canonical Portuguese documentation. If there is any divergence, the Portuguese version prevails.
 
@@ -21,6 +21,21 @@ Requires **Node.js >= 22** (`.nvmrc: 22`).
 - **High-Security v3 Encryption:** Secure session export using `scrypt` derivation with a dynamic 16-byte cryptographic salt, explicit parameters, and `AES-256-GCM` encryption (format `v3:N:r:p:salt:iv:tag:ct:base64`). Maintains backward compatibility with legacy `v1` and `v2` tokens.
 - **Lockfile with Concurrency Prevention & Stale Timeout:** Prevents overlapping Cron runs with hostname + PID checks and an inactivity timeout (default: 30min).
 - **Playwright Diagnostics:** Automatic trace capture (configurable via `PW_TRACE`; `retain-on-failure` in the default profile, `off` in low-memory mode), screenshots (`only-on-failure`), and optional video in `scratch/`.
+
+### What's new in 2.5.0
+
+- **Observability:** structured `run_metrics` event per execution with `runId`, masked
+  account, durations, check-in/tasks outcome, streak and coins. SLIs, SLOs and playbooks
+  in [OBSERVABILITY.en.md](OBSERVABILITY.en.md) ([PT](OBSERVABILITY.md)).
+- **Stable i18n IDs:** messages use `id → { pt, en }` with legacy-key compatibility and
+  migration telemetry.
+- **Lighter boot:** `--help`, `--dry-run` and `--check-session` no longer load Playwright;
+  ~48% less time/RSS on those paths. Measurements in
+  [PERFORMANCE.en.md](PERFORMANCE.en.md) ([PT](PERFORMANCE.md)).
+- **Session:** `expiresAt` is advisory; real validity remains cookie-based.
+  `--check-session` exposes `warnings` when the estimate has passed.
+- **CI:** ShellCheck, actionlint, Windows PowerShell validation, CodeQL, Gitleaks, Docker
+  smoke, coverage ≥80% and audit as blocking gates.
 
 ---
 
@@ -341,7 +356,7 @@ npm run notify:test
 npm start -- --dry-run --notify
 ```
 
-See the detailed manual with images and troubleshooting at: [**`TELEGRAM.md`**](TELEGRAM.md) (currently in Portuguese).
+See the detailed manual with images and troubleshooting at: [**`TELEGRAM.en.md`**](TELEGRAM.en.md) ([PT](TELEGRAM.md)).
 
 ---
 

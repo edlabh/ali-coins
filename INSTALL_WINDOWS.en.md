@@ -1,6 +1,6 @@
 # Detailed Installation Guide for Windows (Windows 10 and Windows 11)
 
-> 🌐 **Languages:** [Português](INSTALL_WINDOWS.md) | [English](INSTALL_WINDOWS.en.md) | [Español](INSTALL_WINDOWS.es.md)
+> 🌐 **Languages:** [Português](INSTALL_WINDOWS.md) | [English](INSTALL_WINDOWS.en.md)
 
 > ℹ️ English translation of the canonical Portuguese documentation. If there is any divergence, the Portuguese version prevails.
 

@@ -1,6 +1,6 @@
 # Guia Detalhado de Instalação no Windows (Windows 10 e Windows 11)
 
-> 🌐 **Idiomas:** [Português](INSTALL_WINDOWS.md) | [English](INSTALL_WINDOWS.en.md) | [Español](INSTALL_WINDOWS.es.md)
+> 🌐 **Idiomas:** [Português](INSTALL_WINDOWS.md) | [English](INSTALL_WINDOWS.en.md)
 
 Este manual descreve o passo a passo completo para instalar, configurar e rodar o **AliExpress Coin Collector & Task Runner** em sistemas **Windows 10** e **Windows 11** (64-bit), via Prompt de Comando (CMD) ou PowerShell.
 

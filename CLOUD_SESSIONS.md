@@ -1,6 +1,6 @@
 # Guia Avançado: Execução em Servidores na Nuvem e Gestão de Sessões
 
-> 🌐 **Idiomas:** [Português](CLOUD_SESSIONS.md) | [English](CLOUD_SESSIONS.en.md) | [Español](CLOUD_SESSIONS.es.md)
+> 🌐 **Idiomas:** [Português](CLOUD_SESSIONS.md) | [English](CLOUD_SESSIONS.en.md)
 
 Este guia explica detalhadamente o funcionamento dos mecanismos de segurança do AliExpress em ambientes de nuvem (Oracle Cloud, AWS, Google Cloud, DigitalOcean, Hetzner, etc.) e o método recomendado de **delegação de sessão** (geração local e exportação para o servidor).
 

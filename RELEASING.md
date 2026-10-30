@@ -1,5 +1,7 @@
 # Guia de Releases
 
+> 🌐 **Idiomas:** Português | [English](RELEASING.en.md)
+
 Este documento descreve o processo de release do `ali-coins`, incluindo a automação de
 GitHub Releases e o fluxo das versões **1.x**.
 
@@ -7,7 +9,7 @@ GitHub Releases e o fluxo das versões **1.x**.
 
 - O projeto segue [SemVer](https://semver.org/lang/pt-BR/): `MAJOR.MINOR.PATCH`.
 - Mudanças compatíveis entram em `MINOR`; quebras de compatibilidade exigem `MAJOR`.
-- O contrato público (CLI, exit codes `0–6`, formato de `session*.json(.enc)`,
+- O contrato público (CLI, exit codes `0–7`, formato de `session*.json(.enc)`,
   token `v3:N:r:p:...`, variáveis de ambiente e relatórios `--json`) é estável desde a
   **1.0.0**.
 
@@ -26,14 +28,16 @@ GitHub Releases e o fluxo das versões **1.x**.
    ```bash
    npm ci && npm run lint && npm run format:check && npm test && npm audit --omit=dev
    ```
-5. **Commit e tags** (o projeto mantém as duas formas de tag apontando para o mesmo commit):
+5. **Commit e tags locais** (o projeto mantém as duas formas de tag apontando para o
+   mesmo commit). **Não faça push** até o mantenedor autorizar explicitamente:
    ```bash
    git add -A
    git commit -m "chore(release): X.Y.Z"
    git tag -a X.Y.Z -m "vX.Y.Z - <resumo>"
    git tag -a vX.Y.Z -m "vX.Y.Z - <resumo>"
-   git push origin main
-   git push origin X.Y.Z vX.Y.Z
+   # Push somente com autorização do mantenedor:
+   # git push origin main
+   # git push origin X.Y.Z vX.Y.Z
    ```
 6. **Automação**: o workflow [`Release`](.github/workflows/release.yml) dispara em tags
    `X.Y.Z`/`vX.Y.Z`, valida que a tag corresponde ao `package.json`, roda lint + testes
@@ -65,4 +69,4 @@ curl -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
 - [ ] Cobertura ≥ 80% (`npm run test:coverage`).
 - [ ] `npm audit --omit=dev` sem vulnerabilidades.
 - [ ] `RELEASING.md`, `README.md`, `CHANGELOG.md` e `credentials.env.example` sincronizados.
-- [ ] Tags `1.0.0` e `v1.0.0` apontando para o commit de release (workflow publica a release).
+- [ ] Tags `X.Y.Z` e `vX.Y.Z` apontando para o commit de release (push só com autorização).

@@ -48,14 +48,15 @@ docker-run*.sh
 
 # Documentação extensa (mantida no repositório, dispensável na imagem)
 INSTALL_*.md
-TELEGRAM.md
+TELEGRAM*.md
 README.md
 README.txt
-CLOUD_SESSIONS.md
-RELEASING.md
-CHANGELOG.md
-OBSERVABILITY.md
-PERFORMANCE.md
+CLOUD_SESSIONS*.md
+RELEASING*.md
+CHANGELOG*.md
+OBSERVABILITY*.md
+PERFORMANCE*.md
+RELEASE_REVIEW_*.md
 
 # Ferramentas de desenvolvimento e CI
 .github/

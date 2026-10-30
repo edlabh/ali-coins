@@ -51,7 +51,8 @@ run_all_node() {
 }
 
 # Execução com 1 tentativa de retry e backoff caso o código de saída seja 1 (falha transitória).
-# Códigos 0 (sucesso), 2 (já coletado), 3 (lock ativo), 4 (streak quebrado) e 5 (2FA no cron) não sofrem retentativa.
+# Códigos 0 (sucesso), 2 (já coletado), 3 (lock ativo), 4 (streak quebrado),
+# 5 (2FA no cron), 6 (crash) e 7 (intervenção manual) não sofrem retentativa.
 run_all_node "$@"
 EXIT_CODE=$?
 

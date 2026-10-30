@@ -1,6 +1,6 @@
 # Advanced Guide: Running on Cloud Servers and Session Management
 
-> 🌐 **Languages:** [Português](CLOUD_SESSIONS.md) | [English](CLOUD_SESSIONS.en.md) | [Español](CLOUD_SESSIONS.es.md)
+> 🌐 **Languages:** [Português](CLOUD_SESSIONS.md) | [English](CLOUD_SESSIONS.en.md)
 
 > ℹ️ English translation of the canonical Portuguese documentation. If there is any divergence, the Portuguese version prevails.
 
@@ -225,6 +225,15 @@ rsync -a --delete \
 >
 > 1. Run `node export_session.js` on the source machine.
 > 2. Import the updated token on the remote server with `node import_session.js < session_token.txt`.
+
+> [!NOTE]
+> **Estimated expiry vs. real cookies (2.5.0):** the `expiresAt` stored in
+> `session_meta.json` is only an export estimate. `--check-session` uses the real validity
+> of `xman_us_t`/`login_aliyunid_ticket` cookies as the source of truth and does not
+> invalidate the session just because the estimate has passed. When that happens, the
+> result includes `warnings: [{ code: "estimated_expiry_passed" }]` and the summary shows
+> `avisos=estimated_expiry_passed`; renew the session preventively if the cookies are also
+> close to expiry.
 
 > [!NOTE]
 > **In-page reauthentication prompt (since 1.6.1):** if AliExpress asks for **only

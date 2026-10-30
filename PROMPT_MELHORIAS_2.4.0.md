@@ -336,7 +336,7 @@ Ao final do ciclo, entregue:
 - [ ] `npm run lint` e `npm run format:check` verdes.
 - [ ] `npm audit --omit=dev` sem vulnerabilidades altas/críticas.
 - [ ] Nenhum segredo em arquivos versionados ou artefatos.
-- [ ] CHANGELOG, README (PT/EN/ES) e versão sincronizados.
+- [ ] CHANGELOG, README (PT-BR/EN) e versão sincronizados.
 - [ ] Nenhum push remoto; tags apenas locais.
 - [ ] Revisão `pre-release-review` concluída sem bloqueadores abertos.
 
