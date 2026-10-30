@@ -28,8 +28,6 @@ const {
   getCheckinCalendarFromCoinPage,
   isRealStreakReading,
   getBalanceDesktop,
-  isLoginGateText,
-  isLoginGateVisible,
   getCheckinCoinsFromStreak,
   shouldReuseDesktopContext,
   closeCachedDesktopContext,
@@ -41,6 +39,13 @@ const {
   CHOICE_MANUAL
 } = require('./libs/ui');
 const { renderCheckinReport, resolveStreakDays } = require('./libs/report');
+const { shouldAttemptLogin, isLoginGateVisible } = require('./libs/checkin/login-gate');
+const {
+  shouldConfirmCheckinByLedger,
+  shouldConfirmStreakByStatement,
+  shouldReuseEarlyDesktop
+} = require('./libs/checkin/streak');
+const { isSessionDataMissing, buildCheckinResult } = require('./libs/checkin/result');
 const { version: APP_VERSION } = require('./package.json');
 const logger = require('./logger');
 
@@ -62,133 +67,6 @@ async function checkCaptchaCooldownForLogin(sessionOpts, hours, { force = false 
     cooldown,
     manualRequired: cooldown.requireManualLogin === true
   };
-}
-
-/**
- * Guarda-chuva de sessão inválida no check-in: indica se faltam dados frescos da
- * execução atual para considerar a sessão viva.
- *
- * O saldo (`totalBalance`) é SEMPRE lido na execução atual — não tem fallback de dias
- * anteriores. Já o `streakDays` pode herdar `previousStreakDays` dos metadados
- * (`resolveStreakDays`, libs/report.js) quando a detecção de hoje falha, mascarando uma
- * sessão morta (bug: execução com saldo "N/D" era reportada como sucesso ✅). Por isso
- * o saldo ausente ("N/D"/null) é o critério confiável.
- *
- * @param {{ totalBalance?: string|number|null }} [checkinData]
- * @returns {boolean} true quando a sessão deve ser tratada como inválida
- */
-function isSessionDataMissing(checkinData = {}) {
-  const { totalBalance } = checkinData;
-  return totalBalance === 'N/D' || totalBalance === null || totalBalance === undefined;
-}
-
-/**
- * Segunda verificação do check-in pelo extrato desktop ("Bônus diário" de hoje).
- *
- * A confirmação primária é o marcador da UI após o clique. Quando ele não aparece,
- * o crédito do dia no extrato é prova de que o check-in funcionou — desde que NADA
- * constasse coletado antes desta execução (evita incremento duplo em re-execuções no
- * mesmo dia). A leitura dinâmica da página continua tendo prioridade no streak.
- *
- * @param {{justCollected?: boolean, alreadyCollected?: boolean, hasBonusFromLedger?: boolean}} [params]
- * @returns {boolean} true quando o extrato confirma o check-in desta execução
- */
-function shouldConfirmCheckinByLedger({
-  justCollected = false,
-  alreadyCollected = false,
-  hasBonusFromLedger = false
-} = {}) {
-  return justCollected !== true && alreadyCollected !== true && hasBonusFromLedger === true;
-}
-
-/**
- * Decide se vale confirmar a quebra de streak com o extrato desktop antes de alertar.
- *
- * Só quando a tela lê 1, há histórico anterior > 1, o check-in não constava coletado
- * antes e o extrato disponível ainda não desmentiu (<= 1 ou ausente) — "se necessário".
- *
- * @param {{detectedStreak?: number|string|null, previousStreakDays?: number|null, statementStreak?: number|null, alreadyCollected?: boolean}} [params]
- * @returns {boolean} true quando é preciso reler o extrato para confirmar a quebra
- */
-function shouldConfirmStreakByStatement({
-  detectedStreak = null,
-  previousStreakDays = null,
-  statementStreak = null,
-  alreadyCollected = false
-} = {}) {
-  const parsed =
-    typeof detectedStreak === 'number'
-      ? detectedStreak
-      : parseInt(String(detectedStreak).replace(/[^0-9]/g, ''), 10);
-  const base = typeof previousStreakDays === 'number' ? previousStreakDays : null;
-  const statement = typeof statementStreak === 'number' ? statementStreak : null;
-
-  if (alreadyCollected === true) return false;
-  if (parsed !== 1) return false;
-  if (!(typeof base === 'number' && base > 1)) return false;
-  // Extrato já disponível (confirma ou desmente a quebra) -> não precisa de nova leitura.
-  return statement === null;
-}
-
-/**
- * Decide se a leitura desktop do encerramento da etapa 1 pode reutilizar a checagem inicial.
- * Só quando NADA foi coletado nesta execução (saldo/streak não mudaram) e a leitura inicial
- * trouxe saldo válido — evita reabrir o contexto desktop (~18s na baseline).
- * @param {{justCollected?: boolean, earlyDesktop?: object|null}} [params]
- * @returns {boolean}
- */
-function shouldReuseEarlyDesktop({ justCollected = false, earlyDesktop = null } = {}) {
-  if (justCollected === true) return false;
-  if (!earlyDesktop || typeof earlyDesktop !== 'object') return false;
-  const balance = earlyDesktop.totalBalance;
-  if (balance === null || balance === undefined) return false;
-  const text = String(balance).trim();
-  return text !== '' && text !== 'N/D';
-}
-
-/**
- * Decide se o fluxo deve tentar autenticar nesta execução.
- *
- * Regras:
- *  - **Campo de senha visível → true** (prompt de reautenticação in-page do AliExpress,
- *    que pede só a senha na MESMA URL do coin-index — sem isso o login nunca era tentado);
- *  - Sem sessão válida → true (fluxo completo);
- *  - Coin-index virou a portaria "COINS / Log in" (sessão expirada no servidor, mesma
- *    URL, sem campos) → true;
- *  - URL de login/passport + campo de usuário ou textos clássicos → true (comportamento
- *    histórico, preservado);
- *  - Caso contrário → false (sessão válida em página normal: evita re-login desnecessário).
- *
- * @param {object} [params]
- * @param {boolean} [params.hasValidSession]
- * @param {boolean} [params.passwordVisible]
- * @param {boolean} [params.loginUrl]
- * @param {boolean} [params.usernameVisible]
- * @param {string} [params.bodyText]
- * @param {boolean} [params.gateVisible=false] Portaria detectada por DOM (prioritária)
- * @returns {boolean}
- */
-function shouldAttemptLogin({
-  hasValidSession = false,
-  passwordVisible = false,
-  loginUrl = false,
-  usernameVisible = false,
-  bodyText = '',
-  gateVisible = false
-} = {}) {
-  if (passwordVisible) return true;
-  if (!hasValidSession) return true;
-  if (gateVisible || isLoginGateText(bodyText)) return true;
-  if (loginUrl && usernameVisible) return true;
-  if (
-    loginUrl &&
-    (bodyText.includes('Email or phone number') ||
-      bodyText.includes('Sign in') ||
-      bodyText.includes('Entrar'))
-  ) {
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -1131,7 +1009,7 @@ async function runCheckin(options = {}) {
       const checkinEndTime = new Date();
       const checkinDuration = formatDuration(checkinEndTime - checkinStartTime);
 
-      const result = {
+      const result = buildCheckinResult({
         userEmail,
         alreadyCollected: isAlreadyCollected,
         coinsGainedToday,
@@ -1153,7 +1031,7 @@ async function runCheckin(options = {}) {
         endTime: checkinEndTime,
         duration: checkinDuration,
         sessionData
-      };
+      });
 
       if (!options.skipReport) {
         renderCheckinReport(result, { json: isJson() });
