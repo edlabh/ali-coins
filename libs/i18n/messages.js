@@ -35,6 +35,8 @@ const SEMANTIC_MESSAGES = {
   // login
   'login.credentials': '[Login] Autenticando com credenciais de "{{0}}"...',
   'login.password_prompt': '[Login] Prompt de reautenticação in-page detectado (somente senha).',
+  'login.gate_detected':
+    '[Login] Portaria "COINS / Log in" detectada; abrindo o formulário de login.',
   'login.risk_rejected':
     'Login rejeitado pelo controle de risco do AliExpress (RGV587/FAIL_SYS_USER_VALIDATE).',
   'login.2fa_requested':

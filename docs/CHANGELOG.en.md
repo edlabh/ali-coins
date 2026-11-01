@@ -15,6 +15,13 @@ prevails.
 > Changes for upcoming versions should be recorded here and moved to
 > `## [X.Y.Z] - YYYY-MM-DD` at release time. See [RELEASING.en.md](RELEASING.en.md).
 
+### Fixed
+
+- **Automatic login through the "COINS / Log in" gate.** With an expired session, the
+  mobile coin-index shows only the title and a "Log in" button, with no fields.
+  `performMobileLogin()` now taps that button before looking for the email/password
+  fields; previously the run failed with "user identifier field (email/phone) not found".
+
 ## [2.5.0-rc.1] - 2026-10-30
 
 Release candidate for 2.5.0. Structural hardening, observability and reliability release. It preserves the 2.4.0 public

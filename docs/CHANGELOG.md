@@ -13,6 +13,14 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+### Corrigido
+
+- **Login automático pela portaria "COINS / Log in".** Com a sessão expirada, o
+  coin-index mobile mostra só o título e o botão "Log in", sem campos. O
+  `performMobileLogin()` agora toca nesse botão antes de procurar e-mail/senha; antes a
+  execução falhava com "Campo de identificador de usuário (e-mail/telefone) não
+  encontrado na página."
+
 ## [2.5.0-rc.1] - 2026-10-30
 
 Release candidate da 2.5.0. Release de endurecimento estrutural, observabilidade e

@@ -441,6 +441,8 @@ module.exports = {
       '[Login] New authenticated session saved successfully.',
     '[Login] Prompt de reautenticação in-page detectado (somente senha).':
       '[Login] In-page reauthentication prompt detected (password only).',
+    '[Login] Portaria "COINS / Log in" detectada; abrindo o formulário de login.':
+      '[Login] "COINS / Log in" gate detected; opening the login form.',
     '[OK] Permissões 0o600 aplicadas em todos os arquivos de sessão':
       '[OK] Permissions 0o600 applied to all session files',
     '[PARCIAL] Rotação concluída com falhas em algumas contas.':

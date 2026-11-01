@@ -23,6 +23,9 @@ const SELECTORS = {
     twoFactorSubmitBtn:
       'button[type="submit"], button.cosmos-btn-primary, button:has-text("Confirm"), button:has-text("Verify"), button:has-text("Confirmar")',
     loginPendingContainer: '.login-pending-container',
+    // Botão da "portaria" COINS / Log in do coin-index mobile (sessão expirada, sem campos).
+    gateLoginBtn:
+      'button:has-text("Log in"), a:has-text("Log in"), button:has-text("Entrar"), a:has-text("Entrar"), :text-is("Log in"), :text-is("Sign in"), :text-is("Entrar")',
     sliderHandle:
       '#nc_1_n1z, .btn_slide, span[class*="btn_slide"], #nc_1__scale_text .btn_slide, div[id*="nocaptcha"] .btn_slide',
     sliderTrack: '#nc_1__scale_text, .nc_scale, div[id*="nocaptcha"]'

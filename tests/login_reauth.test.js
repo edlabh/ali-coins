@@ -31,8 +31,21 @@ function makeElement(calls, label) {
 /**
  * Cria uma Page falsa com os campos do fluxo de login (usuário/senha/Sign in).
  */
-function makePage({ withUsername = false, withPassword = true, loginResponse = null } = {}) {
+function makePage({
+  withUsername = false,
+  withPassword = true,
+  loginResponse = null,
+  gate = false
+} = {}) {
   const calls = [];
+  // Portaria "COINS / Log in": os campos só aparecem depois do clique no botão.
+  let gateOpen = !gate;
+  const gateBtn = {
+    async click() {
+      calls.push(['click', 'gate']);
+      gateOpen = true;
+    }
+  };
   const listeners = { response: [] };
   const elements = {
     username: makeElement(calls, 'username'),
@@ -49,6 +62,11 @@ function makePage({ withUsername = false, withPassword = true, loginResponse = n
     },
     async waitForSelector(selector) {
       const s = String(selector);
+      if (s.includes(':text-is("Log in")')) {
+        if (!gateOpen) return gateBtn;
+        throw new Error('timeout');
+      }
+      if (!gateOpen) throw new Error('timeout');
       if (s.includes('type="password"')) {
         if (withPassword) return elements.password;
         throw new Error('timeout');
@@ -61,13 +79,14 @@ function makePage({ withUsername = false, withPassword = true, loginResponse = n
     },
     async $(selector) {
       const s = String(selector);
+      if (!gateOpen) return null;
       if (s.includes('type="password"')) return withPassword ? elements.password : null;
       if (s.includes('fm-login-id')) return withUsername ? elements.username : null;
       if (s.includes('cosmos-btn-primary') || s.includes('type="submit"')) return elements.signIn;
       return null;
     },
     async innerText() {
-      return '';
+      return gateOpen ? '' : 'COINS\nLog in';
     },
     async waitForLoadState() {},
     async waitForTimeout() {},
@@ -229,6 +248,38 @@ test('libs/ui/login.js - login somente-senha (prompt in-page) autentica sem camp
       'deve clicar em Sign in'
     );
     assert.ok(fs.existsSync(path.join(tmp, 'session_x.json')), 'deve salvar a sessão no destino');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    assertRealFilesUntouched(realFilesSnapshot);
+  }
+});
+
+test('libs/ui/login.js - portaria "COINS / Log in" é aberta antes de procurar os campos', async () => {
+  const realFilesSnapshot = snapshotRealFiles();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ali-coins-gate-'));
+  try {
+    const page = makePage({ withUsername: false, withPassword: true, gate: true });
+    const options = {
+      account: { user: 'x@example.com', password: 'pw' },
+      baseDir: tmp,
+      sessionPath: path.join(tmp, 'session_x.json'),
+      sessionMetaPath: path.join(tmp, 'session_meta_x.json'),
+      encryptLocalSession: false
+    };
+
+    const result = await performMobileLogin(page, makeContext(), { SELECTOR_TIMEOUT: 50 }, options);
+
+    assert.ok(result && Array.isArray(result.cookies), 'deve retornar o storageState');
+    assert.ok(
+      page.calls.some(([op, label]) => op === 'click' && label === 'gate'),
+      'deve tocar no botão "Log in" da portaria'
+    );
+    assert.ok(
+      page.calls.some(
+        ([op, label, value]) => op === 'fill' && label === 'password' && value === 'pw'
+      ),
+      'deve preencher a senha após abrir o formulário'
+    );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
     assertRealFilesUntouched(realFilesSnapshot);

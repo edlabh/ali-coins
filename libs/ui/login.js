@@ -2,6 +2,7 @@ const { SELECTORS } = require('../selectors');
 const { waitAndClick, trySolveSlider } = require('./navigation');
 const { saveFailureScreenshot } = require('./diagnostics');
 const { saveSession } = require('../session');
+const { isLoginGateText, isLoginGateVisible } = require('../checkin/login-signals');
 const { readMasked2FACode, TwoFactorRequiredNonInteractive } = require('../core/security');
 const { maskUser } = require('../core/config');
 const logger = require('../core/logger');
@@ -126,6 +127,33 @@ async function performMobileLogin(page, context, config, options = {}) {
   // APENAS a senha, na mesma URL do coin-index. Nesse caso não existe campo de usuário —
   // detectamos a senha visível primeiro para não esperar (nem falhar) pelo e-mail.
   let passwordInput = await visibleElement(page, SELECTORS.login.passwordInput, 1200);
+
+  // Portaria "COINS / Log in" (sessão expirada no servidor): a página não tem campos até
+  // o botão "Log in" ser tocado — sem o clique o login falhava sem achar o e-mail.
+  if (!passwordInput) {
+    const bodyText = await page.innerText('body').catch(() => '');
+    if ((await isLoginGateVisible(page)) || isLoginGateText(bodyText)) {
+      logger.info(
+        { msgId: 'login.gate_detected' },
+        '[Login] Portaria "COINS / Log in" detectada; abrindo o formulário de login.'
+      );
+      const gateClicked = await waitAndClick(page, SELECTORS.login.gateLoginBtn, {
+        timeout: 3000
+      });
+      if (gateClicked) {
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page
+          .waitForSelector(`${SELECTORS.login.usernameInput}, ${SELECTORS.login.passwordInput}`, {
+            state: 'visible',
+            timeout: config.SELECTOR_TIMEOUT
+          })
+          .catch(() => {});
+        await trySolveSlider(page);
+        passwordInput = await visibleElement(page, SELECTORS.login.passwordInput, 1200);
+      }
+    }
+  }
+
   const passwordOnly = passwordInput !== null;
   if (passwordOnly) {
     logger.info(
