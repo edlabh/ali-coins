@@ -15,6 +15,10 @@ prevails.
 > Changes for upcoming versions should be recorded here and moved to
 > `## [X.Y.Z] - YYYY-MM-DD` at release time. See [RELEASING.en.md](RELEASING.en.md).
 
+## [2.5.1] - 2026-11-01
+
+Patch release for automatic login through the AliExpress mobile gate.
+
 ### Fixed
 
 - **Automatic login through the "COINS / Log in" gate.** With an expired session, the

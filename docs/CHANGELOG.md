@@ -13,6 +13,10 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+## [2.5.1] - 2026-11-01
+
+Release de correção do login automático na portaria mobile do AliExpress.
+
 ### Corrigido
 
 - **Login automático pela portaria "COINS / Log in".** Com a sessão expirada, o
