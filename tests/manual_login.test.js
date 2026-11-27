@@ -12,7 +12,9 @@ const {
   parseLoginChoice,
   askLoginChoice,
   waitForManualLogin,
-  performManualLogin
+  performManualLogin,
+  isAuthenticatedCookieValue,
+  stripAuthCookiesFromStorage
 } = require('../libs/ui/manual-login');
 
 const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
@@ -717,4 +719,176 @@ test('manual-login - performManualLogin exige conta identificada', async () => {
     performManualLogin({ config: {}, account: null, deps: { writeLog: noopLog } }),
     (err) => err instanceof ManualLoginError && /Conta não identificada/.test(err.message)
   );
+});
+
+test('manual-login - isAuthenticatedCookieValue exige sign=y quando xman_us_t informa sign=', () => {
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', 't=1&sign=y&m=1'), true);
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', 'sign=Y&t=abc'), true);
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', 'xman_novo'), true);
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', 't=1&sign=n&m=1'), false);
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', 'sign=0'), false);
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', 't=1&sign=&m=1'), false);
+  assert.strictEqual(isAuthenticatedCookieValue('xman_us_t', ''), false);
+  assert.strictEqual(isAuthenticatedCookieValue('login_aliyunid_ticket', 'ticket_valido'), true);
+  assert.strictEqual(isAuthenticatedCookieValue('login_aliyunid_ticket', ''), false);
+});
+
+test('manual-login - waitForManualLogin ignora xman_us_t invalidado (sign=n) até vir sign=y', async () => {
+  const page = {
+    isClosed: () => false,
+    $$: async () => [],
+    url: () => 'https://www.aliexpress.com/p/coin-pc-index/mycoin.html'
+  };
+  let calls = 0;
+  const context = {
+    cookies: async () => {
+      calls++;
+      if (calls === 1) return [{ name: 'xman_us_t', value: 't=old&sign=y' }];
+      if (calls === 2) return [{ name: 'xman_us_t', value: 't=loggedout&sign=n' }];
+      return [{ name: 'xman_us_t', value: 't=fresh&sign=y' }];
+    },
+    pages: () => [page]
+  };
+  const result = await waitForManualLogin({
+    context,
+    page,
+    timeoutMs: 1000,
+    sleep: async () => {}
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.authCookie, 'xman_us_t');
+  assert.strictEqual(calls, 3, 'deve aguardar até o cookie novo ter sign=y');
+});
+
+test('manual-login - waitForManualLogin rastreia todos os domínios iniciais de xman_us_t', async () => {
+  const page = {
+    isClosed: () => false,
+    $$: async () => [],
+    url: () => 'https://www.aliexpress.com/p/coin-pc-index/mycoin.html'
+  };
+  let calls = 0;
+  const context = {
+    cookies: async () => {
+      calls++;
+      if (calls === 1) {
+        return [
+          { name: 'xman_us_t', domain: '.aliexpress.com', value: 'val_com' },
+          { name: 'xman_us_t', domain: '.aliexpress.us', value: 'val_us' }
+        ];
+      }
+      if (calls === 2) {
+        // Reordenado / apenas .aliexpress.us mantido: não é cookie novo
+        return [{ name: 'xman_us_t', domain: '.aliexpress.us', value: 'val_us' }];
+      }
+      return [{ name: 'xman_us_t', domain: '.aliexpress.com', value: 'val_novo' }];
+    },
+    pages: () => [page]
+  };
+  const result = await waitForManualLogin({
+    context,
+    page,
+    timeoutMs: 1000,
+    sleep: async () => {}
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(calls, 3, 'não deve confundir cookie inicial de outro domínio com login');
+});
+
+test('manual-login - waitForManualLogin não fecha mycoin.html enquanto houver formulário (ou iframe) de login visível', async () => {
+  let iframePasswordVisible = true;
+  const iframe = {
+    $$: async () => [{ isVisible: async () => iframePasswordVisible }]
+  };
+  const page = {
+    isClosed: () => false,
+    url: () => 'https://www.aliexpress.com/p/coin-pc-index/mycoin.html',
+    $$: async () => [],
+    frames: () => [page, iframe]
+  };
+  let calls = 0;
+  const context = {
+    cookies: async () => {
+      calls++;
+      if (calls === 1) return [];
+      return [{ name: 'xman_us_t', value: 't=fresh&sign=y' }];
+    },
+    pages: () => [page]
+  };
+
+  let sleeps = 0;
+  const result = await waitForManualLogin({
+    context,
+    page,
+    timeoutMs: 1000,
+    sleep: async () => {
+      sleeps++;
+      if (sleeps >= 1) iframePasswordVisible = false;
+    }
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(sleeps, 1, 'só concluiu depois que o prompt no iframe sumiu');
+});
+
+test('manual-login - waitForManualLogin não conclui enquanto page.url() estiver em rota de login', async () => {
+  const page = {
+    isClosed: () => false,
+    $$: async () => [],
+    url: () => 'https://www.aliexpress.com/p/ug-login-page/login.html'
+  };
+  let calls = 0;
+  const context = {
+    cookies: async () => {
+      calls++;
+      if (calls === 1) return [];
+      return [{ name: 'xman_us_t', value: 't=fresh&sign=y' }];
+    },
+    pages: () => [page]
+  };
+
+  await assert.rejects(
+    waitForManualLogin({ context, page, timeoutMs: 0, now: () => 0 }),
+    ManualLoginTimeoutError
+  );
+});
+
+test('manual-login - performManualLogin remove cookies de autenticação antigos do storageState', async () => {
+  const originalStorage = {
+    cookies: [
+      { name: 'xman_us_t', domain: '.aliexpress.com', value: 'stale_xman' },
+      { name: 'login_aliyunid_ticket', domain: '.aliexpress.com', value: 'stale_ticket' },
+      { name: 'aep_usuc_f', domain: '.aliexpress.com', value: 'keep_region' },
+      { name: 'xman_f', domain: '.aliexpress.com', value: 'keep_device' }
+    ],
+    origins: [{ origin: 'https://www.aliexpress.com', localStorage: [] }]
+  };
+  let receivedStorage = null;
+  const context = makeContext();
+
+  await performManualLogin({
+    config: { ALI_USER: 'user@example.com', MANUAL_LOGIN_TIMEOUT_MS: 1000 },
+    account: { user: 'user@example.com' },
+    storageState: originalStorage,
+    deps: {
+      launch: async () => ({ close: async () => {} }),
+      createDesktopContext: async (_b, storage) => {
+        receivedStorage = storage;
+        return context;
+      },
+      goto: async () => {},
+      waitForLogin: async () => {},
+      save: async (storage) => ({ sessionData: storage, metaData: {} }),
+      writeLog: noopLog
+    }
+  });
+
+  assert.deepStrictEqual(
+    receivedStorage.cookies.map((c) => c.name),
+    ['aep_usuc_f', 'xman_f'],
+    'cookies de autenticação expirados devem ser removidos sem afetar demais cookies'
+  );
+  assert.deepStrictEqual(receivedStorage.origins, originalStorage.origins);
+  assert.strictEqual(originalStorage.cookies.length, 4, 'não muta o storageState original');
+
+  const untouched = stripAuthCookiesFromStorage(null);
+  assert.strictEqual(untouched, null);
 });

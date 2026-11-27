@@ -51,14 +51,37 @@ class ManualLoginTimeoutError extends ManualLoginError {
 }
 
 /**
- * Lê o valor de um cookie pelo nome.
+ * Lê todos os valores não vazios de um cookie pelo nome (cobre múltiplos domínios,
+ * como `.aliexpress.com` e `.aliexpress.us`).
  * @param {Array<{name: string, value: string}>} cookies
  * @param {string} name
- * @returns {string}
+ * @returns {string[]}
  */
-function readCookie(cookies, name) {
-  const found = (Array.isArray(cookies) ? cookies : []).find((c) => c && c.name === name);
-  return found && found.value ? String(found.value) : '';
+function readCookieValues(cookies, name) {
+  return (Array.isArray(cookies) ? cookies : [])
+    .filter((c) => c && c.name === name && c.value)
+    .map((c) => String(c.value));
+}
+
+/**
+ * Verifica se o valor do cookie representa uma sessão autenticada.
+ * Quando `xman_us_t` contém o parâmetro `sign=`, apenas `sign=y` indica usuário
+ * logado (`sign=n` indica sessão invalidada/deslogada). Valores sem `sign=`
+ * seguem aceitos por compatibilidade.
+ * @param {string} name
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isAuthenticatedCookieValue(name, value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (name === AUTH_USER_COOKIE) {
+    const signMatch = raw.match(/(?:^|&)sign=([^&]*)/i);
+    if (signMatch) {
+      return signMatch[1].toLowerCase() === 'y';
+    }
+  }
+  return true;
 }
 
 /**
@@ -74,6 +97,37 @@ function isCoinPageUrl(rawUrl) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Verifica se o pathname da URL pertence a uma rota de login/passport.
+ * @param {string} rawUrl
+ * @returns {boolean}
+ */
+function isLoginPageUrl(rawUrl) {
+  try {
+    const { pathname } = new URL(String(rawUrl || ''));
+    return /login|sign-?in|passport/i.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove cookies de autenticação expirados/rejeitados do `storageState` antes de
+ * abrir a janela manual, evitando que o servidor reescreva `xman_us_t` com
+ * `sign=n` ao carregar a página inicial e dispare falso positivo.
+ * @param {object|string|null} storageState
+ * @returns {object|string|null}
+ */
+function stripAuthCookiesFromStorage(storageState) {
+  if (!storageState || typeof storageState !== 'object' || !Array.isArray(storageState.cookies)) {
+    return storageState;
+  }
+  return {
+    ...storageState,
+    cookies: storageState.cookies.filter((c) => !c || !AUTH_COOKIES.includes(c.name))
+  };
 }
 
 /**
@@ -254,39 +308,51 @@ function askLoginChoice({
 }
 
 /**
- * Verifica se o formulário de login (usuário ou senha) ainda está visível. Usado para
- * evitar aceitar um `login_aliyunid_ticket` antigo como se o login manual tivesse sido
- * concluído — inclusive em fluxos que pedem só o usuário primeiro.
+ * Verifica se o formulário de login (usuário ou senha) ainda está visível na página
+ * ou em seus iframes. Usado para evitar aceitar um cookie antigo/inválido como se o
+ * login manual tivesse sido concluído — inclusive em fluxos que pedem só o usuário
+ * primeiro ou carregam o formulário de login dentro de um iframe em `mycoin.html`.
  * @param {object} page
  * @returns {Promise<boolean>}
  */
 async function isLoginPromptVisible(page) {
   if (!page) return false;
-  try {
-    // `$$` é importante: num fluxo que pede primeiro o usuário, pode existir um input
-    // de senha oculto antes do campo de usuário visível. Checar só o primeiro match
-    // (`$`) concluiria o login manual cedo demais.
-    if (typeof page.$$ === 'function') {
-      const inputs = await page.$$(LOGIN_FORM_SELECTOR);
-      for (const input of inputs) {
-        if (await input.isVisible()) return true;
+  const targets = [page];
+  if (typeof page.frames === 'function') {
+    try {
+      for (const frame of page.frames()) {
+        if (frame && frame !== page) targets.push(frame);
       }
-      return false;
+    } catch {
+      // Ignora erro ao listar frames durante navegação
     }
-    if (typeof page.$ === 'function') {
-      const input = await page.$(LOGIN_FORM_SELECTOR);
-      return input ? await input.isVisible() : false;
-    }
-    return false;
-  } catch {
-    return false;
   }
+
+  for (const target of targets) {
+    try {
+      // `$$` é importante: num fluxo que pede primeiro o usuário, pode existir um input
+      // de senha oculto antes do campo de usuário visível. Checar só o primeiro match
+      // (`$`) concluiria o login manual cedo demais.
+      if (typeof target.$$ === 'function') {
+        const inputs = await target.$$(LOGIN_FORM_SELECTOR);
+        for (const input of inputs) {
+          if (await input.isVisible()) return true;
+        }
+      } else if (typeof target.$ === 'function') {
+        const input = await target.$(LOGIN_FORM_SELECTOR);
+        if (input && (await input.isVisible())) return true;
+      }
+    } catch {
+      // Frame destruído/navegando: tenta o próximo
+    }
+  }
+  return false;
 }
 
 /**
  * Aguarda o operador concluir o login na janela. Só considera concluído quando um
- * cookie forte novo/diferente (`login_aliyunid_ticket` ou `xman_us_t`) existe e o
- * formulário de login não está mais visível.
+ * cookie forte novo/autenticado (`login_aliyunid_ticket` ou `xman_us_t` com `sign=y`)
+ * existe e não há formulário de login visível nem URL de login ativa.
  * @param {object} params
  * @returns {Promise<{ok: true, hasTicket: true}>}
  */
@@ -306,15 +372,15 @@ async function waitForManualLogin({
   const deadline = now() + maxTimeout;
   const interval = Math.max(1, Number(pollMs) || 2000);
 
-  // Cookies de autenticação presentes ANTES do login manual (sessão antiga/rejeitada).
-  // Se já existiam, só aceitamos um valor DIFERENTE: o mesmo valor pode ser cookie
-  // velho que sobreviveu à invalidação server-side — salvá-lo repetiria o falso
-  // positivo da 1.7.4. Sem valor inicial, o primeiro cookie forte já vale.
+  // Todos os valores iniciais dos cookies de autenticação (ex.: .aliexpress.com e
+  // .aliexpress.us). Se já existiam, só aceitamos um valor DIFERENTE e autenticado:
+  // reordenação entre domínios ou reescrita para `sign=n` (logout/sessão rejeitada)
+  // não pode disparar falso positivo e fechar a janela antes do login.
   const initialAuth = {};
   try {
     const initialCookies = await context.cookies();
     for (const name of AUTH_COOKIES) {
-      initialAuth[name] = readCookie(initialCookies, name);
+      initialAuth[name] = new Set(readCookieValues(initialCookies, name));
     }
   } catch (err) {
     throw new ManualLoginError(
@@ -340,15 +406,28 @@ async function waitForManualLogin({
       );
     }
 
-    const authCookie = AUTH_COOKIES.find((name) => {
-      const value = readCookie(cookies, name);
-      return Boolean(value) && (!initialAuth[name] || value !== initialAuth[name]);
-    });
-    const openPages = typeof context.pages === 'function' ? context.pages() : [];
-    const coinPageOpen = openPages.some(
-      (p) => p && typeof p.url === 'function' && isCoinPageUrl(p.url())
+    const authCookie = AUTH_COOKIES.find((name) =>
+      readCookieValues(cookies, name).some(
+        (value) => !initialAuth[name].has(value) && isAuthenticatedCookieValue(name, value)
+      )
     );
-    if (authCookie && (coinPageOpen || !(await isLoginPromptVisible(page)))) {
+    const openPages = typeof context.pages === 'function' ? context.pages() : [];
+    let coinPageOpen = false;
+    let coinPageReady = false;
+    for (const p of openPages) {
+      if (p && typeof p.url === 'function' && isCoinPageUrl(p.url())) {
+        coinPageOpen = true;
+        if (!(await isLoginPromptVisible(p))) {
+          coinPageReady = true;
+          break;
+        }
+      }
+    }
+    const pageOnLoginUrl = Boolean(
+      page && typeof page.url === 'function' && isLoginPageUrl(page.url())
+    );
+    const loginFormVisible = await isLoginPromptVisible(page);
+    if (authCookie && (coinPageReady || (!pageOnLoginUrl && !loginFormVisible))) {
       // `hasTicket` é mantido por compatibilidade; `authCookie` diz qual sinal veio.
       return { ok: true, hasTicket: true, authCookie };
     }
@@ -444,7 +523,13 @@ async function performManualLogin({
       );
       browser = await launch({ headless: false });
       ownsBrowser = true;
-      context = await createContext(browser, storageState, { allowMedia: true });
+      const initialStorageState = stripAuthCookiesFromStorage(storageState);
+      context = await createContext(browser, initialStorageState, { allowMedia: true });
+      if (typeof storageState === 'string' && typeof context.clearCookies === 'function') {
+        for (const name of AUTH_COOKIES) {
+          await context.clearCookies({ name }).catch(() => {});
+        }
+      }
       if (manualContext === 'desktop') {
         // Mesmo disfarce do contexto mobile: reduz o sinal de automação sem
         // interferir no captcha, que continua sendo resolvido pelo operador.
@@ -523,6 +608,8 @@ module.exports = {
   buildLoginChoiceMenu,
   parseLoginChoice,
   askLoginChoice,
+  isAuthenticatedCookieValue,
+  stripAuthCookiesFromStorage,
   waitForManualLogin,
   performManualLogin
 };
