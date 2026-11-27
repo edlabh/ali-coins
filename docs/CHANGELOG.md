@@ -13,6 +13,31 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 > a seção `## [X.Y.Z] - AAAA-MM-DD` no momento do release. O processo completo está em
 > [RELEASING.md](RELEASING.md).
 
+## [2.5.2] - 2026-11-27
+
+Release de correção do login manual em janela visível e atualização de dependências.
+
+### Corrigido
+
+- **Fechamento prematuro da janela de login manual com sessão expirada.** Ao abrir
+  `mycoin.html` em janela visível (`--manual-login`) com sessão expirada no servidor, o
+  AliExpress reescrevia `xman_us_t` com `sign=n` ~2 segundos após o carregamento e o
+  `waitForManualLogin()` encerrava a janela antes do operador digitar a senha. Em
+  `libs/ui/manual-login.js`:
+  - `performManualLogin()` agora remove cookies de autenticação expirados (`xman_us_t` e
+    `login_aliyunid_ticket`) do `storageState` antes de abrir a janela manual.
+  - `waitForManualLogin()` rastreia todos os valores iniciais multi-domínio
+    (`.aliexpress.com`/`.aliexpress.us`), exige `sign=y` quando `xman_us_t` informa
+    `sign=`, e verifica formulários de login visíveis inclusive em iframes e rotas de
+    login ativas, impedindo o fechamento prematuro em `mycoin.html`.
+
+### Alterado
+
+- **Atualização de dependências:** `commander` (`^15.1.0`), `dotenv` (`^18.0.10`),
+  `playwright` (`^1.65.1`), `undici` (`^8.13.1`), `eslint` (`^10.15.0`), `globals`
+  (`^17.14.0`), `lint-staged` (`^17.6.1`), `prettier` (`^3.10.1`) e
+  `github/codeql-action` (`v4.39.3`) no CI.
+
 ## [2.5.1] - 2026-11-01
 
 Release de correção do login automático na portaria mobile do AliExpress.

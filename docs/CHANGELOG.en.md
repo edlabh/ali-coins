@@ -15,6 +15,31 @@ prevails.
 > Changes for upcoming versions should be recorded here and moved to
 > `## [X.Y.Z] - YYYY-MM-DD` at release time. See [RELEASING.en.md](RELEASING.en.md).
 
+## [2.5.2] - 2026-11-27
+
+Patch release for visible-window manual login and dependency updates.
+
+### Fixed
+
+- **Premature closure of the manual login window with an expired session.** When opening
+  `mycoin.html` in a visible window (`--manual-login`) with a server-expired session,
+  AliExpress rewrote `xman_us_t` with `sign=n` ~2 seconds after loading and
+  `waitForManualLogin()` closed the window before the operator could enter credentials.
+  In `libs/ui/manual-login.js`:
+  - `performManualLogin()` now strips expired authentication cookies (`xman_us_t` and
+    `login_aliyunid_ticket`) from `storageState` before opening the manual window.
+  - `waitForManualLogin()` tracks all initial multi-domain values
+    (`.aliexpress.com`/`.aliexpress.us`), requires `sign=y` when `xman_us_t` includes
+    `sign=`, and checks visible login forms including iframes and active login routes,
+    preventing premature closure on `mycoin.html`.
+
+### Changed
+
+- **Dependency updates:** `commander` (`^15.1.0`), `dotenv` (`^18.0.10`),
+  `playwright` (`^1.65.1`), `undici` (`^8.13.1`), `eslint` (`^10.15.0`), `globals`
+  (`^17.14.0`), `lint-staged` (`^17.6.1`), `prettier` (`^3.10.1`), and
+  `github/codeql-action` (`v4.39.3`) in CI.
+
 ## [2.5.1] - 2026-11-01
 
 Patch release for automatic login through the AliExpress mobile gate.
